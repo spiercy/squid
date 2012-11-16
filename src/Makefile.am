@@ -440,6 +440,8 @@ squid_SOURCES = \
 	multicast.cc \
 	neighbors.h \
 	neighbors.cc \
+	Notes.cc \
+	Notes.h \
 	Packer.cc \
 	Packer.h \
 	Parsing.cc \
@@ -1117,6 +1119,7 @@ TESTS += $(check_PROGRAMS)
 tests_testHttpReply_SOURCES=\
 	cbdata.cc \
 	cbdata.h \
+	ConfigParser.cc \
 	ETag.cc \
 	fatal.h \
 	tests/stub_fatal.cc \
@@ -1489,6 +1492,8 @@ tests_testCacheManager_SOURCES = \
 	mime_header.cc \
 	neighbors.h \
 	neighbors.cc \
+	Notes.cc \
+	Notes.h \
 	Packer.cc \
 	Parsing.cc \
 	pconn.cc \
@@ -1899,6 +1904,8 @@ tests_testEvent_SOURCES = \
 	multicast.cc \
 	neighbors.h \
 	neighbors.cc \
+	Notes.cc \
+	Notes.h \
 	Packer.cc \
 	Parsing.cc \
 	pconn.cc \
@@ -2141,6 +2148,8 @@ tests_testEventLoop_SOURCES = \
 	multicast.cc \
 	neighbors.h \
 	neighbors.cc \
+	Notes.cc \
+	Notes.h \
 	Packer.cc \
 	Parsing.cc \
 	pconn.cc \
@@ -2380,6 +2389,8 @@ tests_test_http_range_SOURCES = \
 	multicast.cc \
 	neighbors.h \
 	neighbors.cc \
+	Notes.cc \
+	Notes.h \
 	Packer.cc \
 	Parsing.cc \
 	peer_digest.cc \
@@ -2660,6 +2671,8 @@ tests_testHttpRequest_SOURCES = \
 	mime_header.cc \
 	neighbors.h \
 	neighbors.cc \
+	Notes.cc \
+	Notes.h \
 	Packer.cc \
 	Parsing.cc \
 	pconn.cc \
@@ -3749,6 +3762,8 @@ tests_testURL_SOURCES = \
 	mime_header.cc \
 	neighbors.h \
 	neighbors.cc \
+	Notes.cc \
+	Notes.h \
 	Packer.cc \
 	Parsing.cc \
 	pconn.cc \
