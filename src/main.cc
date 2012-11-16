@@ -768,6 +768,8 @@ mainReconfigureStart(void)
     Ssl::Helper::GetInstance()->Shutdown();
 #endif
 #if USE_SSL
+    if (Ssl::CertValidationHelper::GetInstance())
+        Ssl::CertValidationHelper::GetInstance()->Shutdown();
     Ssl::TheGlobalContextStorage.reconfigureStart();
 #endif
     redirectShutdown();
@@ -849,6 +851,10 @@ mainReconfigureFinish(void *)
     dnsInit();
 #if USE_SSL_CRTD
     Ssl::Helper::GetInstance()->Init();
+#endif
+#if USE_SSL
+    if (Ssl::CertValidationHelper::GetInstance())
+        Ssl::CertValidationHelper::GetInstance()->Init();
 #endif
 
     redirectInit();
@@ -1045,6 +1051,11 @@ mainInitialize(void)
 
 #if USE_SSL_CRTD
     Ssl::Helper::GetInstance()->Init();
+#endif
+
+#if USE_SSL
+    if (Ssl::CertValidationHelper::GetInstance())
+        Ssl::CertValidationHelper::GetInstance()->Init();
 #endif
 
     redirectInit();
@@ -1839,6 +1850,10 @@ SquidShutdown()
     dnsShutdown();
 #if USE_SSL_CRTD
     Ssl::Helper::GetInstance()->Shutdown();
+#endif
+#if USE_SSL
+    if (Ssl::CertValidationHelper::GetInstance())
+        Ssl::CertValidationHelper::GetInstance()->Shutdown();
 #endif
     redirectShutdown();
     externalAclShutdown();
