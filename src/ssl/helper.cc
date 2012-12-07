@@ -8,6 +8,7 @@
 #include "wordlist.h"
 #include "SquidConfig.h"
 
+#if USE_SSL_CRTD
 Ssl::Helper * Ssl::Helper::GetInstance()
 {
     static Ssl::Helper sslHelper;
@@ -102,7 +103,9 @@ void Ssl::Helper::sslSubmit(CrtdMessage const & message, HLPCB * callback, void 
     msg += '\n';
     helperSubmit(ssl_crtd, msg.c_str(), callback, data);
 }
+#endif //USE_SSL_CRTD
 
+#if 1 // USE_SSL_CERT_VALIDATOR
 /*ssl_crtd_validator*/
 
 Ssl::CertValidationHelper * Ssl::CertValidationHelper::GetInstance()
@@ -149,7 +152,7 @@ void Ssl::CertValidationHelper::Init()
         while ((token = strwordtok(NULL, &tmp))) {
             wordlistAdd(&ssl_crt_validator->cmdline, token);
         }
-        safe_free(tmp_begin);
+        xfree(tmp_begin);
     }
     helperOpenServers(ssl_crt_validator);
 }
@@ -173,8 +176,8 @@ void Ssl::CertValidationHelper::sslSubmit(CrtdMessage const & message, HLPCB * c
         if (first_warn == 0)
             first_warn = squid_curtime;
         if (squid_curtime - first_warn > 3 * 60)
-            fatal("SSL servers not responding for 3 minutes");
-        debugs(83, 1, HERE << "Queue overload, rejecting");
+            fatal("ssl_crtvd queue being overloaded for long time");
+        debugs(83, DBG_IMPORTANT, "WARNING: ssl_crtvd queue overload, rejecting");
         callback(data, (char *)"error 45 Temporary network problem, please retry later");
         return;
     }
@@ -184,3 +187,4 @@ void Ssl::CertValidationHelper::sslSubmit(CrtdMessage const & message, HLPCB * c
     msg += '\n';
     helperSubmit(ssl_crt_validator, msg.c_str(), callback, data);
 }
+#endif // USE_SSL_CERT_VALIDATOR

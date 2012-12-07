@@ -9,7 +9,7 @@
 #include "HttpStatusCode.h"
 #include "ip/Address.h"
 #include "RefCount.h"
-#if USE_SSL
+#if USE_SSL //&& USE_SSL_CERT_VALIDATOR
 #include "ssl/support.h"
 #endif
 
@@ -20,7 +20,7 @@ typedef RefCount<AccessLogEntry> AccessLogEntryPointer;
 class ErrorState;
 class HttpRequest;
 
-#if USE_SSL
+#if USE_SSL //&& USE_SSL_CERT_VALIDATOR
 namespace Ssl
 {
 class ErrorDetail;
