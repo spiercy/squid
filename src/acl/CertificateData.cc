@@ -42,13 +42,13 @@
 ACLCertificateData::ACLCertificateData(Ssl::GETX509ATTRIBUTE *sslStrategy, const char *attrs, bool optionalAttr) : validAttributesStr(attrs), attributeIsOptional(optionalAttr), attribute (NULL), values (), sslAttributeCall (sslStrategy)
 {
     if (attrs) {
-        size_t current;
-        size_t next = -1;
+        size_t current = 0;
+        size_t next = std::string::npos;
         std::string valid(attrs);
         do {
-            current = next + 1;
             next = valid.find_first_of( "|", current);
-            validAttributes.push_back(valid.substr( current, next - current ));
+            validAttributes.push_back(valid.substr( current, (next == std::string::npos ? std::string::npos : next - current)));
+            current = next + 1;
         } while (next != std::string::npos);
     }
 }
@@ -148,7 +148,7 @@ ACLCertificateData::parse()
                 debugs(28, DBG_CRITICAL, "Unknown option. Supported option(s) are: " << validAttributesStr);
                 self_destruct();
             }
-            
+
             /* an acl must use consistent attributes in all config lines */
             if (attribute) {
                 if (strcasecmp(newAttribute, attribute) != 0) {
