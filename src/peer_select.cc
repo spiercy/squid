@@ -46,6 +46,7 @@
 #include "icmp/net_db.h"
 #include "ICP.h"
 #include "ipcache.h"
+#include "ip/tools.h"
 #include "Mem.h"
 #include "neighbors.h"
 #include "peer_sourcehash.h"
@@ -72,8 +73,8 @@ static IRCB peerHandlePingReply;
 static void peerSelectStateFree(ps_state * psstate);
 static void peerIcpParentMiss(CachePeer *, icp_common_t *, ps_state *);
 #if USE_HTCP
-static void peerHtcpParentMiss(CachePeer *, htcpReplyData *, ps_state *);
-static void peerHandleHtcpReply(CachePeer *, peer_t, htcpReplyData *, void *);
+static void peerHtcpParentMiss(CachePeer *, HtcpReplyData *, ps_state *);
+static void peerHandleHtcpReply(CachePeer *, peer_t, HtcpReplyData *, void *);
 #endif
 static int peerCheckNetdbDirect(ps_state * psstate);
 static void peerGetSomeNeighbor(ps_state *);
@@ -238,15 +239,18 @@ peerSelectDnsPaths(ps_state *psstate)
     const bool useOriginalDst = Config.onoff.client_dst_passthru || !req->flags.hostVerified;
     const bool choseDirect = fs && fs->code == HIER_DIRECT;
     if (isIntercepted && useOriginalDst && choseDirect) {
-        // construct a "result" adding the ORIGINAL_DST to the set instead of DIRECT
-        Comm::ConnectionPointer p = new Comm::Connection();
-        p->remote = req->clientConnectionManager->clientConnection->local;
-        p->peerType = fs->code;
-        p->setPeer(fs->_peer);
+        // check the client is still around before using any of its details
+        if (req->clientConnectionManager.valid()) {
+            // construct a "result" adding the ORIGINAL_DST to the set instead of DIRECT
+            Comm::ConnectionPointer p = new Comm::Connection();
+            p->remote = req->clientConnectionManager->clientConnection->local;
+            p->peerType = fs->code;
+            p->setPeer(fs->_peer);
 
-        // check for a configured outgoing address for this destination...
-        getOutgoingAddress(psstate->request, p);
-        psstate->paths->push_back(p);
+            // check for a configured outgoing address for this destination...
+            getOutgoingAddress(psstate->request, p);
+            psstate->paths->push_back(p);
+        }
 
         // clear the used fs and continue
         psstate->servers = fs->next;
@@ -348,6 +352,14 @@ peerSelectDnsResults(const ipcache_addrs *ia, const DnsLookupDetails &details, v
 
             p = new Comm::Connection();
             p->remote = ia->in_addrs[n];
+
+            // when IPv6 is disabled we cannot use it
+            if (!Ip::EnableIpv6 && p->remote.IsIPv6()) {
+                const char *host = (fs->_peer ? fs->_peer->host : psstate->request->GetHost());
+                ipcacheMarkBadAddr(host, p->remote);
+                continue;
+            }
+
             if (fs->_peer)
                 p->remote.SetPort(fs->_peer->http_port);
             else
@@ -836,7 +848,7 @@ peerHandleIcpReply(CachePeer * p, peer_t type, icp_common_t * header, void *data
 
 #if USE_HTCP
 static void
-peerHandleHtcpReply(CachePeer * p, peer_t type, htcpReplyData * htcp, void *data)
+peerHandleHtcpReply(CachePeer * p, peer_t type, HtcpReplyData * htcp, void *data)
 {
     ps_state *psstate = (ps_state *)data;
     debugs(44, 3, "peerHandleHtcpReply: " <<
@@ -861,7 +873,7 @@ peerHandleHtcpReply(CachePeer * p, peer_t type, htcpReplyData * htcp, void *data
 }
 
 static void
-peerHtcpParentMiss(CachePeer * p, htcpReplyData * htcp, ps_state * ps)
+peerHtcpParentMiss(CachePeer * p, HtcpReplyData * htcp, ps_state * ps)
 {
     int rtt;
 
@@ -910,7 +922,7 @@ peerHandlePingReply(CachePeer * p, peer_t type, AnyP::ProtocolType proto, void *
 #if USE_HTCP
 
     else if (proto == AnyP::PROTO_HTCP)
-        peerHandleHtcpReply(p, type, (htcpReplyData *)pingdata, data);
+        peerHandleHtcpReply(p, type, (HtcpReplyData *)pingdata, data);
 
 #endif
 

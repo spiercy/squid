@@ -1088,14 +1088,15 @@ htcpHandleTst(htcpDataHeader * hdr, char *buf, int sz, Ip::Address &from)
         htcpHandleTstResponse(hdr, buf, sz, from);
 }
 
-HtcpReplyData::HtcpReplyData() : hdr(hoHtcpReply)
+HtcpReplyData::HtcpReplyData() :
+        hit(0), hdr(hoHtcpReply), msg_id(0), version(0.0)
 {}
 
 static void
 
 htcpHandleTstResponse(htcpDataHeader * hdr, char *buf, int sz, Ip::Address &from)
 {
-    htcpReplyData htcpReply;
+    HtcpReplyData htcpReply;
     cache_key *key = NULL;
 
     Ip::Address *peer;
@@ -1180,14 +1181,13 @@ htcpHandleTstRequest(htcpDataHeader * dhdr, char *buf, int sz, Ip::Address &from
     /* s is a new object */
     s = htcpUnpackSpecifier(buf, sz);
 
-    s->setFrom(from);
-
-    s->setDataHeader(dhdr);
-
-    if (NULL == s) {
+    if (s == NULL) {
         debugs(31, 3, "htcpHandleTstRequest: htcpUnpackSpecifier failed");
         htcpLogHtcp(from, dhdr->opcode, LOG_UDP_INVALID, dash_str);
         return;
+    } else {
+        s->setFrom(from);
+        s->setDataHeader(dhdr);
     }
 
     if (!s->request) {

@@ -277,16 +277,23 @@ self_destruct(void)
 static void
 update_maxobjsize(void)
 {
-    int i;
     int64_t ms = -1;
 
-    for (i = 0; i < Config.cacheSwap.n_configured; ++i) {
+    // determine the maximum size object that can be stored to disk
+    for (int i = 0; i < Config.cacheSwap.n_configured; ++i) {
         assert (Config.cacheSwap.swapDirs[i].getRaw());
 
-        if (dynamic_cast<SwapDir *>(Config.cacheSwap.swapDirs[i].getRaw())->
-                max_objsize > ms)
-            ms = dynamic_cast<SwapDir *>(Config.cacheSwap.swapDirs[i].getRaw())->max_objsize;
+        const int64_t storeMax = dynamic_cast<SwapDir *>(Config.cacheSwap.swapDirs[i].getRaw())->maxObjectSize();
+        if (ms < storeMax)
+            ms = storeMax;
     }
+
+    // Ensure that we do not discard objects which could be stored only in memory.
+    // It is governed by maximum_object_size_in_memory (for now)
+    // TODO: update this to check each in-memory location (SMP and local memory limits differ)
+    if (ms < static_cast<int64_t>(Config.Store.maxInMemObjSize))
+        ms = Config.Store.maxInMemObjSize;
+
     store_maxobjsize = ms;
 }
 
@@ -1018,6 +1025,12 @@ parseTimeLine(time_msec_t * tptr, const char *units,  bool allowMsec)
         self_destruct();
 
     *tptr = static_cast<time_msec_t>(m * d);
+
+    if (static_cast<double>(*tptr) * 2 != m * d * 2) {
+        debugs(3, DBG_CRITICAL, "ERROR: Invalid value '" <<
+               d << " " << token << ": integer overflow (time_msec_t).");
+        self_destruct();
+    }
 }
 
 static uint64_t
@@ -1098,8 +1111,11 @@ parseBytesLine64(int64_t * bptr, const char *units)
 
     *bptr = static_cast<int64_t>(m * d / u);
 
-    if (static_cast<double>(*bptr) * 2 != m * d / u * 2)
+    if (static_cast<double>(*bptr) * 2 != (m * d / u) * 2) {
+        debugs(3, DBG_CRITICAL, "ERROR: Invalid value '" <<
+               d << " " << token << ": integer overflow (int64_t).");
         self_destruct();
+    }
 }
 
 static void
@@ -1142,8 +1158,11 @@ parseBytesLine(size_t * bptr, const char *units)
 
     *bptr = static_cast<size_t>(m * d / u);
 
-    if (static_cast<double>(*bptr) * 2 != m * d / u * 2)
+    if (static_cast<double>(*bptr) * 2 != (m * d / u) * 2) {
+        debugs(3, DBG_CRITICAL, "ERROR: Invalid value '" <<
+               d << " " << token << ": integer overflow (size_t).");
         self_destruct();
+    }
 }
 
 #if !USE_DNSHELPER
@@ -1185,10 +1204,13 @@ parseBytesLineSigned(ssize_t * bptr, const char *units)
         return;
     }
 
-    *bptr = static_cast<size_t>(m * d / u);
+    *bptr = static_cast<ssize_t>(m * d / u);
 
-    if (static_cast<double>(*bptr) * 2 != m * d / u * 2)
+    if (static_cast<double>(*bptr) * 2 != (m * d / u) * 2) {
+        debugs(3, DBG_CRITICAL, "ERROR: Invalid value '" <<
+               d << " " << token << ": integer overflow (ssize_t).");
         self_destruct();
+    }
 }
 #endif
 
@@ -1225,7 +1247,7 @@ static void parseBytesOptionValue(size_t * bptr, const char *units, char const *
     }
 
     *bptr = static_cast<size_t>(m * d / u);
-    if (static_cast<double>(*bptr) * 2 != m * d / u * 2)
+    if (static_cast<double>(*bptr) * 2 != (m * d / u) * 2)
         self_destruct();
 }
 #endif
@@ -2267,7 +2289,7 @@ parse_peer(CachePeer ** head)
             safe_free(p->sslkey);
             p->sslkey = xstrdup(token + 7);
         } else if (strncmp(token, "sslversion=", 11) == 0) {
-            p->sslversion = atoi(token + 11);
+            p->sslversion = xatoi(token + 11);
         } else if (strncmp(token, "ssloptions=", 11) == 0) {
             safe_free(p->ssloptions);
             p->ssloptions = xstrdup(token + 11);
@@ -2282,7 +2304,7 @@ parse_peer(CachePeer ** head)
             p->sslcapath = xstrdup(token + 10);
         } else if (strncmp(token, "sslcrlfile=", 11) == 0) {
             safe_free(p->sslcrlfile);
-            p->sslcapath = xstrdup(token + 10);
+            p->sslcrlfile = xstrdup(token + 11);
         } else if (strncmp(token, "sslflags=", 9) == 0) {
             safe_free(p->sslflags);
             p->sslflags = xstrdup(token + 9);
@@ -2598,10 +2620,20 @@ parse_onoff(int *var)
     if (token == NULL)
         self_destruct();
 
-    if (!strcasecmp(token, "on") || !strcasecmp(token, "enable"))
+    if (!strcasecmp(token, "on")) {
         *var = 1;
-    else
+    } else if (!strcasecmp(token, "enable")) {
+        debugs(0, DBG_PARSE_NOTE(DBG_IMPORTANT), "WARNING: 'enable' is deprecated. Please update to use 'on'.");
+        *var = 1;
+    } else if (!strcasecmp(token, "off")) {
         *var = 0;
+    } else if (!strcasecmp(token, "disable")) {
+        debugs(0, DBG_PARSE_NOTE(DBG_IMPORTANT), "WARNING: 'disable' is deprecated. Please update to use 'off'.");
+        *var = 0;
+    } else {
+        debugs(0, DBG_PARSE_NOTE(DBG_IMPORTANT), "ERROR: Invalid option: Boolean options can only be 'on' or 'off'.");
+        self_destruct();
+    }
 }
 
 #define free_onoff free_int
@@ -2629,12 +2661,22 @@ parse_tristate(int *var)
     if (token == NULL)
         self_destruct();
 
-    if (!strcasecmp(token, "on") || !strcasecmp(token, "enable"))
+    if (!strcasecmp(token, "on")) {
         *var = 1;
-    else if (!strcasecmp(token, "warn"))
+    } else if (!strcasecmp(token, "enable")) {
+        debugs(0, DBG_PARSE_NOTE(DBG_IMPORTANT), "WARNING: 'enable' is deprecated. Please update to use value 'on'.");
+        *var = 1;
+    } else if (!strcasecmp(token, "warn")) {
         *var = -1;
-    else
+    } else if (!strcasecmp(token, "off")) {
         *var = 0;
+    } else if (!strcasecmp(token, "disable")) {
+        debugs(0, DBG_PARSE_NOTE(DBG_IMPORTANT), "WARNING: 'disable' is deprecated. Please update to use value 'off'.");
+        *var = 0;
+    } else {
+        debugs(0, DBG_PARSE_NOTE(DBG_IMPORTANT), "ERROR: Invalid option: Tristate options can only be 'on', 'off', or 'warn'.");
+        self_destruct();
+    }
 }
 
 #define free_tristate free_int
@@ -2758,7 +2800,7 @@ parse_refreshpattern(RefreshPattern ** head)
 
     min = (time_t) (i * 60);	/* convert minutes to seconds */
 
-    i = GetInteger();		/* token: pct */
+    i = GetPercentage();	/* token: pct */
 
     pct = (double) i / 100.0;
 
@@ -2783,7 +2825,7 @@ parse_refreshpattern(RefreshPattern ** head)
         } else if (!strcmp(token, "store-stale")) {
             store_stale = 1;
         } else if (!strncmp(token, "max-stale=", 10)) {
-            max_stale = atoi(token + 10);
+            max_stale = xatoi(token + 10);
 #if USE_HTTP_VIOLATIONS
 
         } else if (!strcmp(token, "override-expire"))
@@ -3224,8 +3266,10 @@ parse_uri_whitespace(int *var)
         *var = URI_WHITESPACE_ENCODE;
     else if (!strcasecmp(token, "chop"))
         *var = URI_WHITESPACE_CHOP;
-    else
+    else {
+        debugs(0, DBG_PARSE_NOTE(2), "ERROR: Invalid option '" << token << "': 'uri_whitespace' accepts 'strip', 'deny', 'allow', 'encode', and 'chop'.");
         self_destruct();
+    }
 }
 
 static void
@@ -3336,8 +3380,10 @@ parse_memcachemode(SquidConfig * config)
     } else if (strcmp(token, "never") == 0) {
         Config.onoff.memory_cache_first = 0;
         Config.onoff.memory_cache_disk = 0;
-    } else
+    } else {
+        debugs(0, DBG_PARSE_NOTE(2), "ERROR: Invalid option '" << token << "': 'memory_cache_mode' accepts 'always', 'disk', 'network', and 'never'.");
         self_destruct();
+    }
 }
 
 static void
@@ -3474,8 +3520,8 @@ parsePortSpecification(AnyP::PortCfg * s, char *token)
         *t = '\0';
         port = xatos(t + 1);
 
-    } else if ((port = strtol(token, &junk, 10)), !*junk) {
-        /* port */
+    } else if (strtol(token, &junk, 10) && !*junk) {
+        port = xatos(token);
         debugs(3, 3, s->protocol << "_port: found Listen on Port: " << port);
     } else {
         debugs(3, DBG_CRITICAL, s->protocol << "_port: missing Port: " << token);
@@ -3640,16 +3686,16 @@ parse_port_option(AnyP::PortCfg * s, char *token)
     } else if (strncmp(token, "tcpkeepalive=", 13) == 0) {
         char *t = token + 13;
         s->tcp_keepalive.enabled = 1;
-        s->tcp_keepalive.idle = atoi(t);
+        s->tcp_keepalive.idle = xatoui(t);
         t = strchr(t, ',');
         if (t) {
             ++t;
-            s->tcp_keepalive.interval = atoi(t);
+            s->tcp_keepalive.interval = xatoui(t);
             t = strchr(t, ',');
         }
         if (t) {
             ++t;
-            s->tcp_keepalive.timeout = atoi(t);
+            s->tcp_keepalive.timeout = xatoui(t);
             // t = strchr(t, ','); // not really needed, left in as documentation
         }
 #if USE_SSL
@@ -3706,6 +3752,7 @@ parse_port_option(AnyP::PortCfg * s, char *token)
         parseBytesOptionValue(&s->dynamicCertMemCacheSize, B_BYTES_STR, token + 28);
 #endif
     } else {
+        debugs(3, DBG_CRITICAL, "FATAL: Unknown http(s)_port option '" << token << "'.");
         self_destruct();
     }
 }
@@ -4179,7 +4226,7 @@ dump_CpuAffinityMap(StoreEntry *const entry, const char *const name, const CpuAf
                               cpuAffinityMap->processes()[i]);
         }
         storeAppendPrintf(entry, " cores=");
-        for (size_t i = 0; i < cpuAffinityMap->processes().size(); ++i) {
+        for (size_t i = 0; i < cpuAffinityMap->cores().size(); ++i) {
             storeAppendPrintf(entry, "%s%i", (i ? "," : ""),
                               cpuAffinityMap->cores()[i]);
         }

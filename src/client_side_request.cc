@@ -1757,6 +1757,7 @@ ClientHttpRequest::handleAdaptedHeader(HttpMsg *msg)
 
         clientStreamNode *node = (clientStreamNode *)client_stream.tail->prev->data;
         clientReplyContext *repContext = dynamic_cast<clientReplyContext *>(node->data.getRaw());
+        assert(repContext);
         repContext->createStoreEntry(request->method, request->flags);
 
         EBIT_CLR(storeEntry()->flags, ENTRY_FWD_HDR_WAIT);
@@ -1910,7 +1911,8 @@ ClientHttpRequest::handleAdaptationFailure(int errDetail, bool bypassable)
 #endif
         calloutContext->error->detailError(errDetail);
         calloutContext->readNextRequest = true;
-        c->expectNoForwarding();
+        if (c != NULL)
+            c->expectNoForwarding();
         doCallouts();
     }
     //else if(calloutContext == NULL) is it possible?

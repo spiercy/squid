@@ -712,7 +712,8 @@ ClientHttpRequest::logRequest()
         if (request)
             al->adapted_request = HTTPMSGLOCK(request);
         accessLogLog(al, checklist);
-        updateCounters();
+        if (request)
+            updateCounters();
 
         if (getConn() != NULL && getConn()->clientConnection != NULL)
             clientdbUpdate(getConn()->clientConnection->remote, logType, AnyP::PROTO_HTTP, out.size);
@@ -2138,14 +2139,18 @@ prepareTransparentURL(ConnStateData * conn, ClientHttpRequest *http, char *url, 
     }
 }
 
-/**
- *  parseHttpRequest()
+/** Parse an HTTP request
  *
- *  Returns
- *  NULL on incomplete requests
- *  a ClientSocketContext structure on success or failure.
- *  Sets result->flags.parsed_ok to 0 if failed to parse the request.
- *  Sets result->flags.parsed_ok to 1 if we have a good request.
+ *  \note Sets result->flags.parsed_ok to 0 if failed to parse the request,
+ *          to 1 if the request was correctly parsed.
+ *  \param[in] csd a ConnStateData. The caller must make sure it is not null
+ *  \param[in] hp an HttpParser
+ *  \param[out] mehtod_p will be set as a side-effect of the parsing.
+ *          Pointed-to value will be set to Http::METHOD_NONE in case of
+ *          parsing failure
+ *  \param[out] http_ver will be set as a side-effect of the parsing
+ *  \return NULL on incomplete requests,
+ *          a ClientSocketContext structure on success or failure.
  */
 static ClientSocketContext *
 parseHttpRequest(ConnStateData *csd, HttpParser *hp, HttpRequestMethod * method_p, HttpVersion *http_ver)
@@ -2221,7 +2226,7 @@ parseHttpRequest(ConnStateData *csd, HttpParser *hp, HttpRequestMethod * method_
     *method_p = HttpRequestMethod(&hp->buf[hp->req.m_start], &hp->buf[hp->req.m_end]+1);
 
     /* deny CONNECT via accelerated ports */
-    if (*method_p == METHOD_CONNECT && csd && csd->port && csd->port->accel) {
+    if (*method_p == METHOD_CONNECT && csd->port && csd->port->accel) {
         debugs(33, DBG_IMPORTANT, "WARNING: CONNECT method received on " << csd->port->protocol << " Accelerator port " << csd->port->s.GetPort() );
         /* XXX need a way to say "this many character length string" */
         debugs(33, DBG_IMPORTANT, "WARNING: for request: " << hp->buf);
@@ -2571,7 +2576,7 @@ static void
 clientProcessRequest(ConnStateData *conn, HttpParser *hp, ClientSocketContext *context, const HttpRequestMethod& method, HttpVersion http_ver)
 {
     ClientHttpRequest *http = context->http;
-    HttpRequest *request = NULL;
+    HttpRequest::Pointer request;
     bool notedUseOfBuffer = false;
     bool chunked = false;
     bool mustReplyToOptions = false;
@@ -3291,13 +3296,14 @@ connStateCreate(const Comm::ConnectionPointer &client, AnyP::PortCfg *port)
             (result->transparent() || port->disable_pmtu_discovery == DISABLE_PMTU_ALWAYS)) {
 #if defined(IP_MTU_DISCOVER) && defined(IP_PMTUDISC_DONT)
         int i = IP_PMTUDISC_DONT;
-        setsockopt(client->fd, SOL_IP, IP_MTU_DISCOVER, &i, sizeof i);
+        if (setsockopt(client->fd, SOL_IP, IP_MTU_DISCOVER, &i, sizeof(i)) < 0)
+            debugs(33, 2, "WARNING: Path MTU discovery disabling failed on " << client << " : " << xstrerror());
 #else
-        static int reported = 0;
+        static bool reported = false;
 
         if (!reported) {
-            debugs(33, DBG_IMPORTANT, "Notice: httpd_accel_no_pmtu_disc not supported on your platform");
-            reported = 1;
+            debugs(33, DBG_IMPORTANT, "NOTICE: Path MTU discovery disabling is not supported on your platform.");
+            reported = true;
         }
 #endif
     }
