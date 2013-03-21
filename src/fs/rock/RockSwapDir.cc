@@ -30,7 +30,9 @@
 
 const int64_t Rock::SwapDir::HeaderSize = 16*1024;
 
-Rock::SwapDir::SwapDir(): ::SwapDir("rock"), filePath(NULL), io(NULL), map(NULL)
+Rock::SwapDir::SwapDir(): ::SwapDir("rock"), 
+    slotSize(HeaderSize), filePath(NULL), map(NULL), io(NULL),
+    waitingForPage(NULL)
 {
 }
 
@@ -62,11 +64,11 @@ Rock::SwapDir::get(const cache_key *key)
         return NULL;
 
     sfileno filen;
-    const Ipc::StoreMapSlot *const slot = map->openForReading(key, filen);
+    const Ipc::StoreMapAnchor *const slot = map->openForReading(key, filen);
     if (!slot)
         return NULL;
 
-    const Ipc::StoreMapSlot::Basics &basics = slot->basics;
+    const Ipc::StoreMapAnchor::Basics &basics = slot->basics;
 
     // create a brand new store entry and initialize it with stored basics
     StoreEntry *e = new StoreEntry();
@@ -115,7 +117,10 @@ void Rock::SwapDir::disconnect(StoreEntry &e)
 uint64_t
 Rock::SwapDir::currentSize() const
 {
-    return HeaderSize + max_objsize * currentCount();
+    const uint64_t spaceSize = !freeSlots ?
+        maxSize() : (slotSize * freeSlots->size());
+    // everything that is not free is in use
+    return maxSize() - spaceSize;
 }
 
 uint64_t
@@ -142,7 +147,7 @@ int64_t
 Rock::SwapDir::entryLimitAllowed() const
 {
     const int64_t eLimitLo = map ? map->entryLimit() : 0; // dynamic shrinking unsupported
-    const int64_t eWanted = (maxSize() - HeaderSize)/maxObjectSize();
+    const int64_t eWanted = (maxSize() - HeaderSize)/slotSize;
     return min(max(eLimitLo, eWanted), entryLimitHigh());
 }
 
@@ -175,51 +180,43 @@ Rock::SwapDir::create()
         // no need to distinguish ENOENT from other possible stat() errors.
         debugs (47, DBG_IMPORTANT, "Creating Rock db directory: " << path);
         const int res = mkdir(path, 0700);
-        if (res != 0) {
-            debugs(47, DBG_CRITICAL, "Failed to create Rock db dir " << path <<
-                   ": " << xstrerror());
-            fatal("Rock Store db creation error");
-        }
+        if (res != 0)
+            createError("mkdir");
     }
 
     debugs (47, DBG_IMPORTANT, "Creating Rock db: " << filePath);
+    const int swap = open(filePath, O_WRONLY|O_CREAT|O_TRUNC|O_BINARY, 0600);
+    if (swap < 0)
+        createError("create");
+
 #if SLOWLY_FILL_WITH_ZEROS
     char block[1024];
     Must(maxSize() % sizeof(block) == 0);
     memset(block, '\0', sizeof(block));
 
-    const int swap = open(filePath, O_WRONLY|O_CREAT|O_TRUNC|O_BINARY, 0600);
     for (off_t offset = 0; offset < maxSize(); offset += sizeof(block)) {
-        if (write(swap, block, sizeof(block)) != sizeof(block)) {
-            debugs(47, DBG_CRITICAL, "ERROR: Failed to create Rock Store db in " << filePath <<
-                   ": " << xstrerror());
-            fatal("Rock Store db creation error");
-        }
+        if (write(swap, block, sizeof(block)) != sizeof(block))
+            createError("write");
     }
-    close(swap);
 #else
-    const int swap = open(filePath, O_WRONLY|O_CREAT|O_TRUNC|O_BINARY, 0600);
-    if (swap < 0) {
-        debugs(47, DBG_CRITICAL, "ERROR: Failed to initialize Rock Store db in " << filePath <<
-               "; create error: " << xstrerror());
-        fatal("Rock Store db creation error");
-    }
-
-    if (ftruncate(swap, maxSize()) != 0) {
-        debugs(47, DBG_CRITICAL, "ERROR: Failed to initialize Rock Store db in " << filePath <<
-               "; truncate error: " << xstrerror());
-        fatal("Rock Store db creation error");
-    }
+    if (ftruncate(swap, maxSize()) != 0)
+        createError("truncate");
 
     char header[HeaderSize];
     memset(header, '\0', sizeof(header));
-    if (write(swap, header, sizeof(header)) != sizeof(header)) {
-        debugs(47, DBG_CRITICAL, "ERROR: Failed to initialize Rock Store db in " << filePath <<
-               "; write error: " << xstrerror());
-        fatal("Rock Store db initialization error");
-    }
-    close(swap);
+    if (write(swap, header, sizeof(header)) != sizeof(header))
+        createError("write");
 #endif
+
+    close(swap);
+}
+
+// report Rock DB creation error and exit
+void
+Rock::SwapDir::createError(const char *const msg) {
+    debugs(47, DBG_CRITICAL, "ERROR: Failed to initialize Rock Store db in " <<
+           filePath << "; " << msg << " error: " << xstrerror());
+    fatal("Rock Store db creation error");
 }
 
 void
@@ -231,8 +228,11 @@ Rock::SwapDir::init()
     // are refcounted. We up our count once to avoid implicit delete's.
     lock();
 
+    freeSlots = shm_old(Ipc::Mem::PageStack)(freeSlotsPath());
+
     Must(!map);
-    map = new DirMap(path);
+    map = new DirMap(inodeMapPath());
+    map->cleaner = this;
 
     const char *ioModule = needsDiskStrand() ? "IpcIo" : "Blocking";
     if (DiskIOModule *m = DiskIOModule::Find(ioModule)) {
@@ -318,6 +318,7 @@ Rock::SwapDir::getOptionTree() const
 {
     ConfigOptionVector *vector = dynamic_cast<ConfigOptionVector*>(::SwapDir::getOptionTree());
     assert(vector);
+    vector->options.push_back(new ConfigOptionAdapter<SwapDir>(*const_cast<SwapDir *>(this), &SwapDir::parseSizeOption, &SwapDir::dumpSizeOption));
     vector->options.push_back(new ConfigOptionAdapter<SwapDir>(*const_cast<SwapDir *>(this), &SwapDir::parseTimeOption, &SwapDir::dumpTimeOption));
     vector->options.push_back(new ConfigOptionAdapter<SwapDir>(*const_cast<SwapDir *>(this), &SwapDir::parseRateOption, &SwapDir::dumpRateOption));
     return vector;
@@ -326,7 +327,7 @@ Rock::SwapDir::getOptionTree() const
 bool
 Rock::SwapDir::allowOptionReconfigure(const char *const option) const
 {
-    return strcmp(option, "max-size") != 0 &&
+    return strcmp(option, "slot-size") != 0 &&
            ::SwapDir::allowOptionReconfigure(option);
 }
 
@@ -335,7 +336,7 @@ bool
 Rock::SwapDir::parseTimeOption(char const *option, const char *value, int reconfig)
 {
     // TODO: ::SwapDir or, better, Config should provide time-parsing routines,
-    // including time unit handling. Same for size.
+    // including time unit handling. Same for size and rate.
 
     time_msec_t *storedTime;
     if (strcmp(option, "swap-timeout") == 0)
@@ -421,17 +422,60 @@ Rock::SwapDir::dumpRateOption(StoreEntry * e) const
         storeAppendPrintf(e, " max-swap-rate=%d", fileConfig.ioRate);
 }
 
+/// parses size-specific options; mimics ::SwapDir::optionObjectSizeParse()
+bool
+Rock::SwapDir::parseSizeOption(char const *option, const char *value, int reconfig)
+{
+    uint64_t *storedSize;
+    if (strcmp(option, "slot-size") == 0)
+        storedSize = &slotSize;
+    else
+        return false;
+
+    if (!value)
+        self_destruct();
+
+    // TODO: handle size units and detect parsing errors better
+    const uint64_t newSize = strtoll(value, NULL, 10);
+    if (newSize <= 0) {
+        debugs(3, DBG_CRITICAL, "FATAL: cache_dir " << path << ' ' << option << " must be positive; got: " << newSize);
+        self_destruct();
+    }
+
+    if (newSize <= sizeof(DbCellHeader)) {
+        debugs(3, DBG_CRITICAL, "FATAL: cache_dir " << path << ' ' << option << " must exceed " << sizeof(DbCellHeader) << "; got: " << newSize);
+        self_destruct();
+    }
+
+    if (!reconfig)
+        *storedSize = newSize;
+    else if (*storedSize != newSize) {
+        debugs(3, DBG_IMPORTANT, "WARNING: cache_dir " << path << ' ' << option
+               << " cannot be changed dynamically, value left unchanged: " <<
+               *storedSize);
+    }
+
+    return true;
+}
+
+/// reports size-specific options; mimics ::SwapDir::optionObjectSizeDump()
+void
+Rock::SwapDir::dumpSizeOption(StoreEntry * e) const
+{
+    storeAppendPrintf(e, " slot-size=%" PRId64, slotSize);
+}
+
 /// check the results of the configuration; only level-0 debugging works here
 void
 Rock::SwapDir::validateOptions()
 {
-    if (max_objsize <= 0)
-        fatal("Rock store requires a positive max-size");
+    if (slotSize <= 0)
+        fatal("Rock store requires a positive slot-size");
 
     const int64_t maxSizeRoundingWaste = 1024 * 1024; // size is configured in MB
-    const int64_t maxObjectSizeRoundingWaste = maxObjectSize();
+    const int64_t slotSizeRoundingWaste = slotSize;
     const int64_t maxRoundingWaste =
-        max(maxSizeRoundingWaste, maxObjectSizeRoundingWaste);
+        max(maxSizeRoundingWaste, slotSizeRoundingWaste);
     const int64_t usableDiskSize = diskOffset(entryLimitAllowed());
     const int64_t diskWasteSize = maxSize() - usableDiskSize;
     Must(diskWasteSize >= 0);
@@ -441,7 +485,7 @@ Rock::SwapDir::validateOptions()
             diskWasteSize >= maxRoundingWaste) {
         debugs(47, DBG_CRITICAL, "Rock store cache_dir[" << index << "] '" << path << "':");
         debugs(47, DBG_CRITICAL, "\tmaximum number of entries: " << entryLimitAllowed());
-        debugs(47, DBG_CRITICAL, "\tmaximum object size: " << maxObjectSize() << " Bytes");
+        debugs(47, DBG_CRITICAL, "\tdb slot size: " << slotSize << " Bytes");
         debugs(47, DBG_CRITICAL, "\tmaximum db size: " << maxSize() << " Bytes");
         debugs(47, DBG_CRITICAL, "\tusable db size:  " << usableDiskSize << " Bytes");
         debugs(47, DBG_CRITICAL, "\tdisk space waste: " << diskWasteSize << " Bytes");
@@ -454,28 +498,6 @@ Rock::SwapDir::rebuild()
 {
     //++StoreController::store_dirs_rebuilding; // see Rock::SwapDir::init()
     AsyncJob::Start(new Rebuild(this));
-}
-
-/* Add a new object to the cache with empty memory copy and pointer to disk
- * use to rebuild store from disk. Based on UFSSwapDir::addDiskRestore */
-bool
-Rock::SwapDir::addEntry(const int filen, const DbCellHeader &header, const StoreEntry &from)
-{
-    debugs(47, 8, HERE << &from << ' ' << from.getMD5Text() <<
-           ", filen="<< std::setfill('0') << std::hex << std::uppercase <<
-           std::setw(8) << filen);
-
-    sfileno newLocation = 0;
-    if (Ipc::StoreMapSlot *slot = map->openForWriting(reinterpret_cast<const cache_key *>(from.key), newLocation)) {
-        if (filen == newLocation) {
-            slot->set(from);
-            map->extras(filen) = header;
-        } // else some other, newer entry got into our cell
-        map->closeForWriting(newLocation, false);
-        return filen == newLocation;
-    }
-
-    return false;
 }
 
 bool
@@ -513,42 +535,31 @@ Rock::SwapDir::createStoreIO(StoreEntry &e, StoreIOState::STFNCB *cbFile, StoreI
         return NULL;
     }
 
-    // compute payload size for our cell header, using StoreEntry info
-    // careful: e.objectLen() may still be negative here
-    const int64_t expectedReplySize = e.mem_obj->expectedReplySize();
-    assert(expectedReplySize >= 0); // must know to prevent cell overflows
-    assert(e.mem_obj->swap_hdr_sz > 0);
-    DbCellHeader header;
-    header.payloadSize = e.mem_obj->swap_hdr_sz + expectedReplySize;
-    const int64_t payloadEnd = sizeof(DbCellHeader) + header.payloadSize;
-    assert(payloadEnd <= max_objsize);
-
     sfileno filen;
-    Ipc::StoreMapSlot *const slot =
+    Ipc::StoreMapAnchor *const slot =
         map->openForWriting(reinterpret_cast<const cache_key *>(e.key), filen);
     if (!slot) {
         debugs(47, 5, HERE << "map->add failed");
         return NULL;
     }
-    e.swap_file_sz = header.payloadSize; // and will be copied to the map
+
+    assert(filen >= 0);
     slot->set(e);
-    map->extras(filen) = header;
 
     // XXX: We rely on our caller, storeSwapOutStart(), to set e.fileno.
     // If that does not happen, the entry will not decrement the read level!
 
-    IoState *sio = new IoState(this, &e, cbFile, cbIo, data);
+    Rock::SwapDir::Pointer self(this);
+    IoState *sio = new IoState(self, &e, cbFile, cbIo, data);
 
     sio->swap_dirn = index;
     sio->swap_filen = filen;
-    sio->payloadEnd = payloadEnd;
-    sio->diskOffset = diskOffset(sio->swap_filen);
+    sio->writeableAnchor_ = slot;
 
     debugs(47,5, HERE << "dir " << index << " created new filen " <<
            std::setfill('0') << std::hex << std::uppercase << std::setw(8) <<
-           sio->swap_filen << std::dec << " at " << sio->diskOffset);
-
-    assert(sio->diskOffset + payloadEnd <= diskOffsetLimit());
+           sio->swap_filen << std::dec << " starting at " <<
+           diskOffset(sio->swap_filen));
 
     sio->file(theFile);
 
@@ -560,7 +571,14 @@ int64_t
 Rock::SwapDir::diskOffset(int filen) const
 {
     assert(filen >= 0);
-    return HeaderSize + max_objsize*filen;
+    return HeaderSize + slotSize*filen;
+}
+
+int64_t
+Rock::SwapDir::diskOffset(Ipc::Mem::PageId &pageId) const
+{
+    assert(pageId);
+    return diskOffset(pageId.number - 1);
 }
 
 int64_t
@@ -570,7 +588,63 @@ Rock::SwapDir::diskOffsetLimit() const
     return diskOffset(map->entryLimit());
 }
 
-// tries to open an old or being-written-to entry with swap_filen for reading
+int
+Rock::SwapDir::entryMaxPayloadSize() const
+{
+    return slotSize - sizeof(DbCellHeader);
+}
+
+int
+Rock::SwapDir::entriesNeeded(const int64_t objSize) const
+{
+    return (objSize + entryMaxPayloadSize() - 1) / entryMaxPayloadSize();
+}
+
+bool
+Rock::SwapDir::useFreeSlot(Ipc::Mem::PageId &pageId)
+{
+    if (freeSlots->pop(pageId)) {
+        debugs(47, 5, "got a previously free slot: " << pageId);
+        return true;
+    }
+
+    // catch free slots delivered to noteFreeMapSlice()
+    assert(!waitingForPage);
+    waitingForPage = &pageId;
+    if (map->purgeOne()) {
+        assert(!waitingForPage); // noteFreeMapSlice() should have cleared it
+        assert(pageId.set());
+        debugs(47, 5, "got a previously busy slot: " << pageId);
+        return true;
+    }
+    assert(waitingForPage == &pageId);
+    waitingForPage = NULL;
+
+    debugs(47, 3, "cannot get a slot; entries: " << map->entryCount());
+    return false;
+}
+
+bool
+Rock::SwapDir::validSlotId(const SlotId slotId) const
+{
+    return 0 <= slotId && slotId < entryLimitAllowed();
+}
+
+void
+Rock::SwapDir::noteFreeMapSlice(const sfileno sliceId)
+{
+    Ipc::Mem::PageId pageId;
+    pageId.pool = index+1;
+    pageId.number = sliceId+1;
+    if (waitingForPage) {
+        *waitingForPage = pageId;
+        waitingForPage = NULL;
+    } else {
+        freeSlots->push(pageId);
+    }
+}
+
+// tries to open an old entry with swap_filen for reading
 StoreIOState::Pointer
 Rock::SwapDir::openStoreIO(StoreEntry &e, StoreIOState::STFNCB *cbFile, StoreIOState::STIOCB *cbIo, void *data)
 {
@@ -595,28 +669,26 @@ Rock::SwapDir::openStoreIO(StoreEntry &e, StoreIOState::STFNCB *cbFile, StoreIOS
     // The are two ways an entry can get swap_filen: our get() locked it for
     // reading or our storeSwapOutStart() locked it for writing. Peeking at our
     // locked entry is safe, but no support for reading a filling entry.
-    const Ipc::StoreMapSlot *slot = map->peekAtReader(e.swap_filen);
+    const Ipc::StoreMapAnchor *slot = map->peekAtReader(e.swap_filen);
     if (!slot)
         return NULL; // we were writing afterall
 
-    IoState *sio = new IoState(this, &e, cbFile, cbIo, data);
+    Rock::SwapDir::Pointer self(this);
+    IoState *sio = new IoState(self, &e, cbFile, cbIo, data);
 
     sio->swap_dirn = index;
     sio->swap_filen = e.swap_filen;
-    sio->payloadEnd = sizeof(DbCellHeader) + map->extras(e.swap_filen).payloadSize;
-    assert(sio->payloadEnd <= max_objsize); // the payload fits the slot
+    sio->readableAnchor_ = slot;
+    sio->file(theFile);
 
     debugs(47,5, HERE << "dir " << index << " has old filen: " <<
            std::setfill('0') << std::hex << std::uppercase << std::setw(8) <<
            sio->swap_filen);
 
+    assert(slot->sameKey(static_cast<const cache_key*>(e.key)));
     assert(slot->basics.swap_file_sz > 0);
     assert(slot->basics.swap_file_sz == e.swap_file_sz);
 
-    sio->diskOffset = diskOffset(sio->swap_filen);
-    assert(sio->diskOffset + sio->payloadEnd <= diskOffsetLimit());
-
-    sio->file(theFile);
     return sio;
 }
 
@@ -652,7 +724,6 @@ Rock::SwapDir::readCompleted(const char *buf, int rlen, int errflag, RefCount< :
 
     if (errflag == DISK_OK && rlen > 0)
         sio->offset_ += rlen;
-    assert(sio->diskOffset + sio->offset_ <= diskOffsetLimit()); // post-factum
 
     StoreIOState::STRCB *callb = sio->read.callback;
     assert(callb);
@@ -670,25 +741,39 @@ Rock::SwapDir::writeCompleted(int errflag, size_t rlen, RefCount< ::WriteRequest
     assert(request->sio !=  NULL);
     IoState &sio = *request->sio;
 
-    if (errflag == DISK_OK) {
-        // close, assuming we only write once; the entry gets the read lock
-        map->closeForWriting(sio.swap_filen, true);
-        // do not increment sio.offset_ because we do it in sio->write()
-    } else {
-        // Do not abortWriting here. The entry should keep the write lock
-        // instead of losing association with the store and confusing core.
-        map->free(sio.swap_filen); // will mark as unusable, just in case
+    // quit if somebody called IoState::close() while we were waiting
+    if (!sio.stillWaiting()) {
+        debugs(79, 3, "ignoring closed entry " << sio.swap_filen);
+        return;
     }
 
-    assert(sio.diskOffset + sio.offset_ <= diskOffsetLimit()); // post-factum
+    if (errflag == DISK_OK) {
+        // do not increment sio.offset_ because we do it in sio->write()
+        if (request->isLast) {
+            // close, the entry gets the read lock
+            map->closeForWriting(sio.swap_filen, true);
+            sio.finishedWriting(errflag);
+        }
+    } else {
+        writeError(sio.swap_filen);
+        sio.finishedWriting(errflag);
+        // and hope that Core will call disconnect() to close the map entry
+    }
+}
 
-    sio.finishedWriting(errflag);
+void
+Rock::SwapDir::writeError(const sfileno fileno)
+{
+    // Do not abortWriting here. The entry should keep the write lock
+    // instead of losing association with the store and confusing core.
+    map->freeEntry(fileno); // will mark as unusable, just in case
+    // All callers must also call IoState callback, to propagate the error.
 }
 
 bool
 Rock::SwapDir::full() const
 {
-    return map && map->full();
+    return freeSlots != NULL && !freeSlots->size();
 }
 
 // storeSwapOutFileClosed calls this nethod on DISK_NO_SPACE_LEFT,
@@ -704,49 +789,10 @@ Rock::SwapDir::diskFull()
 void
 Rock::SwapDir::maintain()
 {
-    debugs(47,3, HERE << "cache_dir[" << index << "] guards: " <<
-           !repl << !map << !full() << StoreController::store_dirs_rebuilding);
-
-    if (!repl)
-        return; // no means (cannot find a victim)
-
-    if (!map)
-        return; // no victims (yet)
-
-    if (!full())
-        return; // no need (to find a victim)
-
-    // XXX: UFSSwapDir::maintain says we must quit during rebuild
-    if (StoreController::store_dirs_rebuilding)
-        return;
-
-    debugs(47,3, HERE << "cache_dir[" << index << "] state: " << map->full() <<
-           ' ' << currentSize() << " < " << diskOffsetLimit());
-
-    // Hopefully, we find a removable entry much sooner (TODO: use time?)
-    const int maxProbed = 10000;
-    RemovalPurgeWalker *walker = repl->PurgeInit(repl, maxProbed);
-
-    // It really should not take that long, but this will stop "infinite" loops
-    const int maxFreed = 1000;
-    int freed = 0;
-    // TODO: should we purge more than needed to minimize overheads?
-    for (; freed < maxFreed && full(); ++freed) {
-        if (StoreEntry *e = walker->Next(walker))
-            e->release(); // will call our unlink() method
-        else
-            break; // no more objects
-    }
-
-    debugs(47,2, HERE << "Rock cache_dir[" << index << "] freed " << freed <<
-           " scanned " << walker->scanned << '/' << walker->locked);
-
-    walker->Done(walker);
-
-    if (full()) {
-        debugs(47, DBG_CRITICAL, "ERROR: Rock cache_dir[" << index << "] " <<
-               "is still full after freeing " << freed << " entries. A bug?");
-    }
+    // The Store calls this to free some db space, but there is nothing wrong
+    // with a full() db, except when db has to shrink after reconfigure, and
+    // we do not support shrinking yet (it would have to purge specific slots).
+    // TODO: Disable maintain() requests when they are pointless.
 }
 
 void
@@ -780,7 +826,7 @@ Rock::SwapDir::unlink(StoreEntry &e)
 {
     debugs(47, 5, HERE << e);
     ignoreReferences(e);
-    map->free(e.swap_filen);
+    map->freeEntry(e.swap_filen);
     disconnect(e);
 }
 
@@ -817,6 +863,12 @@ Rock::SwapDir::statfs(StoreEntry &e) const
             storeAppendPrintf(&e, "Current entries: %9d %.2f%%\n",
                               entryCount, (100.0 * entryCount / limit));
 
+            const unsigned int slotsFree = !freeSlots ? 0 : freeSlots->size();
+            if (slotsFree <= static_cast<const unsigned int>(limit)) {
+                const int usedSlots = limit - static_cast<const int>(slotsFree);
+                storeAppendPrintf(&e, "Used slots:      %9d %.2f%%\n",
+                                  usedSlots, (100.0 * usedSlots / limit));
+            }
             if (limit < 100) { // XXX: otherwise too expensive to count
                 Ipc::ReadWriteLockStats stats;
                 map->updateStats(stats);
@@ -840,6 +892,22 @@ Rock::SwapDir::statfs(StoreEntry &e) const
 
 }
 
+const char *
+Rock::SwapDir::inodeMapPath() const {
+    static String inodesPath;
+    inodesPath = path;
+    inodesPath.append("_inodes");
+    return inodesPath.termedBuf();
+}
+
+const char *
+Rock::SwapDir::freeSlotsPath() const {
+    static String spacesPath;
+    spacesPath = path;
+    spacesPath.append("_spaces");
+    return spacesPath.termedBuf();
+}
+
 namespace Rock
 {
 RunnerRegistrationEntry(rrAfterConfig, SwapDirRr);
@@ -847,18 +915,36 @@ RunnerRegistrationEntry(rrAfterConfig, SwapDirRr);
 
 void Rock::SwapDirRr::create(const RunnerRegistry &)
 {
-    Must(owners.empty());
+    Must(mapOwners.empty() && freeSlotsOwners.empty());
     for (int i = 0; i < Config.cacheSwap.n_configured; ++i) {
         if (const Rock::SwapDir *const sd = dynamic_cast<Rock::SwapDir *>(INDEXSD(i))) {
-            Rock::SwapDir::DirMap::Owner *const owner =
-                Rock::SwapDir::DirMap::Init(sd->path, sd->entryLimitAllowed());
-            owners.push_back(owner);
+            const int64_t capacity = sd->entryLimitAllowed();
+
+            SwapDir::DirMap::Owner *const mapOwner =
+                SwapDir::DirMap::Init(sd->inodeMapPath(), capacity);
+            mapOwners.push_back(mapOwner);
+
+            // XXX: remove pool id and counters from PageStack
+            Ipc::Mem::Owner<Ipc::Mem::PageStack> *const freeSlotsOwner =
+                shm_new(Ipc::Mem::PageStack)(sd->freeSlotsPath(),
+                                             i+1, capacity,
+                                             sizeof(DbCellHeader));
+            freeSlotsOwners.push_back(freeSlotsOwner);
+
+            // XXX: add method to initialize PageStack with no free pages
+            while (true) {
+                Ipc::Mem::PageId pageId;
+                if (!freeSlotsOwner->object()->pop(pageId))
+                    break;
+            }
         }
     }
 }
 
 Rock::SwapDirRr::~SwapDirRr()
 {
-    for (size_t i = 0; i < owners.size(); ++i)
-        delete owners[i];
+    for (size_t i = 0; i < mapOwners.size(); ++i) {
+        delete mapOwners[i];
+        delete freeSlotsOwners[i];
+    }
 }
