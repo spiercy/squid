@@ -62,11 +62,21 @@
 #if HAVE_ERRNO_H
 #include <errno.h>
 #endif
+#if USE_SSL
+#include "ssl/PeerConnector.h"
+#endif
+
+// XXX: Temporary hack to avoid bootstrapping
+#include "ssl/PeerConnector.cc"
+
 
 class TunnelStateData
 {
 
 public:
+    // Required by CbcPointer<> used by cbdataDialer
+    // TODO: use CBDATA_CLASS2() instead
+    void *toCbdata() { return this; }
 
     class Connection;
     void *operator new(size_t);
@@ -121,9 +131,14 @@ public:
     Connection client, server;
     int *status_ptr;		/* pointer to status for logging */
     void copyRead(Connection &from, IOCB *completion);
+    void connectToPeer(); // should be protected
 
 private:
     CBDATA_CLASS(TunnelStateData);
+
+    void connectedToPeer(ErrorState *error);
+    static void ConnectedToPeer(TunnelStateData *tunnel, ErrorState *error);
+
     void copy (size_t len, comm_err_t errcode, int xerrno, Connection &from, Connection &to, IOCB *);
     void readServer(char *buf, size_t len, comm_err_t errcode, int xerrno);
     void readClient(char *buf, size_t len, comm_err_t errcode, int xerrno);
@@ -631,7 +646,7 @@ tunnelConnectDone(const Comm::ConnectionPointer &conn, comm_err_t status, int xe
     }
 
     if (tunnelState->request->flags.proxying)
-        tunnelRelayConnectRequest(conn, tunnelState);
+        tunnelState->connectToPeer();
     else {
         tunnelConnected(conn, tunnelState);
     }
@@ -704,6 +719,48 @@ tunnelStart(ClientHttpRequest * http, int64_t * size_ptr, int *status_ptr)
                NULL,
                tunnelPeerSelectComplete,
                tunnelState);
+}
+
+void
+TunnelStateData::connectToPeer() {
+    const Comm::ConnectionPointer &srv = server.conn;
+    if (CachePeer *p = srv->getPeer()) {
+        if (p->use_ssl) {
+            ErrorState *error = NULL;
+            AsyncCall::Pointer callback = asyncCall(5,4,
+                "TunnelStateData::ConnectedToPeer",
+                cbdataDialer(&TunnelStateData::ConnectedToPeer, this, error));
+            Ssl::PeerConnector *connector =
+                new Ssl::PeerConnector(request, srv, callback);
+            AsyncJob::Start(connector); // will call our callback
+            return;
+        }
+    }
+
+    tunnelRelayConnectRequest(srv, this);
+}
+
+/// Ssl::PeerConnector callback
+void
+TunnelStateData::connectedToPeer(ErrorState *error)
+{
+    debugs(26, 3, HERE << "error: " << error);
+    if (error) {
+        *status_ptr = error->httpStatus;
+        error->callback = tunnelErrorComplete;
+        error->callback_data = this;
+        errorSend(client.conn, error);
+        return;
+	}
+
+    tunnelRelayConnectRequest(server.conn, this);
+}
+
+/// Ssl::PeerConnector callback (TunnelStateData::connectedToPeer) wrapper
+void
+TunnelStateData::ConnectedToPeer(TunnelStateData *tunnel, ErrorState *error)
+{
+    tunnel->connectedToPeer(error);
 }
 
 static void
