@@ -1051,6 +1051,10 @@ mainInitialize(void)
 #if USE_SSL_CRTD
     Ssl::Helper::GetInstance()->Init();
 #endif
+#if USE_SSL
+    if (!configured_once)
+        Ssl::initialize_session_cache();
+#endif
 
 #if USE_SSL
     if (Ssl::CertValidationHelper::GetInstance())
