@@ -4,12 +4,19 @@
  */
 
 #include "squid.h"
+#include "acl/FilledChecklist.h"
 #include "base/AsyncCbdataCalls.h"
+#include "CachePeer.h"
 #include "comm/Loops.h"
+#include "errorpage.h"
+#include "fde.h"
 #include "globals.h"
 #include "HttpRequest.h"
 #include "neighbors.h"
+#include "ssl/ErrorDetail.h"
 #include "ssl/PeerConnector.h"
+#include "ssl/support.h"
+#include "SquidConfig.h"
 
 CBDATA_NAMESPACED_CLASS_INIT(Ssl, PeerConnector);
 
