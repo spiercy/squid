@@ -64,10 +64,10 @@
 #endif
 #if USE_SSL
 #include "ssl/PeerConnector.h"
-#endif
-
 // XXX: Temporary hack to avoid bootstrapping
 #include "ssl/PeerConnector.cc"
+#endif
+
 
 
 class TunnelStateData
@@ -136,8 +136,10 @@ public:
 private:
     CBDATA_CLASS(TunnelStateData);
 
+#if USE_SSL
     void connectedToPeer(ErrorState *error);
     static void ConnectedToPeer(TunnelStateData *tunnel, ErrorState *error);
+#endif
 
     void copy (size_t len, comm_err_t errcode, int xerrno, Connection &from, Connection &to, IOCB *);
     void readServer(char *buf, size_t len, comm_err_t errcode, int xerrno);
@@ -724,6 +726,8 @@ tunnelStart(ClientHttpRequest * http, int64_t * size_ptr, int *status_ptr)
 void
 TunnelStateData::connectToPeer() {
     const Comm::ConnectionPointer &srv = server.conn;
+
+#if USE_SSL
     if (CachePeer *p = srv->getPeer()) {
         if (p->use_ssl) {
             ErrorState *error = NULL;
@@ -736,10 +740,12 @@ TunnelStateData::connectToPeer() {
             return;
         }
     }
+#endif
 
     tunnelRelayConnectRequest(srv, this);
 }
 
+#if USE_SSL
 /// Ssl::PeerConnector callback
 void
 TunnelStateData::connectedToPeer(ErrorState *error)
@@ -762,6 +768,7 @@ TunnelStateData::ConnectedToPeer(TunnelStateData *tunnel, ErrorState *error)
 {
     tunnel->connectedToPeer(error);
 }
+#endif
 
 static void
 tunnelRelayConnectRequest(const Comm::ConnectionPointer &srv, void *data)
