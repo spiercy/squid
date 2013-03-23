@@ -55,17 +55,15 @@
 #if USE_DELAY_POOLS
 #include "DelayId.h"
 #endif
+#if USE_SSL
+#include "ssl/PeerConnector.h"
+#endif
 
 #if HAVE_LIMITS_H
 #include <limits.h>
 #endif
 #if HAVE_ERRNO_H
 #include <errno.h>
-#endif
-#if USE_SSL
-#include "ssl/PeerConnector.h"
-// XXX: Temporary hack to avoid bootstrapping
-#include "ssl/PeerConnector.cc"
 #endif
 
 
