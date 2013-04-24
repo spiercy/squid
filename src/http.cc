@@ -432,7 +432,7 @@ HttpStateData::cacheableReply()
 
             // HTTPbis pt6 section 3.2: a response CC:s-maxage is present
         } else if (rep->cache_control->sMaxAge()) {
-            debugs(22, 3, HERE << " Authenticated but server reply Cache-Control:s-maxage");
+            debugs(22, 3, HERE << "Authenticated but server reply Cache-Control:s-maxage");
             mayStore = true;
         }
 
@@ -1457,7 +1457,7 @@ HttpStateData::processReplyBody()
                 request->clientConnectionManager->pinConnection(serverConnection, request, _peer,
                         (request->flags.connectionAuth != 0));
             } else {
-                fwd->pconnPush(serverConnection, request->peer_host ? request->peer_host : request->GetHost());
+                fwd->pconnPush(serverConnection, request->GetHost());
             }
 
             serverConnection = NULL;

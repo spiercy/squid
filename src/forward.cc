@@ -1195,12 +1195,9 @@ FwdState::connectStart()
     }
 
     // Use pconn to avoid opening a new connection.
-    const char *host;
-    if (serverDestinations[0]->getPeer()) {
-        host = serverDestinations[0]->getPeer()->host;
-    } else {
+    const char *host = NULL;
+    if (!serverDestinations[0]->getPeer())
         host = request->GetHost();
-    }
 
     Comm::ConnectionPointer temp;
     // Avoid pconns after races so that the same client does not suffer twice.
@@ -1265,7 +1262,8 @@ FwdState::connectStart()
 
     calls.connector = commCbCall(17,3, "fwdConnectDoneWrapper", CommConnectCbPtrFun(fwdConnectDoneWrapper, this));
     Comm::ConnOpener *cs = new Comm::ConnOpener(serverDestinations[0], calls.connector, ctimeout);
-    cs->setHost(host);
+    if (host)
+        cs->setHost(host);
     AsyncJob::Start(cs);
 }
 
@@ -1515,7 +1513,7 @@ void
 FwdState::pconnPush(Comm::ConnectionPointer &conn, const char *domain)
 {
     if (conn->getPeer()) {
-        fwdPconnPool->push(conn, conn->getPeer()->name);
+        fwdPconnPool->push(conn, NULL);
     } else {
         fwdPconnPool->push(conn, domain);
     }
