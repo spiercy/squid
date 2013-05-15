@@ -772,6 +772,16 @@ static void
 tunnelRelayConnectRequest(const Comm::ConnectionPointer &srv, void *data)
 {
     TunnelStateData *tunnelState = (TunnelStateData *)data;
+
+    AccessLogEntry::Pointer ale(new AccessLogEntry);
+    ale->tcpClient = tunnelState->client.conn;
+#if USE_SSL
+    if (ale->tcpClient != NULL && ale->tcpClient->isOpen()) {
+        if (SSL *ssl = fd_table[ale->tcpClient->fd].ssl)
+            ale->cache.sslClientCert.reset(SSL_get_peer_certificate(ssl));
+    }
+#endif
+
     HttpHeader hdr_out(hoRequest);
     Packer p;
     HttpStateFlags flags;
@@ -783,7 +793,7 @@ tunnelRelayConnectRequest(const Comm::ConnectionPointer &srv, void *data)
     mb.Printf("CONNECT %s HTTP/1.1\r\n", tunnelState->url);
     HttpStateData::httpBuildRequestHeader(tunnelState->request,
                                           NULL,			/* StoreEntry */
-                                          NULL,			/* AccessLogEntry */
+                                          ale,
                                           &hdr_out,
                                           flags);			/* flags */
     packerToMemInit(&p, &mb);
