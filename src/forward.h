@@ -84,11 +84,11 @@ public:
 
 #if USE_SSL //&& USE_SSL_CERT_VALIDATOR
     /// Callback function called when squid receive message from cert validator helper
-    static void sslCrtvdHandleReplyWrapper(void *data, char *reply);
+    static void sslCrtvdHandleReplyWrapper(void *data, Ssl::CertValidationResponse const &);
     /// Process response from cert validator helper
-    void sslCrtvdHandleReply(const char *reply);
+    void sslCrtvdHandleReply(Ssl::CertValidationResponse const &);
     /// Check SSL errors returned from cert validator against sslproxy_cert_error access list
-    Ssl::Errors *sslCrtvdCheckForErrors(Ssl::CertValidationResponse &, Ssl::ErrorDetail *&);
+    Ssl::Errors *sslCrtvdCheckForErrors(Ssl::CertValidationResponse const&, Ssl::ErrorDetail *&);
 #endif
 private:
     // hidden for safer management of self; use static fwdStart
