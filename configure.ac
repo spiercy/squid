@@ -1,4 +1,4 @@
-AC_INIT([Squid Web Proxy],[3.3.4-BZR],[http://bugs.squid-cache.org/],[squid])
+AC_INIT([Squid Web Proxy],[3.3.5-BZR],[http://bugs.squid-cache.org/],[squid])
 AC_PREREQ(2.61)
 AC_CONFIG_HEADERS([include/autoconf.h])
 AC_CONFIG_AUX_DIR(cfgaux)
@@ -1260,6 +1260,10 @@ if test "x$SSLLIBDIR" != "x" ; then
 fi
 AC_SUBST(SSLLIB)
 
+if test "x$with_openssl" = "xyes"; then
+SQUID_CHECK_OPENSSL_GETCERTIFICATE_WORKS
+SQUID_CHECK_OPENSSL_TXTDB
+fi
 
 AC_ARG_ENABLE(forw-via-db,
   AS_HELP_STRING([--enable-forw-via-db],[Enable Forw/Via database]), [
