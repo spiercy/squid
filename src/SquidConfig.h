@@ -29,7 +29,7 @@
  *
  */
 
-#include "acl/AclAddress.h"
+#include "acl/forward.h"
 #include "ClientDelayConfig.h"
 #include "DelayConfig.h"
 #include "HelperChildConfig.h"
@@ -46,9 +46,6 @@ class sslproxy_cert_sign;
 class sslproxy_cert_adapt;
 #endif
 
-class acl_access;
-class AclSizeLimit;
-class AclDenyInfoList;
 namespace Mgr
 {
 class ActionPasswordList;

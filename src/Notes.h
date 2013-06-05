@@ -1,6 +1,7 @@
 #ifndef SQUID_NOTES_H
 #define SQUID_NOTES_H
 
+#include "acl/forward.h"
 #include "HttpHeader.h"
 #include "HttpHeaderTools.h"
 #include "typedefs.h"
