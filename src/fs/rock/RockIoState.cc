@@ -3,6 +3,7 @@
  */
 
 #include "squid.h"
+#include "CollapsedForwarding.h"
 #include "base/TextException.h"
 #include "DiskIO/DiskIOModule.h"
 #include "DiskIO/DiskIOStrategy.h"
@@ -14,6 +15,7 @@
 #include "MemObject.h"
 #include "Mem.h"
 #include "Parsing.h"
+#include "Transients.h"
 
 Rock::IoState::IoState(Rock::SwapDir::Pointer &aDir,
                        StoreEntry *anEntry,
@@ -45,7 +47,7 @@ Rock::IoState::~IoState()
     // The dir map entry may still be open for reading at the point because
     // the map entry lock is associated with StoreEntry, not IoState.
     // assert(!readableAnchor_);
-    assert(!writeableAnchor_);
+    assert(shutting_down || !writeableAnchor_);
 
     if (callback_data)
         cbdataReferenceDone(callback_data);
@@ -98,25 +100,43 @@ Rock::IoState::read_(char *buf, size_t len, off_t coreOff, STRCB *cb, void *data
         objOffset = 0;
     }
 
-    while (coreOff >= objOffset + currentReadableSlice().size) {
+    while (sidCurrent >= 0 && coreOff >= objOffset + currentReadableSlice().size) {
         objOffset += currentReadableSlice().size;
         sidCurrent = currentReadableSlice().next;
-        assert(sidCurrent >= 0); // XXX: handle "read offset too big" error
     }
-
-    offset_ = coreOff;
-    len = min(len,
-        static_cast<size_t>(objOffset + currentReadableSlice().size - coreOff));
 
     assert(read.callback == NULL);
     assert(read.callback_data == NULL);
     read.callback = cb;
     read.callback_data = cbdataReference(data);
 
+    // punt if read offset is too big (because of client bugs or collapsing)
+    if (sidCurrent < 0) {
+        debugs(79, 5, "no " << coreOff << " in " << *e);
+        callReaderBack(buf, 0);
+        return;
+    }
+
+    offset_ = coreOff;
+    len = min(len,
+        static_cast<size_t>(objOffset + currentReadableSlice().size - coreOff));
     const uint64_t diskOffset = dir->diskOffset(sidCurrent);
     theFile->read(new ReadRequest(::ReadRequest(buf,
         diskOffset + sizeof(DbCellHeader) + coreOff - objOffset, len), this));
 }
+
+void
+Rock::IoState::callReaderBack(const char *buf, int rlen)
+{
+    debugs(79, 5, rlen << " bytes for " << *e);
+    StoreIOState::STRCB *callb = read.callback;
+    assert(callb);
+    read.callback = NULL;
+    void *cbdata;
+    if (cbdataReferenceValidDone(read.callback_data, &cbdata))
+        callb(cbdata, buf, rlen, this);
+}
+
 
 /// wraps tryWrite() to handle deep write failures centrally and safely
 bool
@@ -128,7 +148,7 @@ Rock::IoState::write(char const *buf, size_t size, off_t coreOff, FREE *dtor)
         success = true;
     } catch (const std::exception &ex) { // TODO: should we catch ... as well?
         debugs(79, 2, "db write error: " << ex.what());
-        dir->writeError(swap_filen);
+        dir->writeError(*e);
         finishedWriting(DISK_ERROR);
         // 'this' might be gone beyond this point; fall through to free buf
     }
@@ -175,8 +195,12 @@ Rock::IoState::tryWrite(char const *buf, size_t size, off_t coreOff)
             const SlotId sidNext = reserveSlotForWriting(); // throws
             assert(sidNext >= 0);
             writeToDisk(sidNext);
+        } else if (Store::Root().transientReaders(*e)) {
+            // write partial buffer for all remote hit readers to see
+            writeBufToDisk(-1, false);
         }
     }
+
 }
 
 /// Buffers incoming data for the current slot.
@@ -207,23 +231,22 @@ Rock::IoState::writeToDisk(const SlotId sidNext)
     assert(theFile != NULL);
     assert(theBuf.size >= sizeof(DbCellHeader));
 
-    if (sidNext < 0) { // we are writing the last slot
-        e->swap_file_sz = offset_;
-        writeAnchor().basics.swap_file_sz = offset_; // would not hurt, right?
-    }
-
     // TODO: if DiskIO module is mmap-based, we should be writing whole pages
     // to avoid triggering read-page;new_head+old_tail;write-page overheads
 
-    const uint64_t diskOffset = dir->diskOffset(sidCurrent);
-    debugs(79, 5, HERE << swap_filen << " at " << diskOffset << '+' <<
-           theBuf.size);
+    writeBufToDisk(sidNext, sidNext < 0);
+    theBuf.clear();
 
-    // finalize map slice
-    Ipc::StoreMap::Slice &slice =
-        dir->map->writeableSlice(swap_filen, sidCurrent);
-    slice.next = sidNext;
-    slice.size = theBuf.size - sizeof(DbCellHeader);
+    sidCurrent = sidNext;
+}
+
+/// creates and submits a request to write current slot buffer to disk
+/// eof is true if and only this is the last slot
+void
+Rock::IoState::writeBufToDisk(const SlotId sidNext, bool eof)
+{
+    // no slots after the last/eof slot (but partial slots may have a nil next)
+    assert(!eof || sidNext < 0);
 
     // finalize db cell header
     DbCellHeader header;
@@ -231,7 +254,7 @@ Rock::IoState::writeToDisk(const SlotId sidNext)
     header.firstSlot = writeAnchor().start;
     header.nextSlot = sidNext;
     header.payloadSize = theBuf.size - sizeof(DbCellHeader);
-    header.entrySize = e->swap_file_sz; // may still be zero unless sidNext < 0
+    header.entrySize = eof ? offset_ : 0; // storeSwapOutFileClosed sets swap_file_sz after write
     header.version = writeAnchor().basics.timestamp;
 
     // copy finalized db cell header into buffer
@@ -244,12 +267,16 @@ Rock::IoState::writeToDisk(const SlotId sidNext)
     void *wBuf = memAllocBuf(theBuf.size, &wBufCap);
     memcpy(wBuf, theBuf.mem, theBuf.size);
 
+    const uint64_t diskOffset = dir->diskOffset(sidCurrent);
+    debugs(79, 5, HERE << swap_filen << " at " << diskOffset << '+' <<
+           theBuf.size);
+
     WriteRequest *const r = new WriteRequest(
         ::WriteRequest(static_cast<char*>(wBuf), diskOffset, theBuf.size,
-            memFreeBufFunc(wBufCap)), this, sidNext < 0);
-    theBuf.clear();
-
-    sidCurrent = sidNext;
+            memFreeBufFunc(wBufCap)), this);
+    r->sidCurrent = sidCurrent;
+    r->sidNext = sidNext;
+    r->eof = eof;
 
     // theFile->write may call writeCompleted immediatelly
     theFile->write(r);
@@ -274,7 +301,8 @@ void
 Rock::IoState::finishedWriting(const int errFlag)
 {
     // we incremented offset_ while accumulating data in write()
-    writeableAnchor_ = NULL;
+    // we do not reset writeableAnchor_ here because we still keep the lock
+    CollapsedForwarding::Broadcast(*e);
     callBack(errFlag);
 }
 
@@ -287,7 +315,7 @@ Rock::IoState::close(int how)
     if (!theFile) {
         debugs(79, 3, "I/O already canceled");
         assert(!callback);
-        assert(!writeableAnchor_);
+        // We keep writeableAnchor_ after callBack() on I/O errors.
         assert(!readableAnchor_);
         return;
     }
@@ -300,7 +328,7 @@ Rock::IoState::close(int how)
 
     case writerGone:
         assert(writeableAnchor_);
-        dir->writeError(swap_filen); // abort a partially stored entry
+        dir->writeError(*e); // abort a partially stored entry
         finishedWriting(DISK_ERROR);
         return;
 

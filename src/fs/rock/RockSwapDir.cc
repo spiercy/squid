@@ -4,6 +4,7 @@
 
 #include "squid.h"
 #include "cache_cf.h"
+#include "CollapsedForwarding.h"
 #include "ConfigOption.h"
 #include "DiskIO/DiskIOModule.h"
 #include "DiskIO/DiskIOStrategy.h"
@@ -68,34 +69,86 @@ Rock::SwapDir::get(const cache_key *key)
     if (!slot)
         return NULL;
 
-    const Ipc::StoreMapAnchor::Basics &basics = slot->basics;
-
     // create a brand new store entry and initialize it with stored basics
     StoreEntry *e = new StoreEntry();
-    e->lock_count = 0;
-    e->swap_dirn = index;
-    e->swap_filen = filen;
-    e->swap_file_sz = basics.swap_file_sz;
-    e->lastref = basics.lastref;
-    e->timestamp = basics.timestamp;
-    e->expires = basics.expires;
-    e->lastmod = basics.lastmod;
-    e->refcount = basics.refcount;
-    e->flags = basics.flags;
-    e->store_status = STORE_OK;
-    e->setMemStatus(NOT_IN_MEMORY);
-    e->swap_status = SWAPOUT_DONE;
-    e->ping_status = PING_NONE;
-    EBIT_SET(e->flags, ENTRY_CACHABLE);
-    EBIT_CLR(e->flags, RELEASE_REQUEST);
-    EBIT_CLR(e->flags, KEY_PRIVATE);
-    EBIT_SET(e->flags, ENTRY_VALIDATED);
+    anchorEntry(*e, filen, *slot);
+
     e->hashInsert(key);
     trackReferences(*e);
 
     return e;
     // the disk entry remains open for reading, protected from modifications
 }
+
+bool
+Rock::SwapDir::anchorCollapsed(StoreEntry &collapsed, bool &inSync)
+{
+    if (!map || !theFile || !theFile->canRead())
+        return false;
+
+    sfileno filen;
+    const Ipc::StoreMapAnchor *const slot = map->openForReading(
+        reinterpret_cast<cache_key*>(collapsed.key), filen);
+    if (!slot)
+        return false;
+
+    anchorEntry(collapsed, filen, *slot);
+    inSync = updateCollapsedWith(collapsed, *slot);
+    return true; // even if inSync is false
+}
+
+bool
+Rock::SwapDir::updateCollapsed(StoreEntry &collapsed)
+{
+    if (!map || !theFile || !theFile->canRead())
+        return false;
+
+    if (collapsed.swap_filen < 0) // no longer using a disk cache
+        return true;
+    assert(collapsed.swap_dirn == index);
+
+    const Ipc::StoreMapAnchor &s = map->readableEntry(collapsed.swap_filen);
+    return updateCollapsedWith(collapsed, s);
+}
+
+bool
+Rock::SwapDir::updateCollapsedWith(StoreEntry &collapsed, const Ipc::StoreMapAnchor &anchor)
+{
+    collapsed.swap_file_sz = anchor.basics.swap_file_sz;
+    return true;
+}
+
+void
+Rock::SwapDir::anchorEntry(StoreEntry &e, const sfileno filen, const Ipc::StoreMapAnchor &anchor)
+{
+    const Ipc::StoreMapAnchor::Basics &basics = anchor.basics;
+
+    e.swap_file_sz = basics.swap_file_sz;
+    e.lastref = basics.lastref;
+    e.timestamp = basics.timestamp;
+    e.expires = basics.expires;
+    e.lastmod = basics.lastmod;
+    e.refcount = basics.refcount;
+    e.flags = basics.flags;
+
+    if (anchor.complete()) {
+        e.store_status = STORE_OK;
+        e.swap_status = SWAPOUT_DONE;
+    } else {
+        e.store_status = STORE_PENDING;
+        e.swap_status = SWAPOUT_WRITING; // even though another worker writes?
+    }
+
+    e.ping_status = PING_NONE;
+
+    EBIT_CLR(e.flags, RELEASE_REQUEST);
+    EBIT_CLR(e.flags, KEY_PRIVATE);
+    EBIT_SET(e.flags, ENTRY_VALIDATED);
+
+    e.swap_dirn = index;
+    e.swap_filen = filen;
+}
+
 
 void Rock::SwapDir::disconnect(StoreEntry &e)
 {
@@ -107,11 +160,24 @@ void Rock::SwapDir::disconnect(StoreEntry &e)
     // do not rely on e.swap_status here because there is an async delay
     // before it switches from SWAPOUT_WRITING to SWAPOUT_DONE.
 
-    // since e has swap_filen, its slot is locked for either reading or writing
-    map->abortIo(e.swap_filen);
-    e.swap_dirn = -1;
-    e.swap_filen = -1;
-    e.swap_status = SWAPOUT_NONE;
+    // since e has swap_filen, its slot is locked for reading and/or writing
+    // but it is difficult to know whether THIS worker is reading or writing e,
+    // especially since we may switch from writing to reading. This code relies
+    // on Rock::IoState::writeableAnchor_ being set when we locked for writing.
+    if (e.mem_obj && e.mem_obj->swapout.sio != NULL &&
+        dynamic_cast<IoState&>(*e.mem_obj->swapout.sio).writeableAnchor_) {
+        map->abortWriting(e.swap_filen);
+        e.swap_dirn = -1;
+        e.swap_filen = -1;
+        e.swap_status = SWAPOUT_NONE;
+        dynamic_cast<IoState&>(*e.mem_obj->swapout.sio).writeableAnchor_ = NULL;
+        Store::Root().transientsAbandon(e); // broadcasts after the change
+    } else {
+        map->closeForReading(e.swap_filen);
+        e.swap_dirn = -1;
+        e.swap_filen = -1;
+        e.swap_status = SWAPOUT_NONE;
+    }
 }
 
 uint64_t
@@ -668,7 +734,7 @@ Rock::SwapDir::openStoreIO(StoreEntry &e, StoreIOState::STFNCB *cbFile, StoreIOS
 
     // The are two ways an entry can get swap_filen: our get() locked it for
     // reading or our storeSwapOutStart() locked it for writing. Peeking at our
-    // locked entry is safe, but no support for reading a filling entry.
+    // locked entry is safe, but no support for reading the entry we swap out.
     const Ipc::StoreMapAnchor *slot = map->peekAtReader(e.swap_filen);
     if (!slot)
         return NULL; // we were writing afterall
@@ -686,8 +752,9 @@ Rock::SwapDir::openStoreIO(StoreEntry &e, StoreIOState::STFNCB *cbFile, StoreIOS
            sio->swap_filen);
 
     assert(slot->sameKey(static_cast<const cache_key*>(e.key)));
-    assert(slot->basics.swap_file_sz > 0);
-    assert(slot->basics.swap_file_sz == e.swap_file_sz);
+    // For collapsed disk hits: e.swap_file_sz and slot->basics.swap_file_sz
+    // may still be zero and basics.swap_file_sz may grow.
+    assert(slot->basics.swap_file_sz >= e.swap_file_sz);
 
     return sio;
 }
@@ -725,12 +792,7 @@ Rock::SwapDir::readCompleted(const char *buf, int rlen, int errflag, RefCount< :
     if (errflag == DISK_OK && rlen > 0)
         sio->offset_ += rlen;
 
-    StoreIOState::STRCB *callb = sio->read.callback;
-    assert(callb);
-    sio->read.callback = NULL;
-    void *cbdata;
-    if (cbdataReferenceValidDone(sio->read.callback_data, &cbdata))
-        callb(cbdata, r->buf, rlen, sio.getRaw());
+    sio->callReaderBack(r->buf, rlen);
 }
 
 void
@@ -744,29 +806,52 @@ Rock::SwapDir::writeCompleted(int errflag, size_t rlen, RefCount< ::WriteRequest
     // quit if somebody called IoState::close() while we were waiting
     if (!sio.stillWaiting()) {
         debugs(79, 3, "ignoring closed entry " << sio.swap_filen);
+        noteFreeMapSlice(request->sidNext);
         return;
     }
 
+    // TODO: Fail if disk dropped one of the previous write requests.
+
     if (errflag == DISK_OK) {
         // do not increment sio.offset_ because we do it in sio->write()
-        if (request->isLast) {
+
+        // finalize the shared slice info after writing slice contents to disk
+        Ipc::StoreMap::Slice &slice =
+            map->writeableSlice(sio.swap_filen, request->sidCurrent);
+        slice.size = request->len - sizeof(DbCellHeader);
+        slice.next = request->sidNext;
+        
+        if (request->eof) {
+            assert(sio.e);
+            assert(sio.writeableAnchor_);
+            sio.e->swap_file_sz = sio.writeableAnchor_->basics.swap_file_sz =
+                sio.offset_;
+
             // close, the entry gets the read lock
             map->closeForWriting(sio.swap_filen, true);
+            sio.writeableAnchor_ = NULL;
             sio.finishedWriting(errflag);
         }
     } else {
-        writeError(sio.swap_filen);
+        noteFreeMapSlice(request->sidNext);
+
+        writeError(*sio.e);
         sio.finishedWriting(errflag);
         // and hope that Core will call disconnect() to close the map entry
     }
+
+    CollapsedForwarding::Broadcast(*sio.e);
 }
 
 void
-Rock::SwapDir::writeError(const sfileno fileno)
+Rock::SwapDir::writeError(StoreEntry &e)
 {
     // Do not abortWriting here. The entry should keep the write lock
     // instead of losing association with the store and confusing core.
-    map->freeEntry(fileno); // will mark as unusable, just in case
+    map->freeEntry(e.swap_filen); // will mark as unusable, just in case
+
+    Store::Root().transientsAbandon(e);
+
     // All callers must also call IoState callback, to propagate the error.
 }
 
@@ -828,6 +913,13 @@ Rock::SwapDir::unlink(StoreEntry &e)
     ignoreReferences(e);
     map->freeEntry(e.swap_filen);
     disconnect(e);
+}
+
+void
+Rock::SwapDir::markForUnlink(StoreEntry &e)
+{
+    debugs(47, 5, e);
+    map->freeEntry(e.swap_filen);
 }
 
 void
@@ -924,14 +1016,14 @@ void Rock::SwapDirRr::create(const RunnerRegistry &)
                 SwapDir::DirMap::Init(sd->inodeMapPath(), capacity);
             mapOwners.push_back(mapOwner);
 
-            // XXX: remove pool id and counters from PageStack
+            // TODO: somehow remove pool id and counters from PageStack?
             Ipc::Mem::Owner<Ipc::Mem::PageStack> *const freeSlotsOwner =
                 shm_new(Ipc::Mem::PageStack)(sd->freeSlotsPath(),
                                              i+1, capacity,
                                              sizeof(DbCellHeader));
             freeSlotsOwners.push_back(freeSlotsOwner);
 
-            // XXX: add method to initialize PageStack with no free pages
+            // TODO: add method to initialize PageStack with no free pages
             while (true) {
                 Ipc::Mem::PageId pageId;
                 if (!freeSlotsOwner->object()->pop(pageId))

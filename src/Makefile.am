@@ -302,6 +302,8 @@ squid_SOURCES = \
 	ClientRequestContext.h \
 	clientStream.cc \
 	clientStream.h \
+	CollapsedForwarding.cc \
+	CollapsedForwarding.h \
 	CompletionDispatcher.cc \
 	CompletionDispatcher.h \
 	CommRead.h \
@@ -536,6 +538,8 @@ squid_SOURCES = \
 	swap_log_op.h \
 	SwapDir.cc \
 	SwapDir.h \
+	Transients.cc \
+	Transients.h \
 	MemStore.cc \
 	MemStore.h \
 	time.cc \
@@ -1567,6 +1571,7 @@ tests_testCacheManager_SOURCES = \
 	StoreSwapLogData.cc \
 	tools.h \
 	tools.cc \
+	Transients.cc \
 	tunnel.cc \
 	SwapDir.cc \
 	MemStore.cc \
@@ -2000,6 +2005,7 @@ tests_testEvent_SOURCES = \
 	time.cc \
 	tools.h \
 	tools.cc \
+	Transients.cc \
 	tunnel.cc \
 	MemStore.cc \
 	$(UNLINKDSOURCE) \
@@ -2250,6 +2256,7 @@ tests_testEventLoop_SOURCES = \
 	time.cc \
 	tools.h \
 	tools.cc \
+	Transients.cc \
 	tunnel.cc \
 	MemStore.cc \
 	$(UNLINKDSOURCE) \
@@ -2778,6 +2785,7 @@ tests_testHttpRequest_SOURCES = \
 	event.cc \
 	tools.h \
 	tools.cc \
+	Transients.cc \
 	tunnel.cc \
 	SwapDir.cc \
 	MemStore.cc \
@@ -3257,6 +3265,8 @@ tests_testRock_SOURCES = \
 	cbdata.cc \
 	CacheDigest.h \
 	CacheDigest.cc \
+	CollapsedForwarding.h \
+	CollapsedForwarding.cc \
 	ConfigOption.cc \
 	ConfigParser.cc \
 	disk.h \
@@ -3290,9 +3300,9 @@ tests_testRock_SOURCES = \
 	HttpRequestMethod.cc \
 	int.h \
 	int.cc \
+	$(SBUF_SOURCE) \
 	SquidList.h \
 	SquidList.cc \
-	$(SBUF_SOURCE) \
 	MasterXaction.cc \
 	MasterXaction.h \
 	Mem.h \
@@ -3332,6 +3342,8 @@ tests_testRock_SOURCES = \
 	StrList.h \
 	StrList.cc \
 	SwapDir.cc \
+	Transients.h \
+	Transients.cc \
 	tests/testRock.cc \
 	tests/testMain.cc \
 	tests/testRock.h \
@@ -3755,6 +3767,7 @@ tests_testURL_SOURCES = \
 	StrList.h \
 	StrList.cc \
 	SwapDir.cc \
+	Transients.cc \
 	MemStore.cc \
 	tests/stub_debug.cc \
 	tests/stub_DiskIOModule.cc \

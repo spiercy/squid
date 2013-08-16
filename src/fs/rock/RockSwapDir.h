@@ -32,6 +32,7 @@ public:
     virtual StoreSearch *search(String const url, HttpRequest *);
     virtual StoreEntry *get(const cache_key *key);
     virtual void get(String const, STOREGETCLIENT, void * cbdata);
+    virtual void markForUnlink(StoreEntry &e);
     virtual void disconnect(StoreEntry &e);
     virtual uint64_t currentSize() const;
     virtual uint64_t currentCount() const;
@@ -57,7 +58,7 @@ public:
 
     int64_t diskOffset(Ipc::Mem::PageId &pageId) const;
     int64_t diskOffset(int filen) const;
-    void writeError(const sfileno fileno);
+    void writeError(StoreEntry &e);
 
     /* StoreMapCleaner API */
     virtual void noteFreeMapSlice(const sfileno fileno);
@@ -65,6 +66,10 @@ public:
     uint64_t slotSize; ///< all db slots are of this size
 
 protected:
+    /* Store API */
+    virtual bool anchorCollapsed(StoreEntry &collapsed, bool &inSync);
+    virtual bool updateCollapsed(StoreEntry &collapsed);
+
     /* protected ::SwapDir API */
     virtual bool needsDiskStrand() const;
     virtual void init();
@@ -106,6 +111,9 @@ protected:
     int entryLimit() const { return map->entryLimit(); }
     int entryMaxPayloadSize() const;
     int entriesNeeded(const int64_t objSize) const;
+
+    void anchorEntry(StoreEntry &e, const sfileno filen, const Ipc::StoreMapAnchor &anchor);
+    bool updateCollapsedWith(StoreEntry &collapsed, const Ipc::StoreMapAnchor &anchor);
 
     friend class Rebuild;
     friend class IoState;

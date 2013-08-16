@@ -344,7 +344,7 @@ storeRebuildParseEntry(MemBuf &buf, StoreEntry &tmpe, cache_key *key,
 
     // TODO: consume parsed metadata?
 
-    debugs(47,7, HERE << "successful swap meta unpacking");
+    debugs(47,7, HERE << "successful swap meta unpacking; swap_file_sz=" << tmpe.swap_file_sz);
     memset(key, '\0', SQUID_MD5_DIGEST_LENGTH);
 
     InitStoreEntry visitor(&tmpe, key);
@@ -413,8 +413,8 @@ storeRebuildKeepEntry(const StoreEntry &tmpe, const cache_key *key, StoreRebuild
 
             // For some stores, get() creates/unpacks a store entry. Signal
             // such stores that we will no longer use the get() result:
-            e->lock();
-            e->unlock();
+            e->lock("storeRebuildKeepEntry");
+            e->unlock("storeRebuildKeepEntry");
 
             return false;
         } else {

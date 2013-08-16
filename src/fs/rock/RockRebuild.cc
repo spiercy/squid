@@ -244,7 +244,8 @@ Rock::Rebuild::loadOneSlot()
     DbCellHeader header;
     if (buf.contentSize() < static_cast<mb_size_t>(sizeof(header))) {
         debugs(47, DBG_IMPORTANT, "WARNING: cache_dir[" << sd->index << "]: " <<
-               "Ignoring truncated cache entry meta data at " << dbOffset);
+               "Ignoring truncated " << buf.contentSize() << "-byte " <<
+               "cache entry meta data at " << dbOffset);
         freeSlotIfIdle(slotId, true);
         return;
     }
@@ -254,7 +255,7 @@ Rock::Rebuild::loadOneSlot()
         freeSlotIfIdle(slotId, false);
         return;
     }
-    if (!header.sane()) {
+    if (!header.sane(dbEntrySize, dbEntryLimit)) {
         debugs(47, DBG_IMPORTANT, "WARNING: cache_dir[" << sd->index << "]: " <<
                "Ignoring malformed cache entry meta data at " << dbOffset);
         freeSlotIfIdle(slotId, true);
@@ -271,16 +272,15 @@ Rock::Rebuild::importEntry(Ipc::StoreMapAnchor &anchor, const sfileno fileno, co
 {
     cache_key key[SQUID_MD5_DIGEST_LENGTH];
     StoreEntry loadedE;
-    if (!storeRebuildParseEntry(buf, loadedE, key, counts, 0))
+    const uint64_t knownSize = header.entrySize > 0 ?
+        header.entrySize : anchor.basics.swap_file_sz.get();
+    if (!storeRebuildParseEntry(buf, loadedE, key, counts, knownSize))
         return false;
 
-    const uint64_t knownSize = header.entrySize > 0 ?
-        header.entrySize : anchor.basics.swap_file_sz;
-    if (!loadedE.swap_file_sz && knownSize)
-        loadedE.swap_file_sz = knownSize;
     // the entry size may still be unknown at this time
 
-    debugs(47, 8, "importing entry basics for " << fileno);
+    debugs(47, 8, "importing basics for entry " << fileno <<
+           " swap_file_sz: " << loadedE.swap_file_sz);
     anchor.set(loadedE);
 
     // we have not validated whether all db cells for this entry were loaded
@@ -478,6 +478,7 @@ Rock::Rebuild::addSlotToEntry(const sfileno fileno, const SlotId slotId, const D
     }
 
     // set total entry size and/or check it for consistency
+    debugs(47, 8, "header.entrySize: " << header.entrySize << " swap_file_sz: " << anchor.basics.swap_file_sz);
     uint64_t totalSize = header.entrySize;
     assert(totalSize != static_cast<uint64_t>(-1));
     if (!totalSize && anchor.basics.swap_file_sz) {
@@ -498,6 +499,7 @@ Rock::Rebuild::addSlotToEntry(const sfileno fileno, const SlotId slotId, const D
     le.size += header.payloadSize;
 
     if (totalSize > 0 && le.size > totalSize) { // overflow
+        debugs(47, 8, "overflow: " << le.size << " > " << totalSize);
         le.state = LoadingEntry::leCorrupted;
         freeBadEntry(fileno, "overflowing");
         return;

@@ -20,11 +20,20 @@ public:
     MemStore();
     virtual ~MemStore();
 
-    /// cache the entry or forget about it until the next considerKeeping call
-    void considerKeeping(StoreEntry &e);
-
     /// whether e should be kept in local RAM for possible future caching
     bool keepInLocalMemory(const StoreEntry &e) const;
+
+    /// copy non-shared entry data of the being-cached entry to our cache
+    void write(StoreEntry &e);
+
+    /// all data has been received; there will be no more write() calls
+    void completeWriting(StoreEntry &e);
+
+    /// remove from the cache
+    void unlink(StoreEntry &e);
+
+    /// called when the entry is about to forget its association with mem cache
+    void disconnect(StoreEntry &e);
 
     /* Store API */
     virtual int callback();
@@ -39,19 +48,26 @@ public:
     virtual void getStats(StoreInfoStats &stats) const;
     virtual void stat(StoreEntry &) const;
     virtual StoreSearch *search(String const url, HttpRequest *);
+    virtual void markForUnlink(StoreEntry &e);
     virtual void reference(StoreEntry &);
     virtual bool dereference(StoreEntry &, bool);
     virtual void maintain();
+    virtual bool anchorCollapsed(StoreEntry &collapsed, bool &inSync);
+    virtual bool updateCollapsed(StoreEntry &collapsed);
 
     static int64_t EntryLimit();
 
 protected:
-    void keep(StoreEntry &e);
+    bool shouldCache(const StoreEntry &e) const;
+    bool startCaching(StoreEntry &e);
 
-    bool copyToShm(StoreEntry &e, const sfileno index, Ipc::StoreMapAnchor &anchor);
-    bool copyToShmSlice(StoreEntry &e, const sfileno index, Ipc::StoreMapAnchor &anchor, int64_t &offset);
+    void copyToShm(StoreEntry &e);
+    void copyToShmSlice(StoreEntry &e, Ipc::StoreMapAnchor &anchor);
     bool copyFromShm(StoreEntry &e, const sfileno index, const Ipc::StoreMapAnchor &anchor);
-    bool copyFromShmSlice(StoreEntry &e, StoreIOBuffer &buf, bool eof);
+    bool copyFromShmSlice(StoreEntry &e, const StoreIOBuffer &buf, bool eof);
+
+    void anchorEntry(StoreEntry &e, const sfileno index, const Ipc::StoreMapAnchor &anchor);
+    bool updateCollapsedWith(StoreEntry &collapsed, const sfileno index, const Ipc::StoreMapAnchor &anchor);
 
     sfileno reserveSapForWriting(Ipc::Mem::PageId &page);
 
