@@ -86,7 +86,7 @@ class PeerConnector: virtual public AsyncJob
     typedef BinaryCbdataDialer<TunnelStateData, ErrorState> CbDialer;
 
 public:
-    PeerConnector(HttpRequest *aRequest,
+    PeerConnector(HttpRequestPointer &aRequest,
                   const Comm::ConnectionPointer &aServerConn,
                   AsyncCall::Pointer &aCallback);
     virtual ~PeerConnector();

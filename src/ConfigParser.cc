@@ -252,7 +252,7 @@ ConfigParser::NextToken()
 
 
 const char *
-ConfigParser::QuoteString(String &var)
+ConfigParser::QuoteString(const String &var)
 {
     static String quotedStr;
     const char *s = var.termedBuf();

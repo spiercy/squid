@@ -21,7 +21,7 @@
 CBDATA_NAMESPACED_CLASS_INIT(Ssl, PeerConnector);
 
 Ssl::PeerConnector::PeerConnector(
-    HttpRequest *aRequest,
+    HttpRequestPointer &aRequest,
     const Comm::ConnectionPointer &aServerConn,
     AsyncCall::Pointer &aCallback):
     AsyncJob("Ssl::PeerConnector"),

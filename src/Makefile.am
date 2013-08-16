@@ -80,7 +80,7 @@ if USE_ESI
 SUBDIRS += esi
 ESI_LOCAL_LIBS = \
 	esi/libesi.la \
-	$(top_builddir)/lib/libTrie/src/libTrie.a
+	$(top_builddir)/lib/libTrie/libTrie.a
 ESI_LIBS = $(ESI_LOCAL_LIBS) \
 	$(XMLLIB) \
 	$(EXPATLIB)
@@ -349,12 +349,12 @@ squid_SOURCES = \
 	fde.h \
 	FileMap.h \
 	filemap.cc \
-	forward.cc \
-	forward.h \
 	fqdncache.h \
 	fqdncache.cc \
 	ftp.h \
 	ftp.cc \
+	FwdState.cc \
+	FwdState.h \
 	Generic.h \
 	globals.h \
 	gopher.h \
@@ -422,6 +422,8 @@ squid_SOURCES = \
 	LogTags.h \
 	lookup_t.h \
 	main.cc \
+	MasterXaction.cc \
+	MasterXaction.h \
 	Mem.h \
 	mem.cc \
 	mem_node.cc \
@@ -615,7 +617,6 @@ squid_LDADD = \
 	$(AUTH_ACL_LIBS) \
 	ident/libident.la \
 	acl/libacls.la \
-	eui/libeui.la \
 	acl/libstate.la \
 	$(AUTH_LIBS) \
 	$(DISK_LIBS) \
@@ -979,7 +980,7 @@ test_cache_digest: test_cache_digest.o CacheDigest.o debug.o globals.o store_key
 cache_cf.o: cf_parser.cci
 
 # cf_gen builds the configuration files.
-cf_gen$(EXEEXT): $(cf_gen_SOURCES) $(cf_gen_DEPENDENCIES)
+cf_gen$(EXEEXT): $(cf_gen_SOURCES) $(cf_gen_DEPENDENCIES) cf_gen_defines.cci
 	$(HOSTCXX) -o $@ $(srcdir)/cf_gen.cc -I$(srcdir) -I$(top_builddir)/include/ -I$(top_builddir)/src
 
 # squid.conf.default is built by cf_gen when making cf_parser.cci
@@ -989,7 +990,9 @@ squid.conf.default squid.conf.documented: cf_parser.cci
 cf_parser.cci: cf.data cf_gen$(EXEEXT)
 	./cf_gen$(EXEEXT) cf.data $(srcdir)/cf.data.depend
 
-cf_gen_defines.cci: $(srcdir)/cf_gen_defines $(srcdir)/cf.data.pre
+# The cf_gen_defines.cci is auto-generated and does not exist when the 
+# dependencies computed. We need to add its include files (autoconf.h) here
+cf_gen_defines.cci: $(srcdir)/cf_gen_defines $(srcdir)/cf.data.pre $(top_builddir)/include/autoconf.h
 	$(AWK) -f $(srcdir)/cf_gen_defines <$(srcdir)/cf.data.pre >$@ || ($(RM) -f $@ && exit 1)
 
 
@@ -1090,6 +1093,7 @@ check_PROGRAMS+=\
 	tests/testURL \
 	tests/testConfigParser \
 	tests/testStatHist \
+	tests/testVector \
 	$(STORE_TESTS)
 
 ## NP: required to run the above list. check_PROGRAMS only builds the binaries...
@@ -1249,6 +1253,8 @@ tests_testACLMaxUserIP_SOURCES= \
 	HttpRequestMethod.cc \
 	int.h \
 	int.cc \
+	MasterXaction.cc \
+	MasterXaction.h \
 	SquidList.h \
 	SquidList.cc \
 	mem_node.cc \
@@ -1284,6 +1290,7 @@ tests_testACLMaxUserIP_SOURCES= \
 	cache_cf.h \
 	YesNoNone.h \
 	tests/stub_cache_cf.cc \
+	tests/stub_client_side.cc \
 	tests/stub_debug.cc \
 	tests/stub_DelayId.cc \
 	tests/stub_DiskIOModule.cc \
@@ -1441,11 +1448,12 @@ tests_testCacheManager_SOURCES = \
 	fde.cc \
 	FileMap.h \
 	filemap.cc \
-	forward.cc \
 	fqdncache.h \
 	fqdncache.cc \
 	ftp.h \
 	ftp.cc \
+	FwdState.cc \
+	FwdState.h \
 	gopher.h \
 	gopher.cc \
 	hier_code.h \
@@ -1484,9 +1492,12 @@ tests_testCacheManager_SOURCES = \
 	internal.cc \
 	SquidList.h \
 	SquidList.cc \
+	MasterXaction.cc \
+	MasterXaction.h \
 	multicast.h \
 	multicast.cc \
 	mem_node.cc \
+	MemBlob.cc \
 	MemBuf.cc \
 	MemObject.cc \
 	mime.h \
@@ -1581,7 +1592,6 @@ tests_testCacheManager_LDADD = \
 	$(AUTH_ACL_LIBS) \
 	ident/libident.la \
 	acl/libacls.la \
-	eui/libeui.la \
 	acl/libstate.la \
 	$(AUTH_LIBS) \
 	acl/libapi.la \
@@ -1590,6 +1600,7 @@ tests_testCacheManager_LDADD = \
 	ip/libip.la \
 	fs/libfs.la \
 	comm/libcomm.la \
+	eui/libeui.la \
 	icmp/libicmp.la icmp/libicmp-core.la \
 	log/liblog.la \
 	format/libformat.la \
@@ -1663,6 +1674,8 @@ tests_testDiskIO_SOURCES = \
 	int.cc \
 	SquidList.h \
 	SquidList.cc \
+	MasterXaction.cc \
+	MasterXaction.h \
 	MemBuf.cc \
 	MemObject.cc \
 	mem_node.cc \
@@ -1723,6 +1736,7 @@ tests_testDiskIO_SOURCES = \
 	tests/stub_internal.cc \
 	tests/stub_ipc.cc \
 	tests/stub_ipcache.cc \
+	tests/stub_libeui.cc \
 	tests/stub_libformat.cc \
 	tests/stub_libicmp.cc \
 	tests/stub_MemStore.cc \
@@ -1763,7 +1777,6 @@ tests_testDiskIO_LDADD = \
 	$(AUTH_ACL_LIBS) \
 	ident/libident.la \
 	acl/libacls.la \
-	eui/libeui.la \
 	acl/libstate.la \
 	$(AUTH_LIBS) \
 	libsquid.la \
@@ -1850,11 +1863,12 @@ tests_testEvent_SOURCES = \
 	fde.cc \
 	FileMap.h \
 	filemap.cc \
-	forward.cc \
 	fqdncache.h \
 	fqdncache.cc \
 	ftp.h \
 	ftp.cc \
+	FwdState.cc \
+	FwdState.h \
 	gopher.h \
 	gopher.cc \
 	helper.cc \
@@ -1898,9 +1912,12 @@ tests_testEvent_SOURCES = \
 	internal.cc \
 	SquidList.h \
 	SquidList.cc \
+	MasterXaction.cc \
+	MasterXaction.h \
 	Mem.h \
 	mem.cc \
 	mem_node.cc \
+	MemBlob.cc \
 	MemBuf.cc \
 	MemObject.cc \
 	mime.h \
@@ -1978,6 +1995,7 @@ tests_testEvent_SOURCES = \
 	tests/testMain.cc \
 	tests/stub_main_cc.cc \
 	tests/stub_ipc_Forwarder.cc \
+	tests/stub_libeui.cc \
 	tests/stub_store_stats.cc \
 	time.cc \
 	tools.h \
@@ -2004,7 +2022,6 @@ tests_testEvent_LDADD = \
 	$(AUTH_ACL_LIBS) \
 	ident/libident.la \
 	acl/libacls.la \
-	eui/libeui.la \
 	acl/libstate.la \
 	$(AUTH_LIBS) \
 	acl/libapi.la \
@@ -2096,11 +2113,12 @@ tests_testEventLoop_SOURCES = \
 	fde.cc \
 	FileMap.h \
 	filemap.cc \
-	forward.cc \
 	fqdncache.h \
 	fqdncache.cc \
 	ftp.h \
 	ftp.cc \
+	FwdState.cc \
+	FwdState.h \
 	gopher.h \
 	gopher.cc \
 	helper.cc \
@@ -2144,6 +2162,9 @@ tests_testEventLoop_SOURCES = \
 	internal.cc \
 	SquidList.h \
 	SquidList.cc \
+	MasterXaction.cc \
+	MasterXaction.h \
+	MemBlob.cc \
 	MemBuf.cc \
 	MemObject.cc \
 	Mem.h \
@@ -2224,6 +2245,7 @@ tests_testEventLoop_SOURCES = \
 	tests/testMain.cc \
 	tests/stub_main_cc.cc \
 	tests/stub_ipc_Forwarder.cc \
+	tests/stub_libeui.cc \
 	tests/stub_store_stats.cc \
 	time.cc \
 	tools.h \
@@ -2250,7 +2272,6 @@ tests_testEventLoop_LDADD = \
 	$(AUTH_ACL_LIBS) \
 	ident/libident.la \
 	acl/libacls.la \
-	eui/libeui.la \
 	acl/libstate.la \
 	$(AUTH_LIBS) \
 	acl/libapi.la \
@@ -2339,11 +2360,12 @@ tests_test_http_range_SOURCES = \
 	fde.cc \
 	FileMap.h \
 	filemap.cc \
-	forward.cc \
 	fqdncache.h \
 	fqdncache.cc \
 	ftp.h \
 	ftp.cc \
+	FwdState.cc \
+	FwdState.h \
 	gopher.h \
 	gopher.cc \
 	helper.cc \
@@ -2387,6 +2409,9 @@ tests_test_http_range_SOURCES = \
 	ipcache.cc \
 	SquidList.h \
 	SquidList.cc \
+	MasterXaction.cc \
+	MasterXaction.h \
+	MemBlob.cc \
 	MemBuf.cc \
 	MemObject.cc \
 	Mem.h \
@@ -2463,6 +2488,7 @@ tests_test_http_range_SOURCES = \
 	SwapDir.cc \
 	tests/test_http_range.cc \
 	tests/stub_ipc_Forwarder.cc \
+	tests/stub_libeui.cc \
 	tests/stub_main_cc.cc \
 	tests/stub_MemStore.cc \
 	tests/stub_store_stats.cc \
@@ -2490,7 +2516,6 @@ tests_test_http_range_LDADD = \
 	$(AUTH_ACL_LIBS) \
 	ident/libident.la \
 	acl/libacls.la \
-	eui/libeui.la \
 	acl/libstate.la \
 	$(AUTH_LIBS) \
 	acl/libapi.la \
@@ -2587,6 +2612,7 @@ tests_testHttpRequest_SOURCES = \
 	tests/stub_DiskIOModule.cc \
 	tests/stub_main_cc.cc \
 	tests/stub_ipc_Forwarder.cc \
+	tests/stub_libeui.cc \
 	tests/stub_store_stats.cc \
 	time.cc \
 	BodyPipe.cc \
@@ -2633,11 +2659,12 @@ tests_testHttpRequest_SOURCES = \
 	fd.h \
 	fd.cc \
 	fde.cc \
-	forward.cc \
 	fqdncache.h \
 	fqdncache.cc \
 	ftp.h \
 	ftp.cc \
+	FwdState.cc \
+	FwdState.h \
 	gopher.h \
 	gopher.cc \
 	helper.cc \
@@ -2675,9 +2702,12 @@ tests_testHttpRequest_SOURCES = \
 	internal.cc \
 	SquidList.h \
 	SquidList.cc \
+	MasterXaction.cc \
+	MasterXaction.h \
 	multicast.h \
 	multicast.cc \
 	mem_node.cc \
+	MemBlob.cc \
 	MemBuf.cc \
 	MemObject.cc \
 	mime.h \
@@ -2769,7 +2799,6 @@ tests_testHttpRequest_LDADD = \
 	$(AUTH_ACL_LIBS) \
 	ident/libident.la \
 	acl/libacls.la \
-	eui/libeui.la \
 	acl/libstate.la \
 	$(AUTH_LIBS) \
 	acl/libapi.la \
@@ -2848,6 +2877,8 @@ tests_testStore_SOURCES= \
 	int.cc \
 	SquidList.h \
 	SquidList.cc \
+	MasterXaction.cc \
+	MasterXaction.h \
 	Mem.h \
 	mem.cc \
 	mem_node.cc \
@@ -2902,6 +2933,7 @@ tests_testStore_SOURCES= \
 	tests/stub_helper.cc \
 	tests/stub_HelperChildConfig.cc \
 	tests/stub_http.cc \
+	tests/stub_libeui.cc \
 	tests/stub_libformat.cc \
 	HttpBody.h \
 	HttpBody.cc \
@@ -2950,7 +2982,6 @@ tests_testStore_LDADD= \
 	$(AUTH_ACL_LIBS) \
 	ident/libident.la \
 	acl/libacls.la \
-	eui/libeui.la \
 	acl/libstate.la \
 	$(AUTH_LIBS) \
 	acl/libapi.la \
@@ -3021,7 +3052,6 @@ SWAP_TEST_DS =\
 	$(AUTH_ACL_LIBS) \
 	ident/libident.la \
 	acl/libacls.la \
-	eui/libeui.la \
 	acl/libstate.la \
 	$(AUTH_LIBS) \
 	acl/libapi.la \
@@ -3043,6 +3073,7 @@ tests_testUfs_SOURCES = \
 	tests/stub_HelperChildConfig.cc \
 	tests/stub_icp.cc \
 	tests/stub_ipc.cc \
+	tests/stub_libeui.cc \
 	tests/stub_MemStore.cc \
 	tests/stub_pconn.cc \
 	tests/stub_Port.cc \
@@ -3073,6 +3104,8 @@ tests_testUfs_SOURCES = \
 	RequestFlags.cc \
 	SquidList.h \
 	SquidList.cc \
+	MasterXaction.cc \
+	MasterXaction.h \
 	MemObject.cc \
 	StoreSwapLogData.cc \
 	StoreIOState.cc \
@@ -3176,7 +3209,6 @@ tests_testUfs_LDADD = \
 	$(AUTH_ACL_LIBS) \
 	ident/libident.la \
 	acl/libacls.la \
-	eui/libeui.la \
 	acl/libstate.la \
 	$(AUTH_LIBS) \
 	acl/libapi.la \
@@ -3261,6 +3293,8 @@ tests_testRock_SOURCES = \
 	SquidList.h \
 	SquidList.cc \
 	$(SBUF_SOURCE) \
+	MasterXaction.cc \
+	MasterXaction.h \
 	Mem.h \
 	mem.cc \
 	MemBuf.cc \
@@ -3320,6 +3354,7 @@ tests_testRock_SOURCES = \
 	tests/stub_icp.cc \
 	tests/stub_ipc.cc \
 	tests/stub_ipcache.cc \
+	tests/stub_libeui.cc \
 	tests/stub_libformat.cc \
 	tests/stub_libicmp.cc \
 	tests/stub_MemStore.cc \
@@ -3362,8 +3397,6 @@ tests_testRock_LDADD = \
 	acl/libacls.la \
 	acl/libapi.la \
 	acl/libstate.la \
-	eui/libeui.la \
-	$(SSL_LIBS) \
 	ipc/libipc.la \
 	mgr/libmgr.la \
 	base/libbase.la \
@@ -3391,6 +3424,7 @@ tests_testCoss_SOURCES = \
 	internal.h \
 	tests/stub_internal.cc \
 	tests/stub_ipc.cc \
+	tests/stub_libeui.cc \
 	tests/stub_pconn.cc \
 	store_rebuild.h \
 	tests/stub_store_rebuild.cc \
@@ -3514,7 +3548,6 @@ tests_testCoss_LDADD = \
 	$(AUTH_ACL_LIBS) \
 	ident/libident.la \
 	acl/libacls.la \
-	eui/libeui.la \
 	acl/libstate.la \
 	$(AUTH_LIBS) \
 	acl/libapi.la \
@@ -3596,11 +3629,12 @@ tests_testURL_SOURCES = \
 	fde.cc \
 	FileMap.h \
 	filemap.cc \
-	forward.cc \
 	fqdncache.h \
 	fqdncache.cc \
 	ftp.h \
 	ftp.cc \
+	FwdState.cc \
+	FwdState.h \
 	gopher.h \
 	gopher.cc \
 	helper.cc \
@@ -3644,11 +3678,14 @@ tests_testURL_SOURCES = \
 	internal.cc \
 	SquidList.h \
 	SquidList.cc \
+	MasterXaction.cc \
+	MasterXaction.h \
 	multicast.h \
 	multicast.cc \
 	Mem.h \
 	mem.cc \
 	mem_node.cc \
+	MemBlob.cc \
 	MemBuf.cc \
 	MemObject.cc \
 	mime.h \
@@ -3868,6 +3905,21 @@ tests_testStatHist_LDADD = \
 	$(SQUID_CPPUNIT_LA) \
 	$(COMPAT_LIB)
 tests_testStatHist_DEPENDENCIES = $(SQUID_CPPUNIT_LA)
+
+tests_testVector_SOURCES = \
+	tests/testVector.cc \
+	tests/testMain.cc \
+	tests/testVector.h \
+	time.cc
+nodist_tests_testVector_SOURCES = \
+	$(TESTSOURCES)
+tests_testVector_LDADD= \
+	$(SQUID_CPPUNIT_LIBS) \
+	$(COMPAT_LIB) \
+	$(XTRA_LIBS)
+tests_testVector_LDFLAGS = $(LIBADD_DL)
+tests_testVector_DEPENDENCIES = \
+	$(SQUID_CPPUNIT_LA)
 
 
 TESTS += testHeaders
