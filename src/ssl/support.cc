@@ -57,7 +57,7 @@
 
 static void setSessionCallbacks(SSL_CTX *ctx);
 Ipc::MemMap *SslSessionCache = NULL;
-const char *SslSessionCacheName = "/tmp/squid-ssl-session-cache.shm";
+const char *SslSessionCacheName = "ssl_session_cache";
 
 const char *Ssl::BumpModeStr[] = {
     "none",
