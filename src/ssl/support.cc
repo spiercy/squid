@@ -259,7 +259,8 @@ ssl_verify_cb(int ok, X509_STORE_CTX * ctx)
     if (ok) {
         debugs(83, 5, "SSL Certificate signature OK: " << buffer);
 
-        if (server) {
+        // Check for domain mismatch only if the current certificate is the peer certificate.
+        if (server && peer_cert == X509_STORE_CTX_get_current_cert(ctx)) {
             if (!Ssl::checkX509ServerValidity(peer_cert, server)) {
                 debugs(83, 2, "SQUID_X509_V_ERR_DOMAIN_MISMATCH: Certificate " << buffer << " does not match domainname " << server);
                 ok = 0;
@@ -319,8 +320,15 @@ ssl_verify_cb(int ok, X509_STORE_CTX * ctx)
 #if 1 // USE_SSL_CERT_VALIDATOR
             // If the certificate validator is used then we need to allow all errors and
             // pass them to certficate validator for more processing
-            else if (Ssl::TheConfig.ssl_crt_validator)
+            else if (Ssl::TheConfig.ssl_crt_validator) {
                 ok = 1;
+                // Check if we have stored certificates chain. Store if not.
+                if (!SSL_get_ex_data(ssl, ssl_ex_index_ssl_cert_chain)) {
+                    STACK_OF(X509) *certStack = X509_STORE_CTX_get1_chain(ctx);
+                    if (certStack && !SSL_set_ex_data(ssl, ssl_ex_index_ssl_cert_chain, certStack))
+                        sk_X509_pop_free(certStack, X509_free);
+                }
+            }
 #endif
         }
     }
@@ -675,6 +683,17 @@ ssl_free_int(void *, void *ptr, CRYPTO_EX_DATA *,
     delete counter;
 }
 
+/// \ingroup ServerProtocolSSLInternal
+/// Callback handler function to release STACK_OF(X509) "ex" data stored
+/// in an SSL object.
+static void
+ssl_free_CertChain(void *, void *ptr, CRYPTO_EX_DATA *,
+                   int, long, void *)
+{
+    STACK_OF(X509) *certsChain = static_cast <STACK_OF(X509) *>(ptr);
+    sk_X509_pop_free(certsChain,X509_free);
+}
+
 // "free" function for X509 certificates
 static void
 ssl_free_X509(void *, void *ptr, CRYPTO_EX_DATA *,
@@ -725,6 +744,7 @@ ssl_initialize(void)
     ssl_ex_index_ssl_error_detail = SSL_get_ex_new_index(0, (void *) "ssl_error_detail", NULL, NULL, &ssl_free_ErrorDetail);
     ssl_ex_index_ssl_peeked_cert  = SSL_get_ex_new_index(0, (void *) "ssl_peeked_cert", NULL, NULL, &ssl_free_X509);
     ssl_ex_index_ssl_errors =  SSL_get_ex_new_index(0, (void *) "ssl_errors", NULL, NULL, &ssl_free_SslErrors);
+    ssl_ex_index_ssl_cert_chain = SSL_get_ex_new_index(0, (void *) "ssl_cert_chain", NULL, NULL, &ssl_free_CertChain);
     ssl_ex_index_ssl_validation_counter = SSL_get_ex_new_index(0, (void *) "ssl_validation_counter", NULL, NULL, &ssl_free_int);
 }
 
