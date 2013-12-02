@@ -1,4 +1,4 @@
-AC_INIT([Squid Web Proxy],[3.3.5-BZR],[http://bugs.squid-cache.org/],[squid])
+AC_INIT([Squid Web Proxy],[3.3.11-BZR],[http://bugs.squid-cache.org/],[squid])
 AC_PREREQ(2.61)
 AC_CONFIG_HEADERS([include/autoconf.h])
 AC_CONFIG_AUX_DIR(cfgaux)
@@ -185,7 +185,8 @@ AM_CONDITIONAL(ENABLE_WIN32SPECIFIC,
                [test "x$squid_host_os" = "xmingw" -o "x$squid_host_os" = "xcygwin"])
 AM_CONDITIONAL(USE_IPC_WIN32,[test "x$squid_host_os" = "xmingw"])
 
-if test "x$squid_host_os" = "xmingw"; then
+case "$squid_host_os" in
+mingw)
   AC_PATH_PROG(WIN32_PSAPI, psapi.dll, none)
   CFLAGS="$CFLAGS -mthreads"
   CXXFLAGS="$CXXFLAGS -mthreads"
@@ -198,7 +199,16 @@ if test "x$squid_host_os" = "xmingw"; then
   fi
   MINGW_LIBS="-lmingwex"
   AC_SUBST(MINGW_LIBS)
-fi
+  ;;
+freebsd)
+    # FreeBSD places local libraries and packages in /usr/local
+    CFLAGS="$CFLAGS -I/usr/local/include"
+    CXXFLAGS="$CXXFLAGS -I/usr/local/include"
+    LDFLAGS="$LDFLAGS -L/usr/local/lib -Wl,-R/usr/local/lib"
+    ;;
+*)
+    ;;
+esac
 
 dnl Substitutions
 AC_DEFINE_UNQUOTED(CONFIG_HOST_TYPE, "$host",[Host type from configure])
@@ -319,12 +329,6 @@ dnl -Werror -Wmissing-prototypes -Wmissing-declarations
 dnl TODO: check if the problem will be present in any other newer MinGW release.
     SQUID_CFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wcomments"
     ;;
-  freebsd)
-    # FreeBSD places local libraries and packages in /usr/local
-    CFLAGS="$CFLAGS -I/usr/local/include"
-    CXXFLAGS="$CXXFLAGS -I/usr/local/include"
-    LDFLAGS="$LDFLAGS -L/usr/local/lib -Wl,-R/usr/local/lib"
-    ;;
   *)
     SQUID_CFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wmissing-prototypes -Wmissing-declarations -Wcomments"
     ;;
@@ -387,8 +391,8 @@ export enable_inline
 dnl
 dnl Check for atomic operations support in the compiler
 dnl
-AC_MSG_CHECKING([for atomic operations support])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+AC_MSG_CHECKING([for GNU atomic operations support])
+AC_RUN_IFELSE([AC_LANG_PROGRAM([[
     int n = 0;
 ]],[[
     __sync_add_and_fetch(&n, 10); // n becomes 10
@@ -399,8 +403,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
     return (n == 200) ? 0 : -1;
 ]])],
 [
-    AC_DEFINE(HAVE_ATOMIC_OPS,1,
-        [Define to 1 if you have __sync_add_and_fetch() and such])
+    AC_DEFINE(HAVE_ATOMIC_OPS,1,[Define to 1 if you have __sync_add_and_fetch() and such])
     AC_MSG_RESULT(yes)
 ],[
     AC_MSG_RESULT(no)
@@ -817,13 +820,16 @@ for fs in $squid_storeio_module_candidates none; do
 	  "x$squid_disk_module_candidates_Blocking" != "xyes"; then
 	  AC_MSG_ERROR([Storage module Rock requires IpcIo or Blocking DiskIO module])
 	fi
-	STORE_TESTS="$STORE_TESTS tests/testRock$EXEEXT"
+	squid_do_build_rock=true
 	;;
     ufs)
-      STORE_TESTS="$STORE_TESTS tests/testUfs$EXEEXT"
+	squid_do_build_ufs=true
+	;;
     esac
 done
-
+ 
+AM_CONDITIONAL(HAVE_FS_UFS,[test "x$squid_do_build_ufs" = "xtrue" ])
+AM_CONDITIONAL(HAVE_FS_ROCK,[test "x$squid_do_build_rock" = "xtrue" ])
 dnl hack: need to define those even if not used in the build system to
 dnl make sure that global FS objects are linked to the squid binary.
 AH_TEMPLATE(HAVE_FS_UFS, "Define to 1 if ufs filesystem module is build")
@@ -1154,8 +1160,14 @@ if test "x${enable_eui:=yes}" = "xyes" ; then
   esac
   #Iphlpapi.h check delayed after winsock2.h
   AC_CHECK_HEADERS( \
+    windows.h \
     sys/sockio.h \
-    sys/param.h
+    sys/param.h,
+  [], [], [[
+#if HAVE_WINDOWS_H
+include <windows.h>
+#endif
+]]
   )
   AC_CHECK_HEADERS( \
     net/if_arp.h \
@@ -1262,6 +1274,7 @@ AC_SUBST(SSLLIB)
 
 if test "x$with_openssl" = "xyes"; then
 SQUID_CHECK_OPENSSL_GETCERTIFICATE_WORKS
+SQUID_CHECK_OPENSSL_CONST_SSL_METHOD
 SQUID_CHECK_OPENSSL_TXTDB
 fi
 
@@ -2648,7 +2661,13 @@ AC_SEARCH_LIBS([yp_match], [nsl nss_nis nss_nisplus])
 dnl Check for Winsock only on MinGW, on Cygwin we must use emulated BSD socket API
 if test "x$squid_host_os" = "xmingw" ; then
   SQUID_CHECK_WINSOCK_LIB
-  AC_CHECK_HEADERS(Iphlpapi.h,,,[
+  AC_CHECK_HEADERS( \
+    windows.h \
+    ws2tcpip.h \
+    Iphlpapi.h ,,,[
+#if HAVE_WINDOWS_H
+#include <windows.h>
+#endif
 #if HAVE_WINSOCK2_H
 #include <winsock2.h>
 #endif])
@@ -2692,7 +2711,6 @@ case "$squid_host_os" in
     ;;
 esac
 
-
 dnl --with-maxfd present for compatibility with Squid-2.
 dnl undocumented in ./configure --help  to encourage using the Squid-3 directive
 AC_ARG_WITH(maxfd,,
@@ -2700,6 +2718,7 @@ AC_ARG_WITH(maxfd,,
   case ${withval} in
     [[0-9]]*)
       squid_filedescriptors_num=$withval
+      AC_MSG_NOTICE([forcing default of $squid_filedescriptors_num filedescriptors (user-forced)])
       ;;
     *)
       AC_MSG_ERROR(--with-maxfd expects a numeric argument)
@@ -2714,6 +2733,7 @@ AC_ARG_WITH(filedescriptors,
   case ${withval} in
     [[0-9]]*)
       squid_filedescriptors_num=$withval
+      AC_MSG_NOTICE([forcing default of $squid_filedescriptors_num filedescriptors (user-forced)])
       ;;
     *)
       AC_MSG_ERROR(--with-filedescriptors expects a numeric argument)
@@ -2722,10 +2742,9 @@ AC_ARG_WITH(filedescriptors,
 ])
 
 SQUID_CHECK_DEFAULT_FD_SETSIZE
-if test "x$squid_filedescriptors_num" = "x"; then
-  SQUID_CHECK_MAXFD
-else
-  AC_MSG_NOTICE([forcing use of $squid_filedescriptors_num filedescriptors (user-forced)])
+SQUID_CHECK_MAXFD
+if test "x$squid_filedescriptors_num" != "x"; then
+  AC_MSG_NOTICE([Default number of fieldescriptors: $squid_filedescriptors_num])
 fi
 if test "$squid_filedescriptors_num" -lt 512 ; then
     AC_MSG_WARN([$squid_filedescriptors_num may not be enough filedescriptors if your])
@@ -3548,94 +3567,94 @@ AC_MSG_NOTICE([BUILD EXTRA C++ FLAGS: $SQUID_CXXFLAGS])
 dnl Clean up after OSF/1 core dump bug
 rm -f core 
 
-AC_CONFIG_FILES([\
-	Makefile \
-	compat/Makefile \
-	lib/Makefile \
-	lib/ntlmauth/Makefile \
-	lib/profiler/Makefile \
-	lib/rfcnb/Makefile \
-	lib/smblib/Makefile \
-	scripts/Makefile \
-	src/Makefile \
-	src/anyp/Makefile \
-	src/base/Makefile \
-	src/acl/Makefile \
-	src/fs/Makefile \
-	src/repl/Makefile \
-	src/auth/Makefile \
-	src/auth/basic/Makefile \
-	src/auth/digest/Makefile \
-	src/auth/negotiate/Makefile \
-	src/auth/ntlm/Makefile \
-	src/adaptation/Makefile \
-	src/adaptation/icap/Makefile \
-	src/adaptation/ecap/Makefile \
-	src/comm/Makefile \
-	src/esi/Makefile \
-	src/eui/Makefile \
-	src/format/Makefile \
-	src/icmp/Makefile \
-	src/ident/Makefile \
-	src/ip/Makefile \
-	src/log/Makefile \
-	src/ipc/Makefile \
-	src/ssl/Makefile \
-	src/mgr/Makefile \
-	src/snmp/Makefile \
-	contrib/Makefile \
-	snmplib/Makefile \
-	icons/Makefile \
-	errors/Makefile \
-	test-suite/Makefile \
-	doc/Makefile \
-	doc/manuals/Makefile \
-	helpers/Makefile \
-	helpers/basic_auth/Makefile \
-	helpers/basic_auth/DB/Makefile \
-	helpers/basic_auth/fake/Makefile \
-	helpers/basic_auth/getpwnam/Makefile \
-	helpers/basic_auth/LDAP/Makefile \
-	helpers/basic_auth/MSNT/Makefile \
-	helpers/basic_auth/MSNT-multi-domain/Makefile \
-	helpers/basic_auth/NCSA/Makefile \
-	helpers/basic_auth/NIS/Makefile \
-	helpers/basic_auth/PAM/Makefile \
-	helpers/basic_auth/POP3/Makefile \
-	helpers/basic_auth/RADIUS/Makefile \
-	helpers/basic_auth/SASL/Makefile \
-	helpers/basic_auth/SMB/Makefile \
-	helpers/basic_auth/SSPI/Makefile \
-	helpers/digest_auth/Makefile \
-	helpers/digest_auth/eDirectory/Makefile \
-	helpers/digest_auth/file/Makefile \
-	helpers/digest_auth/LDAP/Makefile \
-	helpers/ntlm_auth/Makefile \
-	helpers/ntlm_auth/fake/Makefile \
-	helpers/ntlm_auth/smb_lm/Makefile \
-	helpers/ntlm_auth/SSPI/Makefile \
-	helpers/negotiate_auth/Makefile \
-	helpers/negotiate_auth/kerberos/Makefile \
-	helpers/negotiate_auth/SSPI/Makefile \
-	helpers/negotiate_auth/wrapper/Makefile \
-	helpers/external_acl/Makefile \
-	helpers/external_acl/AD_group/Makefile \
-	helpers/external_acl/eDirectory_userip/Makefile \
-	helpers/external_acl/file_userip/Makefile \
-	helpers/external_acl/kerberos_ldap_group/Makefile \
-	helpers/external_acl/LDAP_group/Makefile \
-	helpers/external_acl/LM_group/Makefile \
-	helpers/external_acl/session/Makefile \
-	helpers/external_acl/SQL_session/Makefile \
-	helpers/external_acl/unix_group/Makefile \
-	helpers/external_acl/wbinfo_group/Makefile \
-	helpers/external_acl/time_quota/Makefile \
-	helpers/log_daemon/Makefile \
-	helpers/log_daemon/DB/Makefile \
-	helpers/log_daemon/file/Makefile \
-	helpers/url_rewrite/Makefile \
-	helpers/url_rewrite/fake/Makefile \
-	helpers/ssl/Makefile \
+AC_CONFIG_FILES([
+	Makefile
+	compat/Makefile
+	lib/Makefile
+	lib/ntlmauth/Makefile
+	lib/profiler/Makefile
+	lib/rfcnb/Makefile
+	lib/smblib/Makefile
+	scripts/Makefile
+	src/Makefile
+	src/anyp/Makefile
+	src/base/Makefile
+	src/acl/Makefile
+	src/fs/Makefile
+	src/repl/Makefile
+	src/auth/Makefile
+	src/auth/basic/Makefile
+	src/auth/digest/Makefile
+	src/auth/negotiate/Makefile
+	src/auth/ntlm/Makefile
+	src/adaptation/Makefile
+	src/adaptation/icap/Makefile
+	src/adaptation/ecap/Makefile
+	src/comm/Makefile
+	src/esi/Makefile
+	src/eui/Makefile
+	src/format/Makefile
+	src/icmp/Makefile
+	src/ident/Makefile
+	src/ip/Makefile
+	src/log/Makefile
+	src/ipc/Makefile
+	src/ssl/Makefile
+	src/mgr/Makefile
+	src/snmp/Makefile
+	contrib/Makefile
+	snmplib/Makefile
+	icons/Makefile
+	errors/Makefile
+	test-suite/Makefile
+	doc/Makefile
+	doc/manuals/Makefile
+	helpers/Makefile
+	helpers/basic_auth/Makefile
+	helpers/basic_auth/DB/Makefile
+	helpers/basic_auth/fake/Makefile
+	helpers/basic_auth/getpwnam/Makefile
+	helpers/basic_auth/LDAP/Makefile
+	helpers/basic_auth/MSNT/Makefile
+	helpers/basic_auth/MSNT-multi-domain/Makefile
+	helpers/basic_auth/NCSA/Makefile
+	helpers/basic_auth/NIS/Makefile
+	helpers/basic_auth/PAM/Makefile
+	helpers/basic_auth/POP3/Makefile
+	helpers/basic_auth/RADIUS/Makefile
+	helpers/basic_auth/SASL/Makefile
+	helpers/basic_auth/SMB/Makefile
+	helpers/basic_auth/SSPI/Makefile
+	helpers/digest_auth/Makefile
+	helpers/digest_auth/eDirectory/Makefile
+	helpers/digest_auth/file/Makefile
+	helpers/digest_auth/LDAP/Makefile
+	helpers/ntlm_auth/Makefile
+	helpers/ntlm_auth/fake/Makefile
+	helpers/ntlm_auth/smb_lm/Makefile
+	helpers/ntlm_auth/SSPI/Makefile
+	helpers/negotiate_auth/Makefile
+	helpers/negotiate_auth/kerberos/Makefile
+	helpers/negotiate_auth/SSPI/Makefile
+	helpers/negotiate_auth/wrapper/Makefile
+	helpers/external_acl/Makefile
+	helpers/external_acl/AD_group/Makefile
+	helpers/external_acl/eDirectory_userip/Makefile
+	helpers/external_acl/file_userip/Makefile
+	helpers/external_acl/kerberos_ldap_group/Makefile
+	helpers/external_acl/LDAP_group/Makefile
+	helpers/external_acl/LM_group/Makefile
+	helpers/external_acl/session/Makefile
+	helpers/external_acl/SQL_session/Makefile
+	helpers/external_acl/unix_group/Makefile
+	helpers/external_acl/wbinfo_group/Makefile
+	helpers/external_acl/time_quota/Makefile
+	helpers/log_daemon/Makefile
+	helpers/log_daemon/DB/Makefile
+	helpers/log_daemon/file/Makefile
+	helpers/ssl/Makefile
+	helpers/url_rewrite/Makefile
+	helpers/url_rewrite/fake/Makefile
 	tools/Makefile
 	tools/purge/Makefile
 ])

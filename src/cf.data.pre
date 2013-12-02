@@ -135,12 +135,6 @@ DOC_START
 	This option is not yet supported by Squid-3.
 DOC_END
 
-NAME: ignore_ims_on_miss
-TYPE: obsolete
-DOC_START
-	This option is not yet supported by Squid-3.
-DOC_END
-
 NAME: location_rewrite_program location_rewrite_access location_rewrite_children location_rewrite_concurrency
 TYPE: obsolete
 DOC_START
@@ -157,6 +151,13 @@ NAME: storeurl_access storeurl_rewrite_program storeurl_rewrite_concurrency stor
 TYPE: obsolete
 DOC_START
 	This option is not yet supported by this version of Squid-3. Please try a later release.
+DOC_END
+
+# Options Removed in 3.3
+NAME: ignore_ims_on_miss
+TYPE: obsolete
+DOC_START
+	Remove this line. The HTTP/1.1 feature is now fully supported by default.
 DOC_END
 
 # Options Removed in 3.2
@@ -4563,10 +4564,12 @@ DOC_START
 		override-lastmod enforces min age even on objects
 		that were modified recently.
 
-		reload-into-ims changes client no-cache or ``reload''
-		to If-Modified-Since requests. Doing this VIOLATES the
-		HTTP standard. Enabling this feature could make you
-		liable for problems which it causes.
+		reload-into-ims changes a client no-cache or ``reload''
+		request for a cached entry into a conditional request using
+		If-Modified-Since and/or If-None-Match headers, provided the
+		cached entry has a Last-Modified and/or a strong ETag header.
+		Doing this VIOLATES the HTTP standard. Enabling this feature
+		could make you liable for problems which it causes.
 
 		ignore-reload ignores a client no-cache or ``reload''
 		header. Doing this VIOLATES the HTTP standard. Enabling
@@ -6987,6 +6990,25 @@ DOC_START
 	acts on cacheable requests.
 DOC_END
 
+NAME: cache_miss_revalidate
+COMMENT: on|off
+TYPE: onoff
+DEFAULT: on
+LOC: Config.onoff.cache_miss_revalidate
+DOC_START
+	Whether Squid on cache MISS will pass client revalidation requests
+	to the server or tries to fetch new content for caching.
+	This is useful while the cache is mostly empty to more quickly
+	have the cache populated.
+
+	When set to 'on' (default), Squid will pass all client If-* headers
+	to the server.
+
+	When set to 'off' and if the request is cacheable, Squid will
+	remove the clients If-Modified-Since and If-None-Match headers from
+	the request sent to the server.
+DOC_END
+
 NAME: always_direct
 TYPE: acl_access
 LOC: Config.accessList.AlwaysDirect
@@ -7442,6 +7464,8 @@ DOC_START
 	can even specify multiple identical services as long as their
 	service_names differ.
 
+	To activate a service, use the adaptation_access directive. To group
+	services, use adaptation_service_chain and adaptation_service_set.
 
 	Service options are separated by white space. ICAP services support
 	the following name=value options:
@@ -7573,6 +7597,8 @@ DOC_START
 		eCAP service must have a unique URI. Obtain the right URI from
 		the service provider.
 
+	To activate a service, use the adaptation_access directive. To group
+	services, use adaptation_service_chain and adaptation_service_set.
 
 	Service options are separated by white space. eCAP services support
 	the following name=value options:
@@ -8503,7 +8529,7 @@ DOC_START
 DOC_END
 
 NAME: windows_ipaddrchangemonitor
-IFDEF: _SQUID_MSWIN_
+IFDEF: _SQUID_WINDOWS_
 COMMENT: on|off
 TYPE: onoff
 DEFAULT: on

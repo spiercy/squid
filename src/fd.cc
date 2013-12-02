@@ -49,7 +49,7 @@
 
 int default_read_method(int, char *, int);
 int default_write_method(int, const char *, int);
-#if _SQUID_MSWIN_
+#if _SQUID_WINDOWS_
 int socket_read_method(int, char *, int);
 int socket_write_method(int, const char *, int);
 int file_read_method(int, char *, int);
@@ -122,7 +122,7 @@ fd_close(int fd)
     *F = fde();
 }
 
-#if _SQUID_MSWIN_
+#if _SQUID_WINDOWS_
 
 int
 socket_read_method(int fd, char *buf, int len)
@@ -222,7 +222,7 @@ fd_open(int fd, unsigned int type, const char *desc)
     F->type = type;
     F->flags.open = 1;
     F->epoll_state = 0;
-#if _SQUID_MSWIN_
+#if _SQUID_WINDOWS_
 
     F->win32.handle = _get_osfhandle(fd);
 
@@ -369,6 +369,7 @@ fdAdjustReserved(void)
     if (Squid_MaxFD - newReserve < min(256, Squid_MaxFD / 2))
         fatalf("Too few filedescriptors available in the system (%d usable of %d).\n", Squid_MaxFD - newReserve, Squid_MaxFD);
 
-    debugs(51, DBG_CRITICAL, "Reserved FD adjusted from " << RESERVED_FD << " to " << newReserve << " due to failures");
+    debugs(51, DBG_CRITICAL, "Reserved FD adjusted from " << RESERVED_FD << " to " << newReserve <<
+           " due to failures (" << (Squid_MaxFD - newReserve) << "/" << Squid_MaxFD << " file descriptors available)");
     RESERVED_FD = newReserve;
 }

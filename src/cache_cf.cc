@@ -675,12 +675,6 @@ configDoConfigure(void)
         Config.Store.maxObjectSize = 0x7FFF0000;
     }
 #endif
-    if (0 == Store::Root().maxSize())
-        /* people might want a zero-sized cache on purpose */
-        (void) 0;
-    else if (Store::Root().maxSize() < Config.memMaxSize)
-        /* This is bogus. folk with NULL caches will want this */
-        debugs(3, DBG_CRITICAL, "WARNING cache_mem is larger than total disk cache space!");
 
     if (Config.Announce.period > 0) {
         Config.onoff.announce = 1;
@@ -990,6 +984,14 @@ parse_obsolete(const char *name)
         parse_int(&cval);
         debugs(3, DBG_CRITICAL, "WARNING: url_rewrite_concurrency upgrade overriding url_rewrite_children settings.");
         Config.redirectChildren.concurrency = cval;
+    }
+
+    if (!strcmp(name, "ignore_ims_on_miss")) {
+        // the replacement directive cache_revalidate_on_miss has opposite meanings for ON/OFF value
+        // than the 2.7 directive. We need to parse and invert the configured value.
+        int temp = 0;
+        parse_onoff(&temp);
+        Config.onoff.cache_miss_revalidate = !temp;
     }
 }
 
@@ -1364,8 +1366,12 @@ parse_address(Ip::Address *addr)
         addr->SetNoAddr();
     else if ( (*addr = token) ) // try parse numeric/IPA
         (void) 0;
-    else
-        addr->GetHostByName(token); // dont use ipcache
+    else if (addr->GetHostByName(token)) // dont use ipcache
+        (void) 0;
+    else { // not an IP and not a hostname
+        debugs(3, DBG_CRITICAL, "FATAL: invalid IP address or domain name '" << token << "'");
+        self_destruct();
+    }
 }
 
 static void

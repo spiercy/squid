@@ -2619,10 +2619,9 @@ clientProcessRequest(ConnStateData *conn, HttpParser *hp, ClientSocketContext *c
         goto finish;
     }
 
-    /* RFC 2616 section 10.5.6 : handle unsupported HTTP versions cleanly. */
-    /* We currently only accept 0.9, 1.0, 1.1 */
+    /* RFC 2616 section 10.5.6 : handle unsupported HTTP major versions cleanly. */
+    /* We currently only support 0.9, 1.0, 1.1 properly */
     if ( (http_ver.major == 0 && http_ver.minor != 9) ||
-            (http_ver.major == 1 && http_ver.minor > 1 ) ||
             (http_ver.major > 1) ) {
 
         clientStreamNode *node = context->getClientReplyContext();
@@ -3865,8 +3864,18 @@ ConnStateData::getSslContextDone(SSL_CTX * sslContext, bool isNew)
     // Try to add generated ssl context to storage.
     if (port->generateHostCertificates && isNew) {
 
-        if (signAlgorithm == Ssl::algSignTrusted)
+        if (signAlgorithm == Ssl::algSignTrusted) {
+            // Add signing certificate to the certificates chain
+            X509 *cert = port->signingCert.get();
+            if (SSL_CTX_add_extra_chain_cert(sslContext, cert)) {
+                // increase the certificate lock
+                CRYPTO_add(&(cert->references),1,CRYPTO_LOCK_X509);
+            } else {
+                const int ssl_error = ERR_get_error();
+                debugs(33, DBG_IMPORTANT, "WARNING: can not add signing certificate to SSL context chain: " << ERR_error_string(ssl_error, NULL));
+            }
             Ssl::addChainToSslContext(sslContext, port->certsToChain.get());
+        }
         //else it is self-signed or untrusted do not attrach any certificate
 
         Ssl::LocalContextStorage & ssl_ctx_cache(Ssl::TheGlobalContextStorage.getLocalStorage(port->s));
@@ -4540,18 +4549,14 @@ ConnStateData::validatePinnedConnection(HttpRequest *request, const CachePeer *a
     bool valid = true;
     if (!Comm::IsConnOpen(pinning.serverConnection))
         valid = false;
-    if (pinning.auth && request && strcasecmp(pinning.host, request->GetHost()) != 0) {
+    else if (pinning.auth && pinning.host && request && strcasecmp(pinning.host, request->GetHost()) != 0)
         valid = false;
-    }
-    if (request && pinning.port != request->port) {
+    else if (request && pinning.port != request->port)
         valid = false;
-    }
-    if (pinning.peer && !cbdataReferenceValid(pinning.peer)) {
+    else if (pinning.peer && !cbdataReferenceValid(pinning.peer))
         valid = false;
-    }
-    if (aPeer != pinning.peer) {
+    else if (aPeer != pinning.peer)
         valid = false;
-    }
 
     if (!valid) {
         /* The pinning info is not safe, remove any pinning info */

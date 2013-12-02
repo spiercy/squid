@@ -277,7 +277,7 @@ int asn1timeToString(ASN1_TIME *tm, char *buf, int len);
 bool setClientSNI(SSL *ssl, const char *fqdn);
 } //namespace Ssl
 
-#if _SQUID_MSWIN_
+#if _SQUID_WINDOWS_
 
 #if defined(__cplusplus)
 
@@ -305,6 +305,6 @@ int SSL_set_fd(SSL *ssl, int fd)
 
 #endif /* __cplusplus */
 
-#endif /* _SQUID_MSWIN_ */
+#endif /* _SQUID_WINDOWS_ */
 
 #endif /* SQUID_SSL_SUPPORT_H */

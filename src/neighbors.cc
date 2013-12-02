@@ -204,8 +204,6 @@ peerAllowedToUse(const CachePeer * p, HttpRequest * request)
         return do_ping;
 
     ACLFilledChecklist checklist(p->access, request, NULL);
-    checklist.src_addr = request->client_addr;
-    checklist.my_addr = request->my_addr;
 
     return (checklist.fastCheck() == ACCESS_ALLOWED);
 }
@@ -1318,6 +1316,7 @@ peerProbeConnect(CachePeer * p)
         Comm::ConnectionPointer conn = new Comm::Connection;
         conn->remote = p->addresses[i];
         conn->remote.SetPort(p->http_port);
+        conn->setPeer(p);
         getOutgoingAddress(NULL, conn);
 
         ++ p->testing_now;

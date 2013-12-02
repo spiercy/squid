@@ -1,4 +1,82 @@
 
+Changes to squid-3.3.11 (01 Dec 2013):
+
+	- Regression Bug 3936: error-details.txt parse error with OpenSSL since 3.3.9
+	- Bug 3972: Segfault when getting the deny_info page ID after a reconfigure
+	- Bug 3970: max_filedescriptors disabled due to missing setrlimit
+	- Bug 3967: ipc/Kid.cc compilation failure: 'time' was not declared in this scope
+	- Bug 3960: DEAD cache_peer are not revived
+	- Bug 3956: xstrndup: tried to dup a NULL pointer
+	- Bug 3906: Filedescriptor leaks in SNMP
+	- Bug 3782: Digest authentication not obeying nonce_max_count
+	- HTTP/1.1: Make header parser obey relaxed_header_parser
+	- HTTP/1.1: Re-compute Range response content offset after an FTP response was adapted
+	- SMP: Replace blocking sleep(3) and close UDS socket on failures
+	- Windows: fix several compile errors
+
+Changes to squid-3.3.10 (03 Nov 2013):
+
+	- Bug 3929: request_header_add not working for tunnel requests
+	- Bug 3923: cbdata and undefined behavior due to dynamic runtime enumeration
+	- Bug 3918: Self Test Failures on Mac OS X 10.8
+	- Bug 3887: tcp_outgoing_tos not working for IPv6
+	- Bug 3836: Fix issues with automake 1.13+ and make check
+	- Bug 3480: StoreEntry::kickProducer() segfaults in store_client::copy()
+	- Fix pinning hierarchy log information
+	- Fix close idle client connections associated with closed idle pinned connections.
+	- Fix cbdata 'error: expression result unused' errors
+	- Avoid "hot idle": A series of rapid select() calls with zero timeout.
+	- Append Connection:close to OPTIONS requests when icap_persistent_connections is off
+	- ntlm_fake_auth: pass DOMAIN data to Squid in original case
+	- kerberos_ldap_group: fix LDAP string duplication
+	- Use IPv6 localhost nameserver on DNS configuration errors
+	- Add cache_miss_revalidate
+	- ... and several portability improvements
+
+Changes to squid-3.3.9 (11 Sep 2013):
+
+	- Regression Bug 3077: off-by-one error in Digest header decoding
+	- Bug 3895: fix acl_uses_indirect_client and cache_peer_access
+	- Bug 3879: assertion failed ConnStateData::validatePinnedConnection
+	- Bug 3863: myportname acl causes segmentation fault
+	- Bug 3849: Duplicate certificate sent when using https_port
+	- Bug 2287: Better fix for unsupported HTTP version handling
+	- Bug 2112: Reload into If-None-Match
+	- Fix several assert with side effects in ICAP/eCAP response handling
+	- Fix myportname ACL on ICAP/eCAP transactions
+	- Fix external ACL user:pass detail logging after adaptation
+	- Fix SMP mgr:info report 'Largest file desc currently in use'
+	- Improved compatibility with gcc 4.8, clang and icc
+	- Show number of available filedescriptors when reserved FD changes
+	- Sync with newest OpenSSL error codes
+	- Register Http2-Settings header
+	- ... and many Windows portability fixes
+
+Changes to squid-3.3.8 (13 Jul 2013):
+
+	- Bug 3869: assertion failed: MemBuf.cc:272: size < capacity
+	- Improved handling of port values in Host: header validation
+
+Changes to squid-3.3.7 (11 Jul 2013):
+
+	- Bug 3297: Fix openSSL related build failures
+	- Fix build on FreeBSD 9.x platform with clang
+	- Protect against buffer overrun in DNS query generation
+
+Changes to squid-3.3.6 (01 Jul 2013):
+
+	- Bug 3854: pt1: compile errors on AIX
+	- Bug 3802: Fix wrong check inside Format::Format::assemble
+	- Bug 3762: remove bogus WARNING in cache.log
+	- Bug 3717: assertion failed with dstdom_regex with IP based URL
+	- Bug 1991: kqueue causes SSL to hang
+	- Ask for SSL key password when started with -N but without sslpassword_program
+	- Make sure %<tt includes all [failed] connection attempts
+	- Support HTTP reply ACLs in icap_log and log_icap
+	- Fix incorrect external_acl_type codes
+	- Fix ICAP logging request headers and segmentation faults
+	- ... and some documentation polish
+
 Changes to squid-3.3.5 (20 May 2013):
 
 	- Bug 3851: Delay Pool class 5 tag:levels displayed incorrectly in cache manager
@@ -89,6 +167,18 @@ Changes to squid-3.3.0.1 (21 Oct 2012):
 	- ... and many portability fixes for MacOS X, Windows and others
 	- ... and many compile error fixes
 	- ... and a very large amount of code polish for faster compilation
+
+Changes to squid-3.2.13 (13 Jul 2013):
+
+	- Bug 3869: assertion failed: MemBuf.cc:272: size < capacity
+	- Improved handling of port values in Host: header validation
+
+Changes to squid-3.2.12 (11 Jul 2013):
+
+	- Protect against buffer overrun in DNS query generation
+	- Avoid !closing assertions when helpers call comm_read during reconfigure.
+	- Fix several minor memory leaks during reconfigure
+	- Remove origin_tries limiter on forwarding and permit large max_forward_tries values
 
 Changes to squid-3.2.11 (30 Apr 2013):
 

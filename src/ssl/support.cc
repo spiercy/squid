@@ -1004,12 +1004,8 @@ SSL_CTX *
 sslCreateClientContext(const char *certfile, const char *keyfile, int version, const char *cipher, const char *options, const char *flags, const char *CAfile, const char *CApath, const char *CRLfile)
 {
     int ssl_error;
-#if OPENSSL_VERSION_NUMBER < 0x00909000L
-    SSL_METHOD *method;
-#else
-    const SSL_METHOD *method;
-#endif
-    SSL_CTX *sslContext;
+    Ssl::ContextMethod method;
+    SSL_CTX * sslContext;
     long fl = Ssl::parse_flags(flags);
 
     ssl_initialize();
@@ -1590,11 +1586,7 @@ static X509 * readSslX509CertificatesChain(char const * certFilename,  STACK_OF(
         if (X509_check_issued(certificate, certificate) == X509_V_OK)
             debugs(83, 5, "Certificate is self-signed, will not be chained");
         else {
-            if (sk_X509_push(chain, certificate))
-                CRYPTO_add(&(certificate->references), 1, CRYPTO_LOCK_X509);
-            else
-                debugs(83, DBG_IMPORTANT, "WARNING: unable to add signing certificate to cert chain");
-            // and add to the chain any certificate loaded from the file
+            // and add to the chain any other certificate exist in the file
             while (X509 *ca = PEM_read_bio_X509(bio.get(), NULL, NULL, NULL)) {
                 if (!sk_X509_push(chain, ca))
                     debugs(83, DBG_IMPORTANT, "WARNING: unable to add CA certificate to cert chain");
@@ -1619,7 +1611,10 @@ void Ssl::readCertChainAndPrivateKeyFromFiles(X509_Pointer & cert, EVP_PKEY_Poin
         chain.reset(sk_X509_new_null());
     if (!chain)
         debugs(83, DBG_IMPORTANT, "WARNING: unable to allocate memory for cert chain");
-    pkey.reset(readSslPrivateKey(keyFilename, ssl_ask_password_cb));
+    // XXX: ssl_ask_password_cb needs SSL_CTX_set_default_passwd_cb_userdata()
+    // so this may not fully work iff Config.Program.ssl_password is set.
+    pem_password_cb *cb = ::Config.Program.ssl_password ? &ssl_ask_password_cb : NULL;
+    pkey.reset(readSslPrivateKey(keyFilename, cb));
     cert.reset(readSslX509CertificatesChain(certFilename, chain.get()));
     if (!pkey || !cert || !X509_check_private_key(cert.get(), pkey.get())) {
         pkey.reset(NULL);
