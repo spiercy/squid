@@ -46,6 +46,7 @@ public:
     /// store the last meta header fields received from the adaptation service
     void recordMeta(const HttpHeader *lm);
 
+    void recordAdaptationService(String &srvId);
 public:
     /// Last received meta header (REQMOD or RESPMOD, whichever comes last).
     HttpHeader lastMeta;
@@ -54,6 +55,9 @@ public:
     /// key:value pairs set by adaptation_meta, to be added to
     /// AccessLogEntry::notes when ALE becomes available
     NotePairs metaHeaders;
+
+    typedef Vector<String> AdaptationServices;
+    AdaptationServices theAdaptationServices; ///< The service groups used
 
     /// sets future services for the Adaptation::AccessCheck to notice
     void setFutureServices(const DynamicGroupCfg &services);

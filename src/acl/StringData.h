@@ -49,7 +49,7 @@ public:
     virtual ~ACLStringData();
     bool match(char const *);
     wordlist *dump();
-    void parse();
+    virtual void parse();
     bool empty() const;
     virtual ACLData<char const *> *clone() const;
     /// Insert custom values

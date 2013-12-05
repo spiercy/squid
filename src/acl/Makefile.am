@@ -144,8 +144,14 @@ if ENABLE_SSL
 libacls_la_SOURCES += $(SSL_ACLS)
 endif
 
-EXTRA_libacls_la_SOURCES += $(SSL_ACLS)
+if USE_ADAPTATION
+libacls_la_SOURCES += AdaptationService.h \
+	AdaptationService.cc \
+	AdaptationServiceData.h \
+	AdaptationServiceData.cc
+endif
 
+EXTRA_libacls_la_SOURCES += $(SSL_ACLS)
 
 ARP_ACLS = Arp.cc Arp.h Eui64.cc Eui64.h
 
