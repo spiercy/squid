@@ -89,7 +89,7 @@ public:
     char name[ACL_NAME_SZ];
     char *cfgline;
     ACL *next;
-    bool registered; ///< added to Config.aclList and can be reused via by FindByName()
+    bool registered; ///< added to the global list of ACLs via aclRegister()
 
 public:
 
