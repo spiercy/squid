@@ -473,6 +473,11 @@ ssl_options[] = {
         "No_Compression", SSL_OP_NO_COMPRESSION
     },
 #endif
+#if SSL_OP_NO_TICKET
+    {
+        "SSL_OP_NO_TICKET", SSL_OP_NO_TICKET
+    },
+#endif
     {
         "", 0
     },
