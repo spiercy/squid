@@ -812,6 +812,10 @@ mainReconfigureFinish(void *)
         Config.workers = oldWorkers;
     }
 
+    SyncRegistered(rrFinalizeConfig);
+    SyncRegistered(rrClaimMemoryNeeds);
+    SyncRegistered(rrAfterConfig);
+
     if (IamPrimaryProcess())
         CpuAffinityCheck();
     CpuAffinityReconfigure();
