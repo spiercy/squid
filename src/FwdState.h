@@ -17,6 +17,8 @@
 
 class AccessLogEntry;
 typedef RefCount<AccessLogEntry> AccessLogEntryPointer;
+class PconnPool;
+typedef RefCount<PconnPool> PconnPoolPointer;
 class ErrorState;
 class HttpRequest;
 
@@ -39,6 +41,9 @@ tos_t GetTosToServer(HttpRequest * request);
  * connection to the server, based on the ACL.
  */
 nfmark_t GetNfmarkToServer(HttpRequest * request);
+
+/// Sets initial TOS value and Netfilter for the future outgoing connection.
+void GetMarkingsToServer(HttpRequest * request, Comm::Connection &conn);
 
 class HelperReply;
 
@@ -75,6 +80,7 @@ public:
     bool checkRetry();
     bool checkRetriable();
     void dispatch();
+    Comm::ConnectionPointer pconnPop(const Comm::ConnectionPointer &dest, const char *domain);
     void pconnPush(Comm::ConnectionPointer & conn, const char *domain);
 
     bool dontRetry() { return flags.dont_retry; }
@@ -106,6 +112,8 @@ private:
     void retryOrBail();
     ErrorState *makeConnectingError(const err_type type) const;
     static void RegisterWithCacheManager(void);
+
+    void closeServerConnection(const char *reason);
 
 public:
     StoreEntry *entry;
