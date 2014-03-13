@@ -21,19 +21,11 @@
  *     - FD passing callback (FDECB)
  */
 
-class CommAcceptCbParams;
 typedef void IOACB(const CommAcceptCbParams &params);
-
 typedef void CNCB(const Comm::ConnectionPointer &conn, comm_err_t status, int xerrno, void *data);
 typedef void IOCB(const Comm::ConnectionPointer &conn, char *, size_t size, comm_err_t flag, int xerrno, void *data);
-
-class CommTimeoutCbParams;
 typedef void CTCB(const CommTimeoutCbParams &params);
-
-class CommCloseCbParams;
 typedef void CLCB(const CommCloseCbParams &params);
-
-class FdeCbParams;
 typedef void FDECB(const FdeCbParams &params);
 
 /*
