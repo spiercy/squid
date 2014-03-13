@@ -29,6 +29,8 @@ Ssl::PeerConnector::PeerConnector(
     serverConn(aServerConn),
     callback(aCallback)
 {
+    // if this throws, the caller's cb dialer is not our CbDialer
+    Must(dynamic_cast<CbDialer*>(callback->getDialer()));
 }
 
 Ssl::PeerConnector::~PeerConnector()
@@ -123,7 +125,6 @@ Ssl::PeerConnector::initializeSsl()
     fd_table[fd].ssl = ssl;
     fd_table[fd].read_method = &ssl_read_method;
     fd_table[fd].write_method = &ssl_write_method;
-    negotiateSsl();
 }
 
 /// Performs a single secure connection negotiation step.
@@ -235,9 +236,10 @@ Ssl::PeerConnector::bail(ErrorState *error)
     if (CachePeer *p = serverConnection()->getPeer())
         peerConnectFailed(p);
 
+    Must(callback != NULL);
     CbDialer *dialer = dynamic_cast<CbDialer*>(callback->getDialer());
     Must(dialer);
-    dialer->arg2 = error;
+    dialer->answer().error = error;
 
     callBack();
     // Our job is done. The callabck recepient will probably close the failed
@@ -251,8 +253,15 @@ Ssl::PeerConnector::bail(ErrorState *error)
 void
 Ssl::PeerConnector::callBack()
 {
-    ScheduleCallHere(callback);
+    AsyncCall::Pointer cb = callback;
+    // Do this now so that if we throw below, swanSong() assert that we _tried_
+    // to call back holds.
     callback = NULL; // this should make done() true
+
+    CbDialer *dialer = dynamic_cast<CbDialer*>(cb->getDialer());
+    Must(dialer);
+    dialer->answer().conn = serverConnection();
+    ScheduleCallHere(cb);
 }
 
 
@@ -283,4 +292,17 @@ Ssl::PeerConnector::status() const
     buf.terminate();
 
     return buf.content();
+}
+
+/* PeerConnectorAnswer */
+
+Ssl::PeerConnectorAnswer::~PeerConnectorAnswer()
+{
+    delete error.get();
+}
+
+std::ostream &
+operator <<(std::ostream &os, const Ssl::PeerConnectorAnswer &answer)
+{
+    return os << answer.conn << ", " << answer.error;
 }

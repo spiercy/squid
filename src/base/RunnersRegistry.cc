@@ -40,6 +40,16 @@ ActivateRegistered(const RunnerRegistry &registryId)
     return runners.size();
 }
 
+int
+SyncRegistered(const RunnerRegistry &registryId)
+{
+    Runners &runners = GetRunners(registryId);
+    typedef Runners::iterator RRI;
+    for (RRI i = runners.begin(); i != runners.end(); ++i)
+        (*i)->sync(registryId);
+    return runners.size();
+}
+
 void
 DeactivateRegistered(const RunnerRegistry &registryId)
 {

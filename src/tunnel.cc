@@ -43,6 +43,7 @@
 #include "comm/Write.h"
 #include "errorpage.h"
 #include "fde.h"
+#include "FwdState.h"
 #include "http.h"
 #include "HttpRequest.h"
 #include "HttpStateFlags.h"
@@ -167,8 +168,32 @@ public:
 
 private:
 #if USE_SSL
-    void connectedToPeer(ErrorState *error);
-    static void ConnectedToPeer(TunnelStateData *tunnel, ErrorState *error);
+    /// Gives PeerConnector access to Answer in the TunnelStateData callback dialer.
+    /// TODO: When TunnelStateData becomes a job, see PeerPoolMgr for a simpler version.
+    class MyAnswerDialer: public CallDialer, public Ssl::PeerConnector::CbDialer
+    {
+    public:
+        typedef void (TunnelStateData::*Method)(Ssl::PeerConnectorAnswer &);
+
+        MyAnswerDialer(Method method, TunnelStateData *tunnel):
+                       method_(method), tunnel_(tunnel), answer_() {}
+
+        /* CallDialer API */
+        virtual bool canDial(AsyncCall &call) { return tunnel_.valid(); }
+        void dial(AsyncCall &call) { ((&(*tunnel_))->*method_)(answer_); }
+        virtual void print(std::ostream &os) const {
+            os << '(' << tunnel_.get() << ", " << answer_ << ')'; }
+
+        /* Ssl::PeerConnector::CbDialer API */
+        virtual Ssl::PeerConnectorAnswer &answer() { return answer_; }
+
+    private:
+        Method method_;
+        CbcPointer<TunnelStateData> tunnel_;
+        Ssl::PeerConnectorAnswer answer_;
+    };
+
+    void connectedToPeer(Ssl::PeerConnectorAnswer &answer);
 #endif
 
     void copy (size_t len, comm_err_t errcode, int xerrno, Connection &from, Connection &to, IOCB *);
@@ -793,15 +818,7 @@ tunnelConnectDone(const Comm::ConnectionPointer &conn, comm_err_t status, int xe
         tunnelState->serverDestinations.shift();
         if (status != COMM_TIMEOUT && tunnelState->serverDestinations.size() > 0) {
             /* Try another IP of this destination host */
-
-            if (Ip::Qos::TheConfig.isAclTosActive()) {
-                tunnelState->serverDestinations[0]->tos = GetTosToServer(tunnelState->request.getRaw());
-            }
-
-#if SO_MARK && USE_LIBCAP
-            tunnelState->serverDestinations[0]->nfmark = GetNfmarkToServer(tunnelState->request.getRaw());
-#endif
-
+            GetMarkingsToServer(tunnelState->request.getRaw(), *tunnelState->serverDestinations[0]);
             debugs(26, 4, HERE << "retry with : " << tunnelState->serverDestinations[0]);
             AsyncCall::Pointer call = commCbCall(26,3, "tunnelConnectDone", CommConnectCbPtrFun(tunnelConnectDone, tunnelState));
             Comm::ConnOpener *cs = new Comm::ConnOpener(tunnelState->serverDestinations[0], call, Config.Timeout.connect);
@@ -852,9 +869,6 @@ tunnelConnectDone(const Comm::ConnectionPointer &conn, comm_err_t status, int xe
                                      CommTimeoutCbPtrFun(tunnelTimeout, tunnelState));
     commSetConnTimeout(conn, Config.Timeout.read, timeoutCall);
 }
-
-tos_t GetTosToServer(HttpRequest * request);
-nfmark_t GetNfmarkToServer(HttpRequest * request);
 
 void
 tunnelStart(ClientHttpRequest * http, int64_t * size_ptr, int *status_ptr)
@@ -924,10 +938,9 @@ TunnelStateData::connectToPeer() {
 #if USE_SSL
     if (CachePeer *p = srv->getPeer()) {
         if (p->use_ssl) {
-            ErrorState *error = NULL;
             AsyncCall::Pointer callback = asyncCall(5,4,
                 "TunnelStateData::ConnectedToPeer",
-                cbdataDialer(&TunnelStateData::ConnectedToPeer, this, error));
+                MyAnswerDialer(&TunnelStateData::connectedToPeer, this));
             Ssl::PeerConnector *connector =
                 new Ssl::PeerConnector(request, srv, callback);
             AsyncJob::Start(connector); // will call our callback
@@ -942,25 +955,18 @@ TunnelStateData::connectToPeer() {
 #if USE_SSL
 /// Ssl::PeerConnector callback
 void
-TunnelStateData::connectedToPeer(ErrorState *error)
+TunnelStateData::connectedToPeer(Ssl::PeerConnectorAnswer &answer)
 {
-    debugs(26, 3, HERE << "error: " << error);
-    if (error) {
+    if (ErrorState *error = answer.error.get()) {
         *status_ptr = error->httpStatus;
         error->callback = tunnelErrorComplete;
         error->callback_data = this;
         errorSend(client.conn, error);
+        answer.error.clear(); // perserve error for errorSendComplete()
         return;
-	}
+    }
 
     tunnelRelayConnectRequest(server.conn, this);
-}
-
-/// Ssl::PeerConnector callback (TunnelStateData::connectedToPeer) wrapper
-void
-TunnelStateData::ConnectedToPeer(TunnelStateData *tunnel, ErrorState *error)
-{
-    tunnel->connectedToPeer(error);
 }
 #endif
 
@@ -1046,13 +1052,7 @@ tunnelPeerSelectComplete(Comm::ConnectionList *peer_paths, ErrorState *err, void
     }
     delete err;
 
-    if (Ip::Qos::TheConfig.isAclTosActive()) {
-        tunnelState->serverDestinations[0]->tos = GetTosToServer(tunnelState->request.getRaw());
-    }
-
-#if SO_MARK && USE_LIBCAP
-    tunnelState->serverDestinations[0]->nfmark = GetNfmarkToServer(tunnelState->request.getRaw());
-#endif
+    GetMarkingsToServer(tunnelState->request.getRaw(), *tunnelState->serverDestinations[0]);
 
     debugs(26, 3, HERE << "paths=" << peer_paths->size() << ", p[0]={" << (*peer_paths)[0] << "}, serverDest[0]={" <<
            tunnelState->serverDestinations[0] << "}");

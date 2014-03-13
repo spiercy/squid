@@ -4,6 +4,11 @@
 #include "base/Vector.h"
 #include "base/RefCount.h"
 
+class CommAcceptCbParams;
+class CommTimeoutCbParams;
+class CommCloseCbParams;
+class FdeCbParams;
+
 namespace Comm
 {
 
