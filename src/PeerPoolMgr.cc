@@ -8,16 +8,35 @@
 #include "fd.h"
 #include "FwdState.h"
 #include "globals.h"
+#include "HttpRequest.h"
 #include "neighbors.h"
 #include "pconn.h"
 #include "PeerPoolMgr.h"
 #include "SquidConfig.h"
+#include "ssl/PeerConnector.h"
 
 CBDATA_CLASS_INIT(PeerPoolMgr);
 
+#if USE_SSL
+/// Gives Ssl::PeerConnector access to Answer in the PeerPoolMgr callback dialer.
+class MyAnswerDialer: public UnaryMemFunT<PeerPoolMgr, Ssl::PeerConnectorAnswer, Ssl::PeerConnectorAnswer&>,
+        public Ssl::PeerConnector::CbDialer
+{
+public:
+    MyAnswerDialer(const JobPointer &aJob, Method aMethod):
+                   UnaryMemFunT<PeerPoolMgr, Ssl::PeerConnectorAnswer, Ssl::PeerConnectorAnswer&>(aJob, aMethod, Ssl::PeerConnectorAnswer()) {}
+
+    /* Ssl::PeerConnector::CbDialer API */
+    virtual Ssl::PeerConnectorAnswer &answer() { return arg1; }
+};
+#endif
+
 PeerPoolMgr::PeerPoolMgr(CachePeer *aPeer): AsyncJob("PeerPoolMgr"),
         peer(cbdataReference(aPeer)),
+        request(),
         opener(),
+        securer(),
+        closer(),
         addrUsed(0)
 {
 }
@@ -31,6 +50,12 @@ void
 PeerPoolMgr::start()
 {
     AsyncJob::start();
+
+    // ErrorState, getOutgoingAddress(), and other APIs may require a request.
+    // We fake one. TODO: Optionally send this request to peers?
+    request = new HttpRequest(Http::METHOD_OPTIONS, AnyP::PROTO_HTTP, "*");
+    request->SetHost(peer->host);
+
     checkpoint("peer initialized");
 }
 
@@ -76,20 +101,95 @@ PeerPoolMgr::handleOpenedConnection(const CommConnectCbParams &params)
 
     Must(params.conn != NULL);
 
-    // TODO: Handle SSL peers.
+#if USE_SSL
+    // Handle SSL peers.
+    if (peer->use_ssl) {
+        typedef CommCbMemFunT<PeerPoolMgr, CommCloseCbParams> CloserDialer;
+        closer = JobCallback(48, 3, CloserDialer, this,
+                             PeerPoolMgr::handleSecureClosure);
+        comm_add_close_handler(params.conn->fd, closer);
 
-    peer->standby.pool->push(params.conn, NULL /* domain */);
+        securer = asyncCall(48, 4, "PeerPoolMgr::handleSecuredPeer",
+                            MyAnswerDialer(this, &PeerPoolMgr::handleSecuredPeer));
+        Ssl::PeerConnector *connector =
+            new Ssl::PeerConnector(request, params.conn, securer);
+        AsyncJob::Start(connector); // will call our callback
+        return;
+    }
+#endif
+
+    pushNewConnection(params.conn);
+}
+
+/// the final step in connection opening (and, optionally, securing) sequence
+void
+PeerPoolMgr::pushNewConnection(const Comm::ConnectionPointer &conn)
+{
+    Must(validPeer());
+    Must(Comm::IsConnOpen(conn));
+    peer->standby.pool->push(conn, NULL /* domain */);
     // push() will trigger a checkpoint()
 }
+
+#if USE_SSL
+/// Ssl::PeerConnector callback
+void
+PeerPoolMgr::handleSecuredPeer(Ssl::PeerConnectorAnswer &answer)
+{
+    Must(securer != NULL);
+    securer = NULL;
+
+    if (closer != NULL) {
+        if (answer.conn != NULL)
+            comm_remove_close_handler(answer.conn->fd, closer);
+        else
+            closer->cancel("securing completed");
+        closer = NULL;
+    }
+
+    if (!validPeer()) {
+        debugs(48, 3, "peer gone");
+        if (answer.conn != NULL)
+            answer.conn->close();
+        return;
+    }
+
+    if (answer.error.get()) {
+        if (answer.conn != NULL)
+            answer.conn->close();
+        // PeerConnector calls peerConnectFailed() for us;
+        checkpoint("conn securing failure"); // may retry
+        return;
+    }
+
+    pushNewConnection(answer.conn);
+}
+
+/// called when the connection we are trying to secure is closed by a 3rd party
+void
+PeerPoolMgr::handleSecureClosure(const CommCloseCbParams &params)
+{
+    Must(closer != NULL);
+    Must(securer != NULL);
+    securer->cancel("conn closed by a 3rd party");
+    securer = NULL;
+    closer = NULL;
+    // allow the closing connection to fully close before we check again
+    Checkpoint(this, "conn closure while securing");
+}
+
+#endif
+
+
 
 /// starts the process of opening a new standby connection (if possible)
 void
 PeerPoolMgr::openNewConnection()
 {
     // KISS: Do nothing else when we are already doing something.
-    if (opener != NULL || shutting_down) {
-        debugs(48, 7, "busy: " << opener << '|' << shutting_down);
-        return; // there will be another checkpoint when we are done opening
+    if (opener != NULL || securer != NULL || shutting_down) {
+        debugs(48, 7, "busy: " << opener << '|' << securer << '|' << shutting_down);
+        return; // there will be another checkpoint when we are done opening/securing
     }
 
     // Do not talk to a peer until it is ready.
@@ -120,8 +220,8 @@ PeerPoolMgr::openNewConnection()
     conn->remote.port(peer->http_port);
     conn->peerType = STANDBY_POOL; // should be reset by peerSelect()
     conn->setPeer(peer);
-    getOutgoingAddress(NULL /* request */, conn);
-    GetMarkingsToServer(NULL /* request */, *conn);
+    getOutgoingAddress(request.getRaw(), conn);
+    GetMarkingsToServer(request.getRaw(), *conn);
 
     const int ctimeout = peer->connect_timeout > 0 ?
                          peer->connect_timeout : Config.Timeout.peer_connect;

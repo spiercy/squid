@@ -4,8 +4,15 @@
 #include "base/AsyncJob.h"
 #include "comm/forward.h"
 
+class HttpRequest;
 class CachePeer;
 class CommConnectCbParams;
+
+#if USE_SSL
+namespace Ssl {
+    class PeerConnectorAnswer;
+}
+#endif
 
 /// Maintains an fixed-size "standby" PconnPool for a single CachePeer.
 class PeerPoolMgr: public AsyncJob
@@ -32,10 +39,18 @@ protected:
     void closeOldConnections(const int howMany);
 
     void handleOpenedConnection(const CommConnectCbParams &params);
+#if USE_SSL
+    void handleSecuredPeer(Ssl::PeerConnectorAnswer &answer);
+    void handleSecureClosure(const CommCloseCbParams &params);
+#endif
+    void pushNewConnection(const Comm::ConnectionPointer &conn);
 
 private:
     CachePeer *peer; ///< the owner of the pool we manage
+    RefCount<HttpRequest> request; ///< fake HTTP request for conn opening code
     AsyncCall::Pointer opener; ///< whether we are opening a connection
+    AsyncCall::Pointer securer; ///< whether we are securing a connection
+    AsyncCall::Pointer closer; ///< monitors conn while we are securing it
     unsigned int addrUsed; ///< counter for cycling through peer addresses
 
     CBDATA_CLASS2(PeerPoolMgr);

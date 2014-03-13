@@ -31,25 +31,36 @@
 
 #include "base/AsyncJob.h"
 #include "base/AsyncCbdataCalls.h"
+#include <iosfwd>
 //#include "HttpMsg.h"
 //#include "CommCalls.h"
 
 class HttpRequest;
 class ErrorState;
-class TunnelStateData; // XXX: remove after generalizing CbDialer
-
-typedef RefCount<HttpRequest> HttpRequestPointer;
 
 namespace Ssl {
 
+/// PeerConnector results (supplied via a callback).
+/// The connection to peer was secured if and only if the error member is nil.
+class PeerConnectorAnswer {
+public:
+    ~PeerConnectorAnswer(); ///< deletes error if it is still set
+    Comm::ConnectionPointer conn; ///< peer connection (secured on success)
+
+    /// answer recepients must clear the error member in order to keep its info
+    /// XXX: We should refcount ErrorState instead of cbdata-protecting it.
+    CbcPointer<ErrorState> error; ///< problem details (nil on success)
+};
+
 /**
    Connects Squid client-side to an SSL peer (cache_peer ... ssl).
-   Used by tunnel.cc and forward.cc to start talking to an SSL peer.
+   Used by TunnelStateData, FwdState, and PeerPoolMgr to start talking to an
+   SSL peer.
 
-   The caller receives a call back. If the second/error argument of
-   the call is not nil, then there was an error and the SSL connection to the
-   SSL peer was not fully established. The error should be returned to the
-   HTTP client if no other peers can be used.
+   The caller receives a call back with PeerConnectorAnswer. If answer.error
+   is not nil, then there was an error and the SSL connection to the SSL peer
+   was not fully established. The error object is suitable for error response
+   generation.
 
    The caller must monitor the connection for closure because this
    job will not inform the caller about such events.
@@ -68,22 +79,16 @@ namespace Ssl {
 */ 
 class PeerConnector: virtual public AsyncJob
 {
-
-    /// Ssl::PeerConnector result delivery API.
-    class User {
+public:
+    /// Callback dialier API to allow PeerConnector to set the answer.
+    class CbDialer {
     public:
-        virtual ~User() {}
-
-        virtual void *toCbdata() = 0; // the user must be cbdata-protected
-
-        /// PeerConnector calls this upon completion. Error is nil on success.
-        virtual void noteSslPeerConnect(CbcPointer<ErrorState> &error) = 0;
+        virtual ~CbDialer() {}
+        /// gives PeerConnector access to the in-dialer answer
+        virtual PeerConnectorAnswer &answer() = 0;
     };
 
-    /// Ssl::PeerConnector result delivery API.
-    /// Currently based on BinaryCbdataDialer<> but can be generalized.
-    /// The second artument is nil if no errors were encountered.
-    typedef BinaryCbdataDialer<TunnelStateData, ErrorState> CbDialer;
+    typedef RefCount<HttpRequest> HttpRequestPointer;
 
 public:
     PeerConnector(HttpRequestPointer &aRequest,
@@ -123,5 +128,7 @@ private:
 };
 
 } // namespace Ssl
+
+std::ostream &operator <<(std::ostream &os, const Ssl::PeerConnectorAnswer &a);
 
 #endif /* SQUID_PEER_CONNECTOR_H */
