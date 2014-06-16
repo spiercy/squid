@@ -7,6 +7,8 @@
 #include "comm_err_t.h"
 #include "comm/forward.h"
 
+class CommCloseCbParams;
+
 namespace Comm
 {
 
@@ -73,6 +75,8 @@ private:
     /// Reserved for read-only use.
     ConnectionPointer conn;
 
+    AsyncCall::Pointer closer_; ///< listen socket closure handler
+
     /// Method to test if there are enough file descriptors to open a new client connection
     /// if not the accept() will be postponed
     static bool okToAccept();
@@ -83,6 +87,8 @@ private:
     void acceptOne();
     comm_err_t oldAccept(Comm::ConnectionPointer &details);
     void setListen();
+
+    void handleClosure(const CommCloseCbParams &io);
 
     CBDATA_CLASS2(TcpAcceptor);
 };

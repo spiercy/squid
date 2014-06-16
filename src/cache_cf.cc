@@ -886,10 +886,15 @@ configDoConfigure(void)
 #if HAVE_PUTENV
 
             if (pwd->pw_dir && *pwd->pw_dir) {
+                // putenv() leaks by design; avoid leaks when nothing changes
+                static String lastDir;
+                if (!lastDir.size() || lastDir != pwd->pw_dir) {
+                    lastDir = pwd->pw_dir;
                 int len;
                 char *env_str = (char *)xcalloc((len = strlen(pwd->pw_dir) + 6), 1);
                 snprintf(env_str, len, "HOME=%s", pwd->pw_dir);
                 putenv(env_str);
+                }
             }
 
 #endif

@@ -1,4 +1,5 @@
 #include "squid.h"
+#include "acl/Tree.h"
 #include "acl/Gadgets.h"
 #include "adaptation/AccessRule.h"
 #include "adaptation/Service.h"
@@ -14,7 +15,7 @@ Adaptation::AccessRule::AccessRule(const String &aGroupId): id(++LastId), groupI
 
 Adaptation::AccessRule::~AccessRule()
 {
-    // XXX: leaking acls here?
+    delete acl;
 }
 
 void

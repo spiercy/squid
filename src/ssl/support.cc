@@ -707,10 +707,11 @@ ssl_free_X509(void *, void *ptr, CRYPTO_EX_DATA *,
 static void
 ssl_initialize(void)
 {
-    static int ssl_initialized = 0;
+    static bool initialized = false;
+    if (initialized)
+        return;
+    initialized = true;
 
-    if (!ssl_initialized) {
-        ssl_initialized = 1;
         SSL_load_error_strings();
         SSLeay_add_ssl_algorithms();
 #if HAVE_OPENSSL_ENGINE_H
@@ -735,8 +736,6 @@ ssl_initialize(void)
         }
 
 #endif
-
-    }
 
     ssl_ex_index_server = SSL_get_ex_new_index(0, (void *) "server", NULL, NULL, NULL);
     ssl_ctx_ex_index_dont_verify_domain = SSL_CTX_get_ex_new_index(0, (void *) "dont_verify_domain", NULL, NULL, NULL);
