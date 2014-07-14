@@ -68,6 +68,7 @@ public:
     void connectStart();
     void connectDone(const Comm::ConnectionPointer & conn, comm_err_t status, int xerrno);
     void connectTimeout(int fd);
+    void setReadTimeout();
     void initiateSSL();
     void negotiateSSL(int fd);
     bool checkRetry();

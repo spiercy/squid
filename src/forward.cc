@@ -659,6 +659,19 @@ FwdState::handleUnregisteredServerEnd()
     retryOrBail();
 }
 
+void
+FwdState::setReadTimeout()
+{
+    AsyncCall::Pointer nil;
+    /* calculate total forwarding timeout ??? */
+    int ftimeout = Config.Timeout.forward - (squid_curtime - start_t);
+    if (ftimeout < 0)
+        ftimeout = 0; /*we are timed out*/
+
+    int read_timeout = Config.Timeout.read < ftimeout ? Config.Timeout.read : ftimeout;
+    commSetConnTimeout(serverConnection(), read_timeout, nil);
+}
+
 #if USE_SSL
 void
 FwdState::negotiateSSL(int fd)
@@ -678,6 +691,7 @@ FwdState::negotiateSSL(int fd)
         switch (ssl_error) {
 
         case SSL_ERROR_WANT_READ:
+            setReadTimeout();
             Comm::SetSelect(fd, COMM_SELECT_READ, fwdNegotiateSSLWrapper, this, 0);
             return;
 
