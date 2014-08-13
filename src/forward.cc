@@ -1169,6 +1169,20 @@ FwdState::connectStart()
             if (pinned_connection->pinnedAuth())
                 request->flags.auth = 1;
             comm_add_close_handler(serverConn->fd, fwdServerClosedWrapper, this);
+
+            /* Update server side TOS and Netfilter mark on the connection. */
+            if (Ip::Qos::TheConfig.isAclTosActive()) {
+                debugs(17, 3, HERE << "setting tos for pinned connection to " << (int)serverConn->tos );
+                serverConn->tos = GetTosToServer(request);
+                Ip::Qos::setSockTos(serverConn, serverConn->tos);
+            }
+#if SO_MARK
+            if (Ip::Qos::TheConfig.isAclNfmarkActive()) {
+                serverConn->nfmark = GetNfmarkToServer(request);
+                Ip::Qos::setSockNfmark(serverConn, serverConn->nfmark);
+            }
+#endif
+
             // the server may close the pinned connection before this request
             pconnRace = racePossible;
             dispatch();
@@ -1208,6 +1222,7 @@ FwdState::connectStart()
 
         /* Update server side TOS and Netfilter mark on the connection. */
         if (Ip::Qos::TheConfig.isAclTosActive()) {
+            debugs(17, 3, HERE << "setting tos to " << (int)temp->tos );
             temp->tos = GetTosToServer(request);
             Ip::Qos::setSockTos(temp, temp->tos);
         }

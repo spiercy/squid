@@ -665,6 +665,9 @@ FtpStateData::listenForDataChannel(const Comm::ConnectionPointer &conn, const ch
         debugs(9, 3, HERE << "Unconnected data socket created on " << conn);
     }
 
+    conn->tos = ctrl.conn->tos;
+    conn->nfmark = ctrl.conn->nfmark;
+    
     assert(Comm::IsConnOpen(conn));
     AsyncJob::Start(new Comm::TcpAcceptor(conn, note, sub));
 
@@ -2507,6 +2510,8 @@ ftpReadEPSV(FtpStateData* ftpState)
     conn->local.SetPort(0);
     conn->remote = ftpState->ctrl.conn->remote;
     conn->remote.SetPort(port);
+    conn->tos = ftpState->ctrl.conn->tos;
+    conn->nfmark = ftpState->ctrl.conn->nfmark;
 
     debugs(9, 3, HERE << "connecting to " << conn->remote);
 
@@ -2755,6 +2760,8 @@ ftpReadPasv(FtpStateData * ftpState)
     conn->local.SetPort(0);
     conn->remote = ipaddr;
     conn->remote.SetPort(port);
+    conn->tos = ftpState->ctrl.conn->tos;
+    conn->nfmark = ftpState->ctrl.conn->nfmark;
 
     debugs(9, 3, HERE << "connecting to " << conn->remote);
 

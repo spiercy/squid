@@ -92,7 +92,7 @@
 
 static void commStopHalfClosedMonitor(int fd);
 static IOCB commHalfClosedReader;
-static void comm_init_opened(const Comm::ConnectionPointer &conn, tos_t tos, nfmark_t nfmark, const char *note, struct addrinfo *AI);
+static void comm_init_opened(const Comm::ConnectionPointer &conn, const char *note, struct addrinfo *AI);
 static int comm_apply_flags(int new_socket, Ip::Address &addr, int flags, struct addrinfo *AI);
 
 #if USE_DELAY_POOLS
@@ -442,7 +442,7 @@ comm_open(int sock_type,
           int flags,
           const char *note)
 {
-    return comm_openex(sock_type, proto, addr, flags, 0, 0, note);
+    return comm_openex(sock_type, proto, addr, flags, note);
 }
 
 void
@@ -455,7 +455,7 @@ comm_open_listener(int sock_type,
     conn->flags |= COMM_DOBIND;
 
     /* attempt native enabled port. */
-    conn->fd = comm_openex(sock_type, proto, conn->local, conn->flags, 0, 0, note);
+    conn->fd = comm_openex(sock_type, proto, conn->local, conn->flags, note);
 }
 
 int
@@ -471,7 +471,7 @@ comm_open_listener(int sock_type,
     flags |= COMM_DOBIND;
 
     /* attempt native enabled port. */
-    sock = comm_openex(sock_type, proto, addr, flags, 0, 0, note);
+    sock = comm_openex(sock_type, proto, addr, flags, note);
 
     return sock;
 }
@@ -535,8 +535,6 @@ comm_openex(int sock_type,
             int proto,
             Ip::Address &addr,
             int flags,
-            tos_t tos,
-            nfmark_t nfmark,
             const char *note)
 {
     int new_socket;
@@ -594,14 +592,6 @@ comm_openex(int sock_type,
 
     debugs(50, 3, "comm_openex: Opened socket " << conn << " : family=" << AI->ai_family << ", type=" << AI->ai_socktype << ", protocol=" << AI->ai_protocol );
 
-    /* set TOS if needed */
-    if (tos)
-        Ip::Qos::setSockTos(conn, tos);
-
-    /* set netfilter mark if needed */
-    if (nfmark)
-        Ip::Qos::setSockNfmark(conn, nfmark);
-
     if ( Ip::EnableIpv6&IPV6_SPECIAL_SPLITSTACK && addr.IsIPv6() )
         comm_set_v6only(conn->fd, 1);
 
@@ -610,7 +600,7 @@ comm_openex(int sock_type,
     if ( Ip::EnableIpv6&IPV6_SPECIAL_V4MAPPING && addr.IsIPv6() )
         comm_set_v6only(conn->fd, 0);
 
-    comm_init_opened(conn, tos, nfmark, note, AI);
+    comm_init_opened(conn, note, AI);
     new_socket = comm_apply_flags(conn->fd, addr, flags, AI);
 
     addr.FreeAddrInfo(AI);
@@ -625,8 +615,6 @@ comm_openex(int sock_type,
 /// update FD tables after a local or remote (IPC) comm_openex();
 void
 comm_init_opened(const Comm::ConnectionPointer &conn,
-                 tos_t tos,
-                 nfmark_t nfmark,
                  const char *note,
                  struct addrinfo *AI)
 {
@@ -644,9 +632,6 @@ comm_init_opened(const Comm::ConnectionPointer &conn,
 
     fde *F = &fd_table[conn->fd];
     F->local_addr = conn->local;
-    F->tosToServer = tos;
-
-    F->nfmarkToServer = nfmark;
 
     F->sock_family = AI->ai_family;
 }
@@ -723,7 +708,7 @@ comm_import_opened(const Comm::ConnectionPointer &conn,
     assert(Comm::IsConnOpen(conn));
     assert(AI);
 
-    comm_init_opened(conn, 0, 0, note, AI);
+    comm_init_opened(conn, note, AI);
 
     if (!(conn->flags & COMM_NOCLOEXEC))
         fd_table[conn->fd].flags.close_on_exec = 1;

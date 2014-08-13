@@ -13,6 +13,7 @@
 #include "globals.h"
 #include "icmp/net_db.h"
 #include "ipcache.h"
+#include "ip/QosConfig.h"
 #include "ip/tools.h"
 #include "SquidConfig.h"
 #include "SquidTime.h"
@@ -255,11 +256,29 @@ Comm::ConnOpener::createFd()
     if (callback_ == NULL || callback_->canceled())
         return false;
 
-    temporaryFd_ = comm_openex(SOCK_STREAM, IPPROTO_TCP, conn_->local, conn_->flags, conn_->tos, conn_->nfmark, host_);
+    temporaryFd_ = comm_openex(SOCK_STREAM, IPPROTO_TCP, conn_->local, conn_->flags, host_);
     if (temporaryFd_ < 0) {
         sendAnswer(COMM_ERR_CONNECT, 0, "Comm::ConnOpener::createFd");
         return false;
     }
+
+    // Set TOS if needed.
+    // Temporary use of the temporaryFD_ to conn_ object.
+    int cfd = conn_->fd;
+    conn_->fd = temporaryFd_;
+    if (conn_->tos)
+        Ip::Qos::setSockTos(conn_, conn_->tos);
+#if SO_MARK
+    if (conn_->nfmark)
+        Ip::Qos::setSockNfmark(conn_, conn_->nfmark);
+#endif
+
+    fd_table[conn_->fd].tosToServer = conn_->tos;
+    fd_table[conn_->fd].nfmarkToServer = conn_->nfmark;
+    // Put back the old value.
+    // The temporaryFd_ will be set to conn_ object after the connection
+    // established
+    conn_->fd = cfd;
 
     typedef CommCbMemFunT<Comm::ConnOpener, CommCloseCbParams> abortDialer;
     calls_.earlyAbort_ = JobCallback(5, 4, abortDialer, this, Comm::ConnOpener::earlyAbort);
