@@ -397,9 +397,9 @@ static bool generateFakeSslCertificate(Ssl::X509_Pointer & certToStore, Ssl::EVP
 
     /*Now sign the request */
     if (properties.signAlgorithm != Ssl::algSignSelf && properties.signWithPkey.get())
-        ret = X509_sign(cert.get(), properties.signWithPkey.get(), EVP_sha1());
+        ret = X509_sign(cert.get(), properties.signWithPkey.get(), EVP_sha256());
     else //else sign with self key (self signed request)
-        ret = X509_sign(cert.get(), pkey.get(), EVP_sha1());
+        ret = X509_sign(cert.get(), pkey.get(), EVP_sha256());
 
     if (!ret)
         return false;
