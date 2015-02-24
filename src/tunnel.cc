@@ -50,6 +50,7 @@
 #include "MemBuf.h"
 #include "PeerSelectState.h"
 #include "SquidConfig.h"
+#include "SquidTime.h"
 #include "StatCounters.h"
 #include "tools.h"
 #if USE_DELAY_POOLS
@@ -168,6 +169,9 @@ tunnelClientClosed(const CommCloseCbParams &params)
     TunnelStateData *tunnelState = (TunnelStateData *)params.data;
     debugs(26, 3, HERE << tunnelState->client.conn);
     tunnelState->client.conn = NULL;
+
+    if (tunnelState->request != NULL)
+        tunnelState->request->hier.stopPeerClock(false);
 
     if (tunnelState->noConnections()) {
         tunnelStateFree(tunnelState);
@@ -606,6 +610,8 @@ tunnelConnectDone(const Comm::ConnectionPointer &conn, comm_err_t status, int xe
             err->callback = tunnelErrorComplete;
             err->callback_data = tunnelState;
             errorSend(tunnelState->client.conn, err);
+            if (tunnelState->request != NULL)
+                tunnelState->request->hier.stopPeerClock(false);
         }
         return;
     }
@@ -765,6 +771,9 @@ tunnelPeerSelectComplete(Comm::ConnectionList *peer_paths, ErrorState *err, void
 #if SO_MARK && USE_LIBCAP
     tunnelState->serverDestinations[0]->nfmark = GetNfmarkToServer(tunnelState->request);
 #endif
+
+    if (tunnelState->request != NULL)
+        tunnelState->request->hier.startPeerClock();
 
     debugs(26, 3, HERE << "paths=" << peer_paths->size() << ", p[0]={" << (*peer_paths)[0] << "}, serverDest[0]={" <<
            tunnelState->serverDestinations[0] << "}");

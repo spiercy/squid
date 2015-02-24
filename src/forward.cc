@@ -213,6 +213,8 @@ FwdState::completed()
 
     flags.forward_completed = 1;
 
+    request->hier.stopPeerClock(false);
+
     if (EBIT_TEST(entry->flags, ENTRY_ABORTED)) {
         debugs(17, 3, HERE << "entry aborted");
         return ;
@@ -631,6 +633,8 @@ FwdState::retryOrBail()
 
     // TODO: should we call completed() here and move doneWithRetries there?
     doneWithRetries();
+
+    request->hier.stopPeerClock(false);
 
     if (self != NULL && !err && shutting_down) {
         ErrorState *anErr = new ErrorState(ERR_SHUTTING_DOWN, HTTP_SERVICE_UNAVAILABLE, request);
@@ -1117,8 +1121,7 @@ FwdState::connectStart()
 
     debugs(17, 3, "fwdConnectStart: " << entry->url());
 
-    if (!request->hier.first_conn_start.tv_sec) // first attempt
-        request->hier.first_conn_start = current_time;
+    request->hier.startPeerClock();
 
     /* connection timeout */
     int ctimeout;
