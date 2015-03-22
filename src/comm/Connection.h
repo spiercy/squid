@@ -43,6 +43,7 @@
 #include "ip/Address.h"
 #include "MemPool.h"
 #include "RefCount.h"
+#include "SquidTime.h"
 #include "typedefs.h"
 #if USE_SQUID_EUI
 #include "eui/Eui48.h"
@@ -119,6 +120,16 @@ public:
      */
     void setPeer(CachePeer * p);
 
+    /** The time the connection started */
+    time_t startTime() const {return startTime_;}
+
+    /** The connection lifetime */
+    time_t lifeTime() const {return squid_curtime - startTime_;}
+
+    /** The time left for this connection*/
+    time_t timeLeft(const time_t idleTimeout) const;
+
+    void noteStart() {startTime_ = squid_curtime;}
 private:
     /** These objects may not be exactly duplicated. Use copyDetails() instead. */
     Connection(const Connection &c);
@@ -158,6 +169,9 @@ public:
 private:
     /** cache_peer data object (if any) */
     CachePeer *peer_;
+
+    /** The time the connection object was created */
+    time_t startTime_;
 };
 
 }; // namespace Comm

@@ -105,6 +105,7 @@ public:
         time_t request;
         time_t clientIdlePconn;
         time_t serverIdlePconn;
+        time_t pconnLifetime;
         time_t siteSelect;
         time_t deadPeer;
         int icp_query;      /* msec */

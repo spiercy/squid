@@ -4,6 +4,7 @@
 #include "comm.h"
 #include "comm/Connection.h"
 #include "fde.h"
+#include "SquidConfig.h"
 #include "SquidTime.h"
 
 class CachePeer;
@@ -20,7 +21,8 @@ Comm::Connection::Connection() :
         fd(-1),
         tos(0),
         flags(COMM_NONBLOCKING),
-        peer_(NULL)
+        peer_(NULL),
+        startTime_(squid_curtime)
 {
     *rfc931 = 0; // quick init the head. the rest does not matter.
 }
@@ -47,6 +49,7 @@ Comm::Connection::copyDetails() const
     c->peerType = peerType;
     c->tos = tos;
     c->flags = flags;
+    c->startTime_ = startTime_;
 
     // ensure FD is not open in the new copy.
     c->fd = -1;
@@ -88,4 +91,14 @@ Comm::Connection::setPeer(CachePeer *p)
     if (p) {
         peer_ = cbdataReference(p);
     }
+}
+
+time_t
+Comm::Connection::timeLeft(const time_t idleTimeout) const
+{
+    if (!Config.Timeout.pconnLifetime)
+        return idleTimeout;
+
+    const time_t lifeTimeLeft = lifeTime() < Config.Timeout.pconnLifetime ? Config.Timeout.pconnLifetime - lifeTime() : 1;
+    return min(lifeTimeLeft, idleTimeout);
 }
