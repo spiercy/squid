@@ -1507,7 +1507,7 @@ ConnStateData::readNextRequest()
     typedef CommCbMemFunT<ConnStateData, CommTimeoutCbParams> TimeoutDialer;
     AsyncCall::Pointer timeoutCall = JobCallback(33, 5,
                                      TimeoutDialer, this, ConnStateData::requestTimeout);
-    commSetConnTimeout(clientConnection, idleTimeout(), timeoutCall);
+    commSetConnTimeout(clientConnection, clientConnection->timeLeft(idleTimeout()), timeoutCall);
 
     readSomeData();
     /** Please don't do anything with the FD past here! */

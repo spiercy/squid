@@ -13,6 +13,7 @@
 #include "comm/Connection.h"
 #include "fde.h"
 #include "neighbors.h"
+#include "SquidConfig.h"
 #include "SquidTime.h"
 
 class CachePeer;
@@ -100,5 +101,15 @@ Comm::Connection::setPeer(CachePeer *p)
     if (p) {
         peer_ = cbdataReference(p);
     }
+}
+
+time_t
+Comm::Connection::timeLeft(const time_t idleTimeout) const
+{
+    if (!Config.Timeout.pconnLifetime)
+        return idleTimeout;
+
+    const time_t lifeTimeLeft = lifeTime() < Config.Timeout.pconnLifetime ? Config.Timeout.pconnLifetime - lifeTime() : 1;
+    return min(lifeTimeLeft, idleTimeout);
 }
 
