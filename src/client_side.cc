@@ -1866,7 +1866,7 @@ ClientSocketContext::writeComplete(const Comm::ConnectionPointer &conn, char *bu
         break;
 
     case STREAM_COMPLETE:
-        debugs(33, 5, conn << "Stream complete, keepalive is " << http->request->flags.proxyKeepalive);
+        debugs(33, 5, conn << " Stream complete, keepalive is " << http->request->flags.proxyKeepalive);
         if (http->request->flags.proxyKeepalive)
             keepaliveNextRequest();
         else
@@ -2276,7 +2276,7 @@ parseHttpRequest(ConnStateData *csd, HttpParser *hp, HttpRequestMethod * method_
 
 #endif
 
-    debugs(33,5, HERE << "repare absolute URL from " <<
+    debugs(33,5, "Prepare absolute URL from " <<
            (csd->transparent()?"intercept":(csd->port->flags.accelSurrogate ? "accel":"")));
     /* Rewrite the URL in transparent or accelerator mode */
     /* NP: there are several cases to traverse here:
@@ -2860,6 +2860,9 @@ connStripBufferWhitespace (ConnStateData * conn)
 int
 ConnStateData::pipelinePrefetchMax() const
 {
+    // TODO: Support pipelined requests through pinned connections.
+    if (pinning.pinned)
+        return 0;
     return Config.pipeline_max_prefetch;
 }
 
