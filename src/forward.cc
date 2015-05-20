@@ -636,7 +636,7 @@ FwdState::retryOrBail()
 
     request->hier.stopPeerClock(false);
 
-    if (self != NULL && !err && shutting_down) {
+    if (self != NULL && !err && shutting_down && entry->isEmpty()) {
         ErrorState *anErr = new ErrorState(ERR_SHUTTING_DOWN, HTTP_SERVICE_UNAVAILABLE, request);
         errorAppendEntry(entry, anErr);
     }
