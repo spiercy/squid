@@ -231,9 +231,9 @@ IdleConnList::pop()
 
         // finally, a match. pop and return it.
         Comm::ConnectionPointer result = theList_[i];
+        clearHandlers(result);
         /* may delete this */
         removeAt(i);
-        clearHandlers(result);
         return result;
     }
 
@@ -277,9 +277,9 @@ IdleConnList::findUseable(const Comm::ConnectionPointer &key)
 
         // finally, a match. pop and return it.
         Comm::ConnectionPointer result = theList_[i];
+        clearHandlers(result);
         /* may delete this */
         removeAt(i);
-        clearHandlers(result);
         return result;
     }
 
@@ -292,9 +292,9 @@ IdleConnList::findAndClose(const Comm::ConnectionPointer &conn)
 {
     const int index = findIndexOf(conn);
     if (index >= 0) {
+        clearHandlers(conn);
         /* might delete this */
         removeAt(index);
-        clearHandlers(conn);
         conn->close();
     }
 }
