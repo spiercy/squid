@@ -389,13 +389,13 @@ Ssl::ErrorDetail::err_frm_code Ssl::ErrorDetail::ErrorFormatingCodes[] = {
  */
 const char  *Ssl::ErrorDetail::subject() const
 {
-    if (!broken_cert)
-        return "[Not available]";
-
-    static char tmpBuffer[256]; // A temporary buffer
-    X509_NAME_oneline(X509_get_subject_name(broken_cert.get()), tmpBuffer,
-                      sizeof(tmpBuffer));
-    return tmpBuffer;
+    if (broken_cert.get()) {
+        static char tmpBuffer[256]; // A temporary buffer
+        if (X509_NAME_oneline(X509_get_subject_name(broken_cert.get()), tmpBuffer,
+                      sizeof(tmpBuffer)))
+            return tmpBuffer;
+    }
+    return "[Not available]";
 }
 
 // helper function to be used with Ssl::matchX509CommonNames
@@ -404,9 +404,11 @@ static int copy_cn(void *check_data,  ASN1_STRING *cn_data)
     String *str = (String *)check_data;
     if (!str) // no data? abort
         return 0;
-    if (str->defined())
-        str->append(", ");
-    str->append((const char *)cn_data->data, cn_data->length);
+    if (cn_data && cn_data->length) {
+        if (str->defined())
+            str->append(", ");
+        str->append((const char *)cn_data->data, cn_data->length);
+    }
     return 1;
 }
 
@@ -415,13 +417,14 @@ static int copy_cn(void *check_data,  ASN1_STRING *cn_data)
  */
 const char *Ssl::ErrorDetail::cn() const
 {
-    if (!broken_cert)
-        return "[Not available]";
-
-    static String tmpStr;  ///< A temporary string buffer
-    tmpStr.clean();
-    Ssl::matchX509CommonNames(broken_cert.get(), &tmpStr, copy_cn);
-    return tmpStr.termedBuf();
+    if (broken_cert.get()) {
+        static String tmpStr;  ///< A temporary string buffer
+        tmpStr.clean();
+        Ssl::matchX509CommonNames(broken_cert.get(), &tmpStr, copy_cn);
+        if (tmpStr.defined())
+            return tmpStr.termedBuf();
+    }
+    return "[Not available]";
 }
 
 /**
@@ -429,12 +432,12 @@ const char *Ssl::ErrorDetail::cn() const
  */
 const char *Ssl::ErrorDetail::ca_name() const
 {
-    if (!broken_cert)
-        return "[Not available]";
-
-    static char tmpBuffer[256]; // A temporary buffer
-    X509_NAME_oneline(X509_get_issuer_name(broken_cert.get()), tmpBuffer, sizeof(tmpBuffer));
-    return tmpBuffer;
+    if (broken_cert.get()) {
+        static char tmpBuffer[256]; // A temporary buffer
+        if (X509_NAME_oneline(X509_get_issuer_name(broken_cert.get()), tmpBuffer, sizeof(tmpBuffer)))
+            return tmpBuffer;
+    }
+    return "[Not available]";
 }
 
 /**
@@ -442,13 +445,14 @@ const char *Ssl::ErrorDetail::ca_name() const
  */
 const char *Ssl::ErrorDetail::notbefore() const
 {
-    if (!broken_cert)
-        return "[Not available]";
-
-    static char tmpBuffer[256]; // A temporary buffer
-    ASN1_UTCTIME * tm = X509_get_notBefore(broken_cert.get());
-    Ssl::asn1timeToString(tm, tmpBuffer, sizeof(tmpBuffer));
-    return tmpBuffer;
+    if (broken_cert.get()) {
+        if (ASN1_UTCTIME * tm = X509_get_notBefore(broken_cert.get())) {
+            static char tmpBuffer[256]; // A temporary buffer
+            Ssl::asn1timeToString(tm, tmpBuffer, sizeof(tmpBuffer));
+            return tmpBuffer;
+        }
+    }
+    return "[Not available]";
 }
 
 /**
@@ -456,13 +460,14 @@ const char *Ssl::ErrorDetail::notbefore() const
  */
 const char *Ssl::ErrorDetail::notafter() const
 {
-    if (!broken_cert)
-        return "[Not available]";
-
-    static char tmpBuffer[256]; // A temporary buffer
-    ASN1_UTCTIME * tm = X509_get_notAfter(broken_cert.get());
-    Ssl::asn1timeToString(tm, tmpBuffer, sizeof(tmpBuffer));
-    return tmpBuffer;
+    if (broken_cert.get()) {
+        if (ASN1_UTCTIME * tm = X509_get_notAfter(broken_cert.get())) {
+            static char tmpBuffer[256]; // A temporary buffer
+            Ssl::asn1timeToString(tm, tmpBuffer, sizeof(tmpBuffer));
+            return tmpBuffer;
+        }
+    }
+    return "[Not available]";
 }
 
 /**
