@@ -3466,7 +3466,7 @@ clientNegotiateSSL(int fd, void *data)
 
             if (ret == 0) {
                 debugs(83, 2, "clientNegotiateSSL: Error negotiating SSL connection on FD " << fd << ": Aborted by client");
-                comm_close(fd);
+                conn->clientConnection->close();
                 return;
             } else {
                 int hard = 1;
@@ -3476,22 +3476,21 @@ clientNegotiateSSL(int fd, void *data)
 
                 debugs(83, hard ? 1 : 2, "clientNegotiateSSL: Error negotiating SSL connection on FD " <<
                        fd << ": " << strerror(errno) << " (" << errno << ")");
-
-                comm_close(fd);
+                conn->clientConnection->close();
 
                 return;
             }
 
         case SSL_ERROR_ZERO_RETURN:
             debugs(83, DBG_IMPORTANT, "clientNegotiateSSL: Error negotiating SSL connection on FD " << fd << ": Closed by client");
-            comm_close(fd);
+            conn->clientConnection->close();
             return;
 
         default:
             debugs(83, DBG_IMPORTANT, "clientNegotiateSSL: Error negotiating SSL connection on FD " <<
                    fd << ": " << ERR_error_string(ERR_get_error(), NULL) <<
                    " (" << ssl_error << "/" << ret << ")");
-            comm_close(fd);
+            conn->clientConnection->close();
             return;
         }
 
@@ -4447,6 +4446,7 @@ ConnStateData::clientPinnedConnectionClosed(const CommCloseCbParams &io)
     assert(pinning.serverConnection == io.conn);
     pinning.closeHandler = NULL; // Comm unregisters handlers before calling
     const bool sawZeroReply = pinning.zeroReply; // reset when unpinning
+    pinning.serverConnection->noteClosure();
     unpinConnection();
     if (sawZeroReply && clientConnection != NULL) {
         debugs(33, 3, "Closing client connection on pinned zero reply.");
