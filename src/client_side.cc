@@ -3420,6 +3420,11 @@ httpAccept(const CommAcceptCbParams &params)
 static SSL *
 httpsCreate(const Comm::ConnectionPointer &conn, SSL_CTX *sslContext)
 {
+    if (!Comm::IsConnOpen(conn)) {
+        debugs(83, DBG_IMPORTANT, "Gone connection");
+        return NULL;
+    }
+    
     SSL *ssl = SSL_new(sslContext);
 
     if (!ssl) {
@@ -3699,6 +3704,11 @@ ConnStateData::sslCrtdHandleReplyWrapper(void *data, char *reply)
 void
 ConnStateData::sslCrtdHandleReply(const char * reply)
 {
+    if (!isOpen()) {
+        debugs(33, 3, "Connection gone while waiting for ssl_crtd helper reply; helper reply:" << reply);
+        return;
+    }
+
     if (!reply) {
         debugs(1, DBG_IMPORTANT, HERE << "\"ssl_crtd\" helper return <NULL> reply");
     } else {
