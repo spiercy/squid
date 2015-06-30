@@ -10,6 +10,7 @@
 #include "anyp/PortCfg.h"
 #include "comm.h"
 #include "fatal.h"
+#include "SBuf.h"
 #if USE_OPENSSL
 #include "ssl/support.h"
 #endif
@@ -53,6 +54,7 @@ AnyP::PortCfg::PortCfg() :
     capath(NULL),
     crlfile(NULL),
     dhfile(NULL),
+    tls_dh(NULL),
     sslflags(NULL),
     sslContextSessionId(NULL),
     generateHostCertificates(false),
@@ -66,7 +68,7 @@ AnyP::PortCfg::PortCfg() :
     clientVerifyCrls(),
     clientCA(),
     dhParams(),
-    contextMethod(),
+    eecdhCurve(NULL),
     sslContextFlags(0),
     sslOptions(0)
 #endif
@@ -94,8 +96,10 @@ AnyP::PortCfg::~PortCfg()
     safe_free(capath);
     safe_free(crlfile);
     safe_free(dhfile);
+    safe_free(tls_dh);
     safe_free(sslflags);
     safe_free(sslContextSessionId);
+    safe_free(eecdhCurve);
 #endif
 }
 
@@ -139,6 +143,8 @@ AnyP::PortCfg::clone() const
         b->crlfile = xstrdup(crlfile);
     if (dhfile)
         b->dhfile = xstrdup(dhfile);
+    if (tls_dh)
+        b->tls_dh = xstrdup(tls_dh);
     if (sslflags)
         b->sslflags = xstrdup(sslflags);
     if (sslContextSessionId)
@@ -188,12 +194,55 @@ AnyP::PortCfg::configureSslServerContext()
         }
     }
 
-    contextMethod = Ssl::contextMethod(version);
-    if (!contextMethod)
-        fatalf("Unable to compute context method to use");
+    // backward compatibility hack for sslversion= configuration
+    if (version > 2) {
+        const char *add = NULL;
+        switch (version) {
+        case 3:
+            add = "NO_TLSv1,NO_TLSv1_1,NO_TLSv1_2";
+            break;
+        case 4:
+            add = "NO_SSLv3,NO_TLSv1_1,NO_TLSv1_2";
+            break;
+        case 5:
+            add = "NO_SSLv3,NO_TLSv1,NO_TLSv1_2";
+            break;
+        case 6:
+            add = "NO_SSLv3,NO_TLSv1,NO_TLSv1_1";
+            break;
+        default: // nothing
+            break;
+        }
+        if (add) {
+            SBuf tmpOpts;
+            if (options) {
+                tmpOpts.append(options, strlen(options));
+                tmpOpts.append(",",1);
+            }
+            tmpOpts.append(add, strlen(add));
+            xfree(options);
+            options = xstrdup(tmpOpts.c_str());
+        }
+        version = 0; // prevent options being repeatedly appended
+    }
 
-    if (dhfile)
-        dhParams.reset(Ssl::readDHParams(dhfile));
+    const char *dhParamsFile = dhfile; // backward compatibility for dhparams= configuration
+    safe_free(eecdhCurve); // clear any previous EECDH configuration
+    if (tls_dh && *tls_dh) {
+        eecdhCurve = xstrdup(tls_dh);
+        char *p = strchr(eecdhCurve, ':');
+        if (p) {  // tls-dh=eecdhCurve:dhParamsFile
+            *p = '\0';
+            dhParamsFile = p+1;
+        } else {  // tls-dh=dhParamsFile
+            dhParamsFile = tls_dh;
+            // a NULL eecdhCurve means "do not use EECDH"
+            safe_free(eecdhCurve);
+        }
+    }
+
+    if (dhParamsFile && *dhParamsFile)
+        dhParams.reset(Ssl::readDHParams(dhParamsFile));
 
     if (sslflags)
         sslContextFlags = Ssl::parse_flags(sslflags);
