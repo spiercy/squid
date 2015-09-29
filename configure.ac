@@ -5,12 +5,12 @@
 ## Please see the COPYING and CONTRIBUTORS files for details.
 ##
 
-AC_INIT([Squid Web Proxy],[3.5.5-BZR],[http://bugs.squid-cache.org/],[squid])
+AC_INIT([Squid Web Proxy],[3.5.9-BZR],[http://bugs.squid-cache.org/],[squid])
 AC_PREREQ(2.61)
 AC_CONFIG_HEADERS([include/autoconf.h])
 AC_CONFIG_AUX_DIR(cfgaux)
 AC_CONFIG_SRCDIR([src/main.cc])
-AM_INIT_AUTOMAKE([tar-ustar nostdinc])
+AM_INIT_AUTOMAKE([tar-ustar nostdinc subdir-objects])
 AC_REVISION($Revision$)dnl
 AC_PREFIX_DEFAULT(/usr/local/squid)
 AM_MAINTAINER_MODE
@@ -55,7 +55,7 @@ AC_ARG_ENABLE(arch-native,
   SQUID_YESNO([$enableval],
     [Unrecognized argument to --disable-arch-native: $enableval])
 ])
-AC_MSG_NOTICE([CPU -march=native optimization enabled: ${enable_arch_native:=auto}])
+AC_MSG_NOTICE([CPU arch native optimization enabled: ${enable_arch_native:=auto}])
 if test "x${enable_arch_native}" != "xno"; then
   SQUID_CC_CHECK_ARGUMENT([squid_cv_check_marchnative],[-march=native])
 fi
@@ -132,6 +132,7 @@ if test "x$ac_cv_path_PERL" = "xnone"; then
   AC_MSG_FAILURE([Perl is required to compile Squid. Please install Perl and then re-run configure ])
 fi
 AC_PATH_PROG(POD2MAN, pod2man, $FALSE)
+AM_CONDITIONAL(ENABLE_POD2MAN_DOC, test "x${ac_cv_path_POD2MAN}" != "x$FALSE")
 
 dnl set $(AR) if not provided by the build environment
 if test "x$AR" = "x"; then
@@ -139,6 +140,9 @@ if test "x$AR" = "x"; then
 fi
 AR_R="$AR r"
 AC_SUBST(AR_R)
+
+AC_PATH_PROG(LINUXDOC, linuxdoc, $FALSE)
+AM_CONDITIONAL(ENABLE_RELEASE_DOCS, test "x${ac_cv_path_LINUXDOC}" != "x$FALSE")
 
 # pre-define DEFAULT_PREFIX, some modules need it.
 if test "${prefix}" = "NONE" ; then
@@ -3834,6 +3838,7 @@ AC_CONFIG_FILES([
 	test-suite/Makefile
 	doc/Makefile
 	doc/manuals/Makefile
+	doc/release-notes/Makefile
 	helpers/Makefile
 	helpers/basic_auth/Makefile
 	helpers/basic_auth/DB/Makefile
