@@ -5,16 +5,11 @@
 ## Please see the COPYING and CONTRIBUTORS files for details.
 ##
 
-include $(top_srcdir)/src/Common.am
-include $(top_srcdir)/src/TestHeaders.am
+#
+# This file contains the list of reported regression cases in 3.3.x config parser
+# it covers:
+#	refresh_pattern
 
-noinst_LTLIBRARIES = libservers.la
-
-libservers_la_SOURCES = \
-	forward.h \
-	FtpServer.cc \
-	FtpServer.h \
-	Http1Server.cc \
-	Http1Server.h \
-	Server.cc \
-	Server.h
+# pct field parser
+refresh_pattern . 1 1000% 60
+refresh_pattern . 1 0% 60

@@ -1452,12 +1452,8 @@ storeFreeMemory(void)
 {
     Store::FreeMemory();
 #if USE_CACHE_DIGESTS
-
-    if (store_digest)
-        cacheDigestDestroy(store_digest);
-
+    delete store_digest;
 #endif
-
     store_digest = NULL;
 }
 
@@ -2126,3 +2122,4 @@ NullStoreEntry::getSerialisedMetaData()
 {
     return NULL;
 }
+

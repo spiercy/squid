@@ -570,7 +570,6 @@ squid_LDADD = \
 	log/liblog.la \
 	format/libformat.la \
 	$(XTRA_OBJS) \
-	$(DISK_LINKOBJS) \
 	$(REPL_OBJS) \
 	$(NETTLELIB) \
 	$(CRYPTLIB) \
@@ -583,6 +582,7 @@ squid_LDADD = \
 	$(top_builddir)/lib/libmisccontainers.la \
 	$(top_builddir)/lib/libmiscencoding.la \
 	$(top_builddir)/lib/libmiscutil.la \
+	$(ATOMICLIB) \
 	$(SSLLIB) \
 	$(EPOLL_LIBS) \
 	$(MINGW_LIBS) \
@@ -691,7 +691,6 @@ ufsdump_DEPENDENCIES = \
 	ipc/libipc.la \
 	mgr/libmgr.la \
 	DiskIO/libdiskio.la \
-	$(DISK_LINKOBJS) \
 	$(REPL_OBJS)
 
 nodist_ufsdump_SOURCES = \

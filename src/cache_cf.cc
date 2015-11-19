@@ -896,18 +896,11 @@ configDoConfigure(void)
 
 #if USE_OPENSSL
     for (AnyP::PortCfgPointer s = HttpPortList; s != NULL; s = s->next) {
-        if (!s->flags.tunnelSslBumping)
+        if (!s->secure.encryptTransport)
             continue;
-
-        debugs(3, DBG_IMPORTANT, "Initializing http_port " << s->s << " SSL context");
+        debugs(3, DBG_IMPORTANT, "Initializing " << AnyP::UriScheme(s->transport.protocol) << "_port " << s->s << " TLS context");
         s->configureSslServerContext();
     }
-
-    for (AnyP::PortCfgPointer s = HttpsPortList; s != NULL; s = s->next) {
-        debugs(3, DBG_IMPORTANT, "Initializing https_port " << s->s << " SSL context");
-        s->configureSslServerContext();
-    }
-
 #endif
 
     // prevent infinite fetch loops in the request parser
@@ -2663,9 +2656,7 @@ parse_refreshpattern(RefreshPattern ** head)
 
     min = (time_t) (i * 60);    /* convert minutes to seconds */
 
-    i = GetPercentage();    /* token: pct */
-
-    pct = (double) i / 100.0;
+    pct = GetPercentage(false);    /* token: pct . with no limit on size */
 
     i = GetInteger();       /* token: max */
 
@@ -3843,7 +3834,7 @@ requirePathnameExists(const char *name, const char *path)
     }
 
     if (stat(path, &sb) < 0) {
-        debugs(0, DBG_CRITICAL, (opt_parse_cfg_only?"FATAL ":"") << "ERROR: " << name << " " << path << ": " << xstrerror());
+        debugs(0, DBG_CRITICAL, (opt_parse_cfg_only?"FATAL: ":"ERROR: ") << name << " " << path << ": " << xstrerror());
         // keep going to find more issues if we are only checking the config file with "-k parse"
         if (opt_parse_cfg_only)
             return;

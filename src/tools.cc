@@ -422,13 +422,6 @@ getMyHostname(void)
     if (HttpPortList != NULL && sa.isAnyAddr())
         sa = HttpPortList->s;
 
-#if USE_OPENSSL
-
-    if (HttpsPortList != NULL && sa.isAnyAddr())
-        sa = HttpsPortList->s;
-
-#endif
-
     /*
      * If the first http_port address has a specific address, try a
      * reverse DNS lookup on it.
@@ -1078,16 +1071,6 @@ getMyPort(void)
         if (p != NULL)
             return p->s.port();
     }
-
-#if USE_OPENSSL
-    if ((p = HttpsPortList) != NULL) {
-        // skip any special interception ports
-        while (p != NULL && p->flags.isIntercepted())
-            p = p->next;
-        if (p != NULL)
-            return p->s.port();
-    }
-#endif
 
     if ((p = FtpPortList) != NULL) {
         // skip any special interception ports
