@@ -17,6 +17,7 @@
 #include "typedefs.h" //DRCB, DWCB
 
 #if USE_DELAY_POOLS
+#include "MessageBucket.h"
 class ClientInfo;
 #endif
 
@@ -103,6 +104,7 @@ public:
 
 #if USE_DELAY_POOLS
     ClientInfo * clientInfo;/* pointer to client info used in client write limiter or NULL if not present */
+    MessageBucket::Pointer writeQuotaHandler;
 #endif
     unsigned epoll_state;
 
@@ -154,6 +156,7 @@ private:
         pconn.uses = 0;
 #if USE_DELAY_POOLS
         clientInfo = NULL;
+        writeQuotaHandler = NULL;
 #endif
         epoll_state = 0;
         read_handler = NULL;

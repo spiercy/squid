@@ -25,6 +25,9 @@
 #if USE_OPENSSL
 #include "ssl/support.h"
 #endif
+#if USE_DELAY_POOLS
+#include "MessageBucket.h"
+#endif
 
 class ConnStateData;
 class ClientHttpRequest;
@@ -145,6 +148,7 @@ private:
 
     bool mayUseConnection_; /* This request may use the connection. Don't read anymore requests for now */
     bool connRegistered_;
+    MessageBucket::Pointer writeQuotaHandler;
 };
 
 class ConnectionDetail;

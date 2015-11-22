@@ -69,8 +69,12 @@ void
 Comm::IoCallback::selectOrQueueWrite()
 {
 #if USE_DELAY_POOLS
+    fde *F = &fd_table[conn->fd];
+    if (F->writeQuotaHandler != NULL) {
+        return;
+    }
     // stand in line if there is one
-    if (ClientInfo *clientInfo = fd_table[conn->fd].clientInfo) {
+    else if (ClientInfo *clientInfo = F->clientInfo) {
         if (clientInfo->writeLimitingActive) {
             quotaQueueReserv = clientInfo->quotaEnqueue(conn->fd);
             clientInfo->kickQuotaQueue();

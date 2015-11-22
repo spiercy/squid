@@ -1400,6 +1400,9 @@ ClientSocketContext::sendStartOfMessage(HttpReply * rep, StoreIOBuffer bodyData)
         }
     }
 
+    writeQuotaHandler = new MessageBucket(16, 10, 32);
+    writeQuotaHandler->clientConnection = clientConnection;
+    fd_table[clientConnection->fd].writeQuotaHandler = writeQuotaHandler;
     /* write */
     debugs(33,7, HERE << "sendStartOfMessage schedules clientWriteComplete");
     AsyncCall::Pointer call = commCbCall(33, 5, "clientWriteComplete",
