@@ -144,13 +144,8 @@ Comm::HandleWrite(int fd, void *data)
         clientInfo->kickQuotaQueue();
     }
     /// XXX: Call BandwidthBucket::reduceBucket(len) insead of this and ClientInfo code
-    if (quotaHandler && len > 0) {
-        quotaHandler->bucketSize -= len;
-        if (quotaHandler->bucketSize < 0.0) {
-            debugs(5, DBG_IMPORTANT, HERE << "drained too much"); // should not happen
-            quotaHandler->bucketSize = 0;
-        }
-    }
+    if (quotaHandler && len > 0)
+        quotaHandler->bytesIn(len);
 #endif /* USE_DELAY_POOLS */
 
     fd_bytes(fd, len, FD_WRITE);

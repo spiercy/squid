@@ -9,14 +9,18 @@
 #include "squid.h"
 
 #if USE_DELAY_POOLS
-#include "MessageBucket.h"
-#include "DelayPools.h"
 #include "Debug.h"
+#include "DelayPools.h"
+#include "MessageBucket.h"
+#include "MessageDelayPools.h"
 
-MessageBucket::MessageBucket(const int aWriteSpeedLimit, const double anInitialBurst, const double aHighWatermark)
-: bucketSize(anInitialBurst), selectWaiting(false), prevTime(current_dtime),
-writeSpeedLimit(aWriteSpeedLimit), bucketSizeLimit(aHighWatermark)
-{ }
+MessageBucket::MessageBucket(const int aWriteSpeedLimit, const double anInitialBurst,
+        const double aHighWatermark, MessageDelayPool *pool) : bucketSize(anInitialBurst),
+    selectWaiting(false),
+    prevTime(current_dtime),
+    writeSpeedLimit(aWriteSpeedLimit),
+    bucketSizeLimit(aHighWatermark),
+    theAggregate(pool) {}
 
 void *
 MessageBucket::operator new(size_t size)
@@ -35,7 +39,17 @@ MessageBucket::operator delete (void *address)
 int
 MessageBucket::quota()
 {
-    return bucketSize;
+    return min(bucketSize, static_cast<double>(theAggregate->level()));
+}
+    
+void MessageBucket::bytesIn(int qty)
+{ 
+    bucketSize -= qty;
+    if (bucketSize < 0.0) {
+        debugs(77, DBG_IMPORTANT, "drained too much"); // should not happen
+        bucketSize = 0;
+    }
+    theAggregate->bytesIn(qty);
 }
 
 // XXX: duplicates ClientInfo::refillBucket()

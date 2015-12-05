@@ -118,6 +118,7 @@
 #endif
 #if USE_DELAY_POOLS
 #include "ClientInfo.h"
+#include "MessageDelayPools.h"
 #endif
 #if USE_OPENSSL
 #include "ssl/bio.h"
@@ -1400,7 +1401,9 @@ ClientSocketContext::sendStartOfMessage(HttpReply * rep, StoreIOBuffer bodyData)
         }
     }
 
-    writeQuotaHandler = new MessageBucket(16, 10, 32);
+    MessageDelayPools *mpools = MessageDelayPools::Instance();
+    assert(mpools->pools.size());
+    writeQuotaHandler = mpools->pools[0]->createBucket();
     writeQuotaHandler->clientConnection = clientConnection;
     fd_table[clientConnection->fd].writeQuotaHandler = writeQuotaHandler;
     /* write */

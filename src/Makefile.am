@@ -111,6 +111,8 @@ DELAY_POOL_ALL_SOURCE = \
 	DelayPool.cc \
 	DelayPool.h \
 	DelayPools.h \
+	MessageDelayPools.h \
+	MessageDelayPools.cc \
 	DelaySpec.cc \
 	DelaySpec.h \
 	DelayTagged.cc \
