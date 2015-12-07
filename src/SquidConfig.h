@@ -12,6 +12,7 @@
 #include "acl/forward.h"
 #include "base/RefCount.h"
 #include "ClientDelayConfig.h"
+#include "MessageDelayPools.h"
 #include "DelayConfig.h"
 #include "helper/ChildConfig.h"
 #include "HttpHeaderTools.h"
@@ -426,6 +427,7 @@ public:
 
     DelayConfig Delay;
     ClientDelayConfig ClientDelay;
+    MessageDelayConfig MessageDelay;
 #endif
 
     struct {

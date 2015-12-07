@@ -1401,11 +1401,27 @@ ClientSocketContext::sendStartOfMessage(HttpReply * rep, StoreIOBuffer bodyData)
         }
     }
 
-    MessageDelayPools *mpools = MessageDelayPools::Instance();
-    assert(mpools->pools.size());
-    writeQuotaHandler = mpools->pools[0]->createBucket();
-    writeQuotaHandler->clientConnection = clientConnection;
-    fd_table[clientConnection->fd].writeQuotaHandler = writeQuotaHandler;
+#if USE_DELAY_POOLS
+    ACLFilledChecklist ch(NULL, NULL, NULL);
+    ch.src_addr = clientConnection->remote;
+    ch.my_addr = clientConnection->local;
+
+    for (const auto &pool: MessageDelayPools::Instance()->pools) {
+        if (pool->access) {
+            ch.changeAcl(pool->access);
+            allow_t answer = ch.fastCheck();
+            if (answer == ACCESS_ALLOWED) {
+                writeQuotaHandler = pool->createBucket();
+                writeQuotaHandler->clientConnection = clientConnection;
+                fd_table[clientConnection->fd].writeQuotaHandler = writeQuotaHandler;
+                break;
+            } else {
+                debugs(83, 4, "Response delay pool " << pool->poolName <<
+                        " skipped because ACL " << answer);
+            }
+        }
+    }
+#endif
     /* write */
     debugs(33,7, HERE << "sendStartOfMessage schedules clientWriteComplete");
     AsyncCall::Pointer call = commCbCall(33, 5, "clientWriteComplete",

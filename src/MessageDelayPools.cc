@@ -9,14 +9,19 @@
 #include "squid.h"
 
 #if USE_DELAY_POOLS
+#include <algorithm>
 #include "event.h"
 #include "SquidTime.h"
 #include "DelaySpec.h"
+#include "ConfigParser.h"
+#include "Parsing.h"
+#include "cache_cf.h"
+#include "acl/Gadgets.h"
 #include "MessageDelayPools.h"
 
 MessageDelayPools::MessageDelayPools(): LastUpdate(squid_curtime)
 {
-    Init();
+    eventAdd("MessageDelayPools::Update", MessageDelayPools::Update, NULL, 1.0, 1);
 }
 
 MessageDelayPools::~MessageDelayPools()
@@ -78,20 +83,36 @@ MessageDelayPools::deregisterForUpdates(Updateable *anObject)
     }
 }
 
-void
-MessageDelayPools::Init()
+MessageDelayPool *
+MessageDelayPools::pool(const SBuf &name)
 {
-    MessageDelayPool *pool = new MessageDelayPool(32, 32, 48, 48);
-    pools.push_back(pool);
-    registerForUpdates(pool);
-    eventAdd("MessageDelayPools::Update", MessageDelayPools::Update, NULL, 1.0, 1);
+    auto it = std::find_if(pools.begin(), pools.end(),
+            [&name](const MessageDelayPool *p) { return p->poolName == name; });
+    return it == pools.end() ? 0 : *it;
 }
 
-MessageDelayPool::MessageDelayPool(int bucketSpeed, int64_t bucketSize,
-        int aggregateSpeed, int64_t aggregateSize): bucketSpeedLimit(bucketSpeed),
+void
+MessageDelayPools::add(MessageDelayPool *p)
+{
+    const auto it = std::find_if(pools.begin(), pools.end(),
+            [&p](const MessageDelayPool *mp) { return mp->poolName == p->poolName; });
+    if (it != pools.end()) {
+        debugs(3, DBG_CRITICAL, "Ignoring duplicate " << p->poolName << " response delay pool");
+        return;
+    }
+    pools.push_back(p);
+    registerForUpdates(p);
+}
+
+MessageDelayPool::MessageDelayPool(const SBuf &name, uint64_t bucketSpeed, uint64_t bucketSize,
+        uint64_t aggregateSpeed, uint64_t aggregateSize, uint16_t initial):
+    access(0),
+    poolName(name),
+    bucketSpeedLimit(bucketSpeed),
     maxBucketSize(bucketSize),
     aggregateSpeedLimit(aggregateSpeed),
-    maxAggregateSize(aggregateSize) {}
+    maxAggregateSize(aggregateSize),
+    initialFillLevel(initial){}
 
 void
 MessageDelayPool::update(int incr)
@@ -105,7 +126,60 @@ MessageDelayPool::update(int incr)
 MessageBucket::Pointer
 MessageDelayPool::createBucket()
 {
-    return new MessageBucket(bucketSpeedLimit, bucketSpeedLimit, maxBucketSize, this);
+    return new MessageBucket(bucketSpeedLimit, bucketSpeedLimit * (initialFillLevel / 100.0), maxBucketSize, this);
+}
+
+void MessageDelayConfig::resetParams() {
+    params[SBuf("bucket_speed_limit=")] = -1;
+    params[SBuf("max_bucket_size=")] = -1;
+    params[SBuf("aggregate_speed_limit=")] = -1;
+    params[SBuf("max_aggregate_size=")] = -1;
+    params[SBuf("initial_fill_level=")] = 50;
+}
+
+void MessageDelayConfig::parseResponseDelayPool()
+{
+    resetParams();
+    const char *token = ConfigParser::NextToken();
+    if (!token) {
+        debugs(3, DBG_CRITICAL, "ERROR: required parameter \"name\" for response_delay_pool option missing");
+        self_destruct();
+    }
+    const SBuf name(token);
+    while ((token = ConfigParser::NextToken())) {
+        for (auto &p: params) {
+            SBuf n = p.first;
+            if (!strncmp(token, n.c_str(), p.first.length()))
+                p.second = xatoll(token + p.first.length(), 10);
+        }
+    }
+    for (const auto &p: params) {
+        if (p.second == -1) {
+            const SBuf failedOption = p.first.substr(0, p.first.length() - 1);
+            debugs(3, DBG_CRITICAL, "ERROR: required " << failedOption << " option missing.");
+            self_destruct();
+        }
+    }
+
+    MessageDelayPool *pool = new MessageDelayPool(name,
+            static_cast<uint64_t>(params[SBuf("bucket_speed_limit=")]),
+            static_cast<uint64_t>(params[SBuf("max_bucket_size=")]),
+            static_cast<uint64_t>(params[SBuf("aggregate_speed_limit=")]),
+            static_cast<uint64_t>(params[SBuf("max_aggregate_size=")]),
+            static_cast<uint16_t>(params[SBuf("initial_fill_level=")])
+            );
+    MessageDelayPools::Instance()->add(pool);
+}
+
+void MessageDelayConfig::parseResponseDelayPoolAccess(ConfigParser &parser) {
+    const char *token = ConfigParser::NextToken();
+    if (!token) {
+        debugs(3, DBG_CRITICAL, "ERROR: required pool_name option missing");
+        return;
+    }
+    MessageDelayPool *pool = MessageDelayPools::Instance()->pool(SBuf(token));
+    if (pool)
+        aclParseAccessLine("response_delay_pool_access", parser, &pool->access);
 }
 
 #endif

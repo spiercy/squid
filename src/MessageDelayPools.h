@@ -11,6 +11,7 @@
 
 #if USE_DELAY_POOLS
 
+#include <map>
 #include "acl/Acl.h"
 #include "base/RefCount.h"
 #include "DelayBucket.h"
@@ -23,20 +24,21 @@
 class MessageDelayPool : public Updateable
 {
     public:
-        MessageDelayPool(int bucketSpeed, int64_t bucketSize,
-                int aggregateSpeed, int64_t aggregateSize);
+        MessageDelayPool(const SBuf &name, uint64_t bucketSpeed, uint64_t bucketSize,
+                uint64_t aggregateSpeed, uint64_t aggregateSize, uint16_t initial);
 
         virtual void update(int incr) override;
         void bytesIn(int qty) { theBucket.bytesIn(qty); }
         int level() { return theBucket.level(); }
         MessageBucket::Pointer createBucket();
 
-    private:
         acl_access *access;
-        int bucketSpeedLimit;
-        int64_t maxBucketSize;
-        int aggregateSpeedLimit;
-        int64_t maxAggregateSize;
+        SBuf poolName;
+        uint64_t bucketSpeedLimit;
+        uint64_t maxBucketSize;
+        uint64_t aggregateSpeedLimit;
+        uint64_t maxAggregateSize;
+        uint16_t initialFillLevel;
         DelayBucket theBucket;
 };
 
@@ -48,9 +50,10 @@ class MessageDelayPools
         static MessageDelayPools *Instance();
         static void Update(void *);
 
-        void Init();
         void registerForUpdates(Updateable *obj) { toUpdate.push_back(obj); }
         void deregisterForUpdates (Updateable *);
+        MessageDelayPool *pool(const SBuf &name);
+        void add(MessageDelayPool *pool);
 
         std::vector<MessageDelayPool*> pools;
 
@@ -63,6 +66,19 @@ class MessageDelayPools
 
         time_t LastUpdate;
         std::vector<Updateable *> toUpdate;
+};
+
+/// represents configuration for response delay pools
+class MessageDelayConfig
+{
+    public:
+        void parseResponseDelayPool();
+        void parseResponseDelayPoolAccess(ConfigParser &parser);
+
+        std::map<SBuf, int64_t> params;
+
+    private:
+        void resetParams();
 };
 
 #endif

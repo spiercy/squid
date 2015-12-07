@@ -6792,6 +6792,61 @@ DOC_START
 DOC_END
 
 COMMENT_START
+ RESPONSE DELAY POOL PARAMETERS
+ -----------------------------------------------------------------------------
+COMMENT_END
+
+NAME: response_delay_pool
+TYPE: response_delay_pool_parameters
+DEFAULT: none
+IFDEF: USE_DELAY_POOLS
+LOC: Config.MessageDelay
+DOC_START
+	This option configures client response bandwidth limits using the
+	following format:
+
+		response_delay_pool name bucket_speed_limit=... max_bucket_size=...
+			aggregate_speed_limit=... max_aggregate_size=... initial_fill_level=...
+
+		options:
+
+			name				the response delay pool name
+
+			bucket_speed_limit=...		the speed limit of an individual bucket(bytes/s)
+
+			max_bucket_size=...		the maximum size of a bucket
+
+			aggregate_speed_limit=...	the speed limit to the aggregate bucket(bytes/s)
+
+			max_aggregate_size=bytes=...	the maximus size of the aggregate bucket
+
+			initial_fill_level=...		the initial bucket size as a percentage of max_bucket_size
+
+		See also response_delay_pool_access.
+DOC_END
+
+NAME: response_delay_pool_access
+TYPE: response_delay_pool_access
+DEFAULT: none
+DEFAULT_DOC: Deny use of the pool, unless allow rules exist in squid.conf for the pool.
+IFDEF: USE_DELAY_POOLS
+LOC: Config.MessageDelay
+DOC_START
+	This option determines the response delay pool for the
+	request:
+
+		response_delay_pool_access pool_name allow|deny acl_name
+
+	All response_delay_pool_access options are checked in the order
+	they appear in this configuration file. The first rule with a
+	matching ACL wins. If (and only if) an "allow" rule won, Squid
+	assigns the response to the corresponding named delay pool.
+	This feature restricts Squid-to-client bandwidth only.
+	If no ACL matches or there are no response_delay_pool_access options,
+	the Squid-to-client bandwidth is not limited.
+DOC_END
+
+COMMENT_START
  WCCPv1 AND WCCPv2 CONFIGURATION OPTIONS
  -----------------------------------------------------------------------------
 COMMENT_END
