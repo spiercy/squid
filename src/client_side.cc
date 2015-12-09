@@ -1402,7 +1402,7 @@ ClientSocketContext::sendStartOfMessage(HttpReply * rep, StoreIOBuffer bodyData)
     }
 
 #if USE_DELAY_POOLS
-    ACLFilledChecklist ch(NULL, NULL, NULL);
+    ACLFilledChecklist ch(NULL, http->request, NULL);
     ch.src_addr = clientConnection->remote;
     ch.my_addr = clientConnection->local;
 

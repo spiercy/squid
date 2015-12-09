@@ -70,9 +70,14 @@ Comm::IoCallback::selectOrQueueWrite()
 {
 #if USE_DELAY_POOLS
     fde *F = &fd_table[conn->fd];
-    if (F->writeQuotaHandler != NULL)
-        return; // message delay pools limit this write; see checkTimeouts()
- 
+    if (F->writeQuotaHandler != NULL && !F->closing()) {
+        if (!F->writeQuotaHandler->selectWaiting) {
+            F->writeQuotaHandler->selectWaiting = true;
+            // message delay pools limit this write; see checkTimeouts()
+            SetSelect(conn->fd, COMM_SELECT_WRITE, Comm::HandleWrite, this, 0);
+        }
+        return;
+    }
     // stand in line if there is one
     if (ClientInfo *clientInfo = F->clientInfo) {
         if (clientInfo->writeLimitingActive) {

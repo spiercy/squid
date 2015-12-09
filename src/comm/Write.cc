@@ -61,7 +61,8 @@ Comm::HandleWrite(int fd, void *data)
     int len = 0;
     int nleft;
 
-    assert(state->conn != NULL && state->conn->fd == fd);
+    assert(state->conn != NULL);
+    assert(state->conn->fd == fd);
 
     PROF_start(commHandleWrite);
     debugs(5, 5, HERE << state->conn << ": off " <<
