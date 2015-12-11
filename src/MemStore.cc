@@ -207,6 +207,30 @@ MemStore::get(const cache_key *key)
     return NULL;
 }
 
+void
+MemStore::updateHeaders(StoreEntry *e)
+{
+    if (!map)
+        return;
+
+    sfileno index = e->mem_obj ? e->mem_obj->memCache.index : -1;
+    Ipc::StoreMapAnchor *anchor;
+    if (index < 0) {
+        anchor = map->openForUpdate(
+            reinterpret_cast<cache_key*>(e->key), index);
+    } else {
+        anchor = map->openForUpdateAt(index);
+    }
+
+    if (!anchor)
+        return;
+
+    // TODO: store metadata and headers
+    anchor->update(*e);
+    map->closeForUpdate(index);
+    debugs(20, 3, "updated " << *e);
+}
+
 bool
 MemStore::anchorCollapsed(StoreEntry &collapsed, bool &inSync)
 {

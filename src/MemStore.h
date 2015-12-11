@@ -55,6 +55,7 @@ public:
     virtual void stat(StoreEntry &e) const override;
     virtual void reference(StoreEntry &e) override;
     virtual bool dereference(StoreEntry &e) override;
+    virtual void updateHeaders(StoreEntry *e) override;
     virtual void maintain() override;
     virtual bool anchorCollapsed(StoreEntry &e, bool &inSync) override;
     virtual bool updateCollapsed(StoreEntry &e) override;

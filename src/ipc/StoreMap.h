@@ -55,6 +55,8 @@ public:
 
     /// store StoreEntry key and basics for an inode slot
     void set(const StoreEntry &anEntry);
+    /// replace stored basics with info from a fresher entry
+    void update(const StoreEntry &newer);
 
     void setKey(const cache_key *const aKey);
     bool sameKey(const cache_key *const aKey) const;
@@ -187,6 +189,13 @@ public:
     /// unlock and "forget" openForWriting entry, making it Empty again
     /// this call does not free entry slices so the caller has to do that
     void forgetWritingEntry(const sfileno fileno);
+
+    /// finds and returns an anchor locked for exclusive metadata update
+    Anchor *openForUpdate(const cache_key *const key, sfileno &fileno);
+    /// returns an anchor locked for exclusive metadata update
+    Anchor *openForUpdateAt(const sfileno fileno);
+    /// undoes a successful openForUpdate*() call
+    void closeForUpdate(const sfileno fileno);
 
     /// only works on locked entries; returns nil unless the slice is readable
     const Anchor *peekAtReader(const sfileno fileno) const;

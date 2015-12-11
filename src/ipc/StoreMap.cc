@@ -348,6 +348,57 @@ Ipc::StoreMap::closeForReading(const sfileno fileno)
     debugs(54, 5, "closed entry " << fileno << " for reading " << path);
 }
 
+Ipc::StoreMap::Anchor *
+Ipc::StoreMap::openForUpdate(const cache_key *const key, sfileno &fileno)
+{
+    debugs(54, 5, "opening entry with key " << storeKeyText(key)
+           << " for update " << path);
+    const int idx = anchorIndexByKey(key);
+    if (Anchor *anchor = openForUpdateAt(idx)) {
+        if (anchor->sameKey(key)) {
+            fileno = idx;
+            return anchor; // locked for update
+        }
+        closeForUpdate(fileno);
+        debugs(54, 7, "closed mismatching entry " << idx << " for update " << path);
+    }
+    return nullptr;
+}
+
+Ipc::StoreMap::Anchor *
+Ipc::StoreMap::openForUpdateAt(const sfileno fileno)
+{
+    debugs(54, 5, "opening entry " << fileno << " for update " << path);
+
+    // Unreadable entries cannot (e.g., empty and otherwise problematic entries)
+    // or should not (e.g., entries still forming their metadata) be updated.
+    if (!openForReadingAt(fileno)) {
+        debugs(54, 5, "cannot open unreadable entry " << fileno <<
+               " for updates " << path);
+        return nullptr;
+    }
+
+    Anchor &s = anchorAt(fileno);
+    if (!s.lock.lockHeaders()) {
+        debugs(54, 5, "cannot open updating entry " << fileno <<
+               " for updates " << path);
+        closeForReading(fileno);
+        return nullptr;
+    }
+
+    debugs(54, 5, "opened entry " << fileno << " for updates " << path);
+    return &s;
+}
+
+void
+Ipc::StoreMap::closeForUpdate(const sfileno fileno)
+{
+    Anchor &s = anchorAt(fileno);
+    s.lock.unlockHeaders();
+    debugs(54, 5, "closed entry " << fileno << " for reading " << path);
+    closeForReading(fileno);
+}
+
 bool
 Ipc::StoreMap::purgeOne()
 {
@@ -495,6 +546,20 @@ Ipc::StoreMapAnchor::set(const StoreEntry &from)
     basics.swap_file_sz = from.swap_file_sz;
     basics.refcount = from.refcount;
     basics.flags = from.flags;
+    // keep in sync with update()
+}
+
+void
+Ipc::StoreMapAnchor::update(const StoreEntry &from)
+{
+    assert(reading());
+    AssertFlagIsSet(lock.updating);
+    basics.timestamp = from.timestamp;
+    basics.lastref = from.lastref;
+    basics.expires = from.expires;
+    basics.lastmod = from.lastmod;
+    // other fields are not meant to be updated
+    // keep in sync with set()
 }
 
 void
