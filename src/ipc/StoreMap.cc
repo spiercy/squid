@@ -164,7 +164,11 @@ Ipc::StoreMap::closeForWriting(const sfileno fileno, bool lockForReading)
 Ipc::StoreMap::Slice &
 Ipc::StoreMap::writeableSlice(const AnchorId anchorId, const SliceId sliceId)
 {
-    assert(anchorAt(anchorId).writing());
+    const Anchor &anchor = anchorAt(anchorId);
+    // for simplicity, make an exception for MemStore::nextAppendableSlice()
+    // that writes [new] prefix using an update lock. TODO: Can we do better?
+    if (!anchor.writing())
+        AssertFlagIsSet(anchor.lock.updating);
     assert(validSlice(sliceId));
     return sliceAt(sliceId);
 }
@@ -206,6 +210,14 @@ Ipc::StoreMap::abortWriting(const sfileno fileno)
         s.lock.unlockExclusive();
         debugs(54, 5, "closed dirty entry " << fileno << " for writing " << path);
     }
+}
+
+void
+Ipc::StoreMap::abortUpdate(const sfileno fileno, const SliceId firstSliceId)
+{
+    debugs(54, 5, "aborting entry " << fileno << " for update " << path);
+    closeForUpdateFinal(fileno, firstSliceId);
+    debugs(54, 5, "aborted entry " << fileno << " for update " << path);
 }
 
 const Ipc::StoreMap::Anchor *
@@ -269,20 +281,8 @@ Ipc::StoreMap::freeChain(const sfileno fileno, Anchor &inode, const bool keepLoc
 {
     debugs(54, 7, "freeing entry " << fileno <<
            " in " << path);
-    if (!inode.empty()) {
-        sfileno sliceId = inode.start;
-        debugs(54, 8, "first slice " << sliceId);
-        while (sliceId >= 0) {
-            Slice &slice = sliceAt(sliceId);
-            const sfileno nextId = slice.next;
-            slice.size = 0;
-            slice.next = -1;
-            if (cleaner)
-                cleaner->noteFreeMapSlice(sliceId); // might change slice state
-            sliceId = nextId;
-        }
-    }
-
+    if (!inode.empty())
+        freeChainAt(inode.start);
     inode.waitingToBeFreed = false;
     inode.rewind();
 
@@ -290,6 +290,44 @@ Ipc::StoreMap::freeChain(const sfileno fileno, Anchor &inode, const bool keepLoc
         inode.lock.unlockExclusive();
     --anchors->count;
     debugs(54, 5, "freed entry " << fileno << " in " << path);
+}
+
+/// unconditionally frees an already locked chain of slots; no anchor maintenance
+void
+Ipc::StoreMap::freeChainAt(SliceId sliceId)
+{
+    static uint64_t ChainId = 0; // to pair freeing/freed calls in debugs()
+    const uint64_t chainId = ++ChainId;
+    debugs(54, 7, "freeing chain #" << chainId << " starting at " << sliceId << " in " << path);
+    while (sliceId >= 0) {
+        Slice &slice = sliceAt(sliceId);
+        const SliceId nextId = slice.next;
+        slice.size = 0;
+        slice.next = -1;
+        if (cleaner)
+            cleaner->noteFreeMapSlice(sliceId); // might change slice state
+        sliceId = nextId;
+    }
+    debugs(54, 7, "freed chain #" << chainId << " in " << path);
+}
+
+Ipc::StoreMap::SliceId
+Ipc::StoreMap::sliceContaining(const sfileno fileno, const uint64_t bytesNeeded) const
+{
+    const Anchor &anchor = anchorAt(fileno);
+    Must(anchor.reading());
+    uint64_t bytesSeen = 0;
+    SliceId lastSlice = anchor.start;
+    while (lastSlice >= 0) {
+        const Slice &slice = sliceAt(lastSlice);
+        bytesSeen += slice.size;
+        if (bytesSeen >= bytesNeeded)
+            break;
+        lastSlice = slice.next;
+    }
+    debugs(54, 7, "entry " << fileno << " has " << bytesNeeded << '/' << bytesSeen <<
+           " bytes at slice " << lastSlice << " in " << path);
+    return lastSlice; // may be negative
 }
 
 const Ipc::StoreMap::Anchor *
@@ -359,7 +397,7 @@ Ipc::StoreMap::openForUpdate(const cache_key *const key, sfileno &fileno)
             fileno = idx;
             return anchor; // locked for update
         }
-        closeForUpdate(fileno);
+        closeForUpdateFinal(fileno);
         debugs(54, 7, "closed mismatching entry " << idx << " for update " << path);
     }
     return nullptr;
@@ -374,28 +412,73 @@ Ipc::StoreMap::openForUpdateAt(const sfileno fileno)
     // or should not (e.g., entries still forming their metadata) be updated.
     if (!openForReadingAt(fileno)) {
         debugs(54, 5, "cannot open unreadable entry " << fileno <<
-               " for updates " << path);
+               " for update " << path);
         return nullptr;
     }
 
     Anchor &s = anchorAt(fileno);
-    if (!s.lock.lockHeaders()) {
-        debugs(54, 5, "cannot open updating entry " << fileno <<
-               " for updates " << path);
+    if (s.writing()) {
+        // TODO: Support updating appending entries.
+        // For example, MemStore::finishUpdatingHeaders() would not know how
+        // many old prefix body bytes to copy to the new prefix if the last old
+        // prefix slice has not been formed yet (i.e., still gets more bytes).
+        debugs(54, 5, "cannot open appending entry " << fileno <<
+               " for update " << path);
         closeForReading(fileno);
         return nullptr;
     }
 
-    debugs(54, 5, "opened entry " << fileno << " for updates " << path);
+    if (!s.lock.lockHeaders()) {
+        debugs(54, 5, "cannot open updating entry " << fileno <<
+               " for update " << path);
+        closeForReading(fileno);
+        return nullptr;
+    }
+
+    debugs(54, 5, "opened entry " << fileno << " for update " << path);
     return &s;
 }
 
 void
-Ipc::StoreMap::closeForUpdate(const sfileno fileno)
+Ipc::StoreMap::closeForUpdate(const sfileno fileno, const SliceId oldPrefixLastSliceId, const SliceId newPrefixFirstSliceId, const SliceId newPrefixLastSliceId)
 {
-    Anchor &s = anchorAt(fileno);
-    s.lock.unlockHeaders();
-    debugs(54, 5, "closed entry " << fileno << " for reading " << path);
+    Anchor &anchor = anchorAt(fileno);
+    AssertFlagIsSet(anchor.lock.updating);
+    Must(oldPrefixLastSliceId >= 0);
+    Must(newPrefixFirstSliceId >= 0);
+    Must(newPrefixLastSliceId >= 0);
+
+    /* change the old chain prefix to the new one, leaving the suffix as is */
+
+    /* the old prefix cannot overlap with the new one (a weak check) */
+    Must(anchor.start != newPrefixFirstSliceId);
+    Must(anchor.start != newPrefixLastSliceId);
+    Must(oldPrefixLastSliceId != newPrefixFirstSliceId);
+    Must(oldPrefixLastSliceId != newPrefixLastSliceId);
+
+    /* the relative order of several operations is significant here */
+    Slice &newPrefixLastSlice = sliceAt(newPrefixLastSliceId);
+    Must(newPrefixLastSlice.next < 0); // the new chain is properly terminated
+    const SliceId suffixFirstSliceId = sliceAt(oldPrefixLastSliceId).next; // may be negative
+    newPrefixLastSlice.next = suffixFirstSliceId; // new chain uses the old chain suffix
+    const SliceId oldPrefixFirstSliceId = anchor.start; // remember so that we can free the old prefix
+    anchor.start = newPrefixFirstSliceId; // and now all readers will see/use the new chain
+    sliceAt(oldPrefixLastSliceId).next = -1; // truncate the old and now unreachable prefix
+    closeForUpdateFinal(fileno, oldPrefixFirstSliceId); // unlock and free the old prefix
+    debugs(54, 5, "closed entry " << fileno << " for update " << path <<
+           " with new [" << newPrefixFirstSliceId << ',' << newPrefixLastSliceId <<
+           "] prefix containing at least " << newPrefixLastSlice.size << " bytes");
+}
+
+/// a common last step of various update-ending methods
+void
+Ipc::StoreMap::closeForUpdateFinal(const sfileno fileno, const SliceId chainToFree)
+{
+    Anchor &anchor = anchorAt(fileno);
+    AssertFlagIsSet(anchor.lock.updating);
+    if (chainToFree >= 0)
+        freeChainAt(chainToFree);
+    anchor.lock.unlockHeaders();
     closeForReading(fileno);
 }
 
@@ -554,6 +637,11 @@ Ipc::StoreMapAnchor::update(const StoreEntry &from)
 {
     assert(reading());
     AssertFlagIsSet(lock.updating);
+    // XXX: This assignment sequence is not atomic. Partial updates are very
+    // unlikely but not impossible. If they become a real problem, add another
+    // level of indirection so that we can switch entire anchors at once, but
+    // doing so requires a yet another set of locks and cleanup flags/code.
+    // TODO: Do we need to store these in RAM at all?
     basics.timestamp = from.timestamp;
     basics.lastref = from.lastref;
     basics.expires = from.expires;

@@ -194,8 +194,10 @@ public:
     Anchor *openForUpdate(const cache_key *const key, sfileno &fileno);
     /// returns an anchor locked for exclusive metadata update
     Anchor *openForUpdateAt(const sfileno fileno);
-    /// undoes a successful openForUpdate*() call
-    void closeForUpdate(const sfileno fileno);
+    /// makes updated info available to others and unlocks the entry
+    void closeForUpdate(const sfileno fileno, const SliceId oldPrefixLastSliceId, const SliceId newPrefixFirstSliceId, const SliceId newPrefixLastSliceId);
+    /// undoes partial update (starting with a given slice) and unlocks the entry
+    void abortUpdate(const sfileno fileno, const SliceId newPrefixFirstSliceId);
 
     /// only works on locked entries; returns nil unless the slice is readable
     const Anchor *peekAtReader(const sfileno fileno) const;
@@ -224,6 +226,11 @@ public:
     Anchor &writeableEntry(const AnchorId anchorId);
     /// readable anchor for the entry created by openForReading()
     const Anchor &readableEntry(const AnchorId anchorId) const;
+
+    /// Returns the ID of the entry slice containing n-th byte or
+    /// a negative ID if the entry does not store that many bytes (yet).
+    /// Requires a read lock.
+    SliceId sliceContaining(const sfileno fileno, const uint64_t nth) const;
 
     /// stop writing the entry, freeing its slot for others to use if possible
     void abortWriting(const sfileno fileno);
@@ -259,8 +266,10 @@ private:
     Slice &sliceAt(const SliceId sliceId);
     const Slice &sliceAt(const SliceId sliceId) const;
     Anchor *openForReading(Slice &s);
+    void closeForUpdateFinal(const sfileno fileno, const SliceId chainToFree = -1);
 
     void freeChain(const sfileno fileno, Anchor &inode, const bool keepLock);
+    void freeChainAt(SliceId sliceId);
 };
 
 /// API for adjusting external state when dirty map slice is being freed
