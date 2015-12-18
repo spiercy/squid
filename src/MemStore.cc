@@ -211,7 +211,7 @@ MemStore::get(const cache_key *key)
 /// Requires a MemStore anchor locked for updates.
 class ShmWriter: public Packable {
 public:
-    ShmWriter(MemStore &aStore, StoreEntry *anEntry, Ipc::StoreMapAnchor &anAnchor, const sfileno anIndex, Ipc::StoreMapSliceId aFirstSlice = -1);
+    ShmWriter(MemStore &aStore, StoreEntry *anEntry, Ipc::StoreMapAnchor &anAnchor, const sfileno aFileNo, Ipc::StoreMapSliceId aFirstSlice = -1);
 
     /* Packable API */
     virtual void append(const char *aBuf, int aSize) override;
@@ -228,14 +228,15 @@ public:
     /// the slot keeping the last byte of the appended content (at least)
     Ipc::StoreMapSliceId lastSlice;
 
+    uint64_t totalWritten; ///< cumulative number of bytes appended so far
+
 protected:
     void copyToShm();
     void copyToShmSlice(Ipc::StoreMap::Slice &slice);
 
 private:
     MemStore &store;
-    const sfileno index;
-    uint64_t totalWritten; ///< cumulative number of bytes appended so far
+    const sfileno fileNo;
 
     /* set by (and only valid during) append calls */
     const char *buf; ///< content being appended now
@@ -243,14 +244,14 @@ private:
     int bufWritten; ///< buf bytes appended so far
 };
 
-ShmWriter::ShmWriter(MemStore &aStore, StoreEntry *anEntry, Ipc::StoreMapAnchor &anAnchor, const sfileno anIndex, Ipc::StoreMapSliceId aFirstSlice):
+ShmWriter::ShmWriter(MemStore &aStore, StoreEntry *anEntry, Ipc::StoreMapAnchor &anAnchor, const sfileno aFileNo, Ipc::StoreMapSliceId aFirstSlice):
     entry(anEntry),
     anchor(anAnchor),
     firstSlice(aFirstSlice),
     lastSlice(firstSlice),
-    store(aStore),
-    index(anIndex),
     totalWritten(0),
+    store(aStore),
+    fileNo(aFileNo),
     buf(nullptr),
     bufSize(0),
     bufWritten(0)
@@ -302,7 +303,7 @@ ShmWriter::copyToShm()
 
     // fill, skip slices that are already full
     while (bufWritten < bufSize) {
-        Ipc::StoreMap::Slice &slice = store.nextAppendableSlice(index, lastSlice);
+        Ipc::StoreMap::Slice &slice = store.nextAppendableSlice(fileNo, lastSlice);
         if (firstSlice < 0)
             firstSlice = lastSlice;
         copyToShmSlice(slice);
@@ -345,67 +346,64 @@ MemStore::updateHeaders(StoreEntry *updatedE)
     if (!map)
         return;
 
-    sfileno index = updatedE->mem_obj ? updatedE->mem_obj->memCache.index : -1;
-    Ipc::StoreMapAnchor *anchor;
-    if (index < 0) {
-        anchor = map->openForUpdate(
-            reinterpret_cast<cache_key*>(updatedE->key), index);
-    } else {
-        anchor = map->openForUpdateAt(index);
-    }
-
-    if (!anchor)
+    Ipc::StoreMapUpdate update(updatedE);
+    if (!map->openForUpdating(update))
         return;
 
     try {
-        anchor->update(*updatedE); // useful even if finishUpdatingHeaders() fails
-        finishUpdatingHeaders(updatedE, *anchor, index);
+        updateHeadersOrThrow(update);
     } catch (const std::exception &ex) {
         debugs(20, 2, "error starting to update entry " << *updatedE << ": " << ex.what());
-        map->abortUpdate(index, -1);
+        map->abortUpdating(update);
     }
 }
 
 void
-MemStore::finishUpdatingHeaders(StoreEntry *updatedE, Ipc::StoreMapAnchor &anchor, const sfileno index)
+MemStore::updateHeadersOrThrow(Ipc::StoreMapUpdate &update)
 {
-    const HttpReply *rawReply = updatedE->getReply();
+    // we are updating the newly locked copy, not necessarily the associated one
+    debugs(10,3, "updating locked entry " << update.stale.fileNo << " ? " <<
+           update.entry->mem_obj->memCache.index << " of " << *update.entry);
+    update.fresh.anchor->set(*update.entry);
+
+    // our +/- hdr_sz math below does not work if the chains differ [in size]
+    Must(update.stale.anchor->basics.swap_file_sz == update.fresh.anchor->basics.swap_file_sz);
+
+    const HttpReply *rawReply = update.entry->getReply();
     Must(rawReply);
     const HttpReply &reply = *rawReply;
-    debugs(20, 7, "new hdr_sz: " << reply.hdr_sz);
+    const uint64_t staleHdrSz = reply.hdr_sz;
+    debugs(20, 7, "stale hdr_sz: " << staleHdrSz);
 
     /* we will need to copy same-slice payload after the stored headers later */
-    Must(reply.hdr_sz > 0);
-    const Ipc::StoreMapSliceId oldPrefixLastSLiceId = map->sliceContaining(index, reply.hdr_sz);
-    Must(oldPrefixLastSLiceId >= 0);
+    Must(staleHdrSz > 0);
+    update.stale.splicingPoint = map->sliceContaining(update.stale.fileNo, staleHdrSz);
+    Must(update.stale.splicingPoint >= 0);
+    Must(update.stale.anchor->basics.swap_file_sz >= staleHdrSz);
 
-    ShmWriter writer(*this, updatedE, anchor, index);
-    /* exceptions above do not require freeing the new update chain */
+    Must(update.stale.anchor);
+    ShmWriter writer(*this, update.entry, *update.fresh.anchor, update.fresh.fileNo);
+    reply.packHeadersInto(&writer);
+    const uint64_t freshHdrSz = writer.totalWritten;
+    debugs(20, 7, "fresh hdr_sz: " << freshHdrSz << " diff: " << (freshHdrSz - staleHdrSz));
 
-    try {
-        reply.packHeadersInto(&writer);
-        
-        /* copy same-slice payload remaining after the stored headers */
-        const Ipc::StoreMapSlice &slice = map->readableSlice(index, oldPrefixLastSLiceId);
-        const Ipc::StoreMapSlice::Size sliceCapacity = Ipc::Mem::PageSize();
-        const Ipc::StoreMapSlice::Size headersInLastSlice = reply.hdr_sz % sliceCapacity;
-        Must(headersInLastSlice > 0); // or sliceContaining() would have stopped earlier
-        Must(slice.size >= headersInLastSlice);
-        const Ipc::StoreMapSlice::Size payloadInLastSlice = slice.size - headersInLastSlice;
-        const MemStoreMapExtras::Item &extra = extras->items[oldPrefixLastSLiceId];
-        char *page = static_cast<char*>(PagePointer(extra.page));
-        debugs(20, 5, "appending same-slice payload: " << payloadInLastSlice);
-        writer.append(page + headersInLastSlice, payloadInLastSlice);
+    /* copy same-slice payload remaining after the stored headers */
+    const Ipc::StoreMapSlice &slice = map->readableSlice(update.stale.fileNo, update.stale.splicingPoint);
+    const Ipc::StoreMapSlice::Size sliceCapacity = Ipc::Mem::PageSize();
+    const Ipc::StoreMapSlice::Size headersInLastSlice = staleHdrSz % sliceCapacity;
+    Must(headersInLastSlice > 0); // or sliceContaining() would have stopped earlier
+    Must(slice.size >= headersInLastSlice);
+    const Ipc::StoreMapSlice::Size payloadInLastSlice = slice.size - headersInLastSlice;
+    const MemStoreMapExtras::Item &extra = extras->items[update.stale.splicingPoint];
+    char *page = static_cast<char*>(PagePointer(extra.page));
+    debugs(20, 5, "appending same-slice payload: " << payloadInLastSlice);
+    writer.append(page + headersInLastSlice, payloadInLastSlice);
+    update.fresh.splicingPoint = writer.lastSlice;
 
-        // XXX: Not together with the closeForUpdate() update!
-        anchor.basics.swap_file_sz -= reply.hdr_sz;
+    update.fresh.anchor->basics.swap_file_sz -= staleHdrSz;
+    update.fresh.anchor->basics.swap_file_sz += freshHdrSz;
 
-        map->closeForUpdate(index, oldPrefixLastSLiceId, writer.firstSlice, writer.lastSlice);
-        debugs(20, 3, "updated " << *updatedE);
-    } catch (const std::exception &ex) {
-        debugs(20, 2, "error updating entry " << *writer.entry << ": " << ex.what());
-        map->abortUpdate(index, writer.firstSlice);
-    }
+    map->closeForUpdating(update);
 }
 
 bool
@@ -757,18 +755,21 @@ MemStore::copyToShmSlice(StoreEntry &e, Ipc::StoreMapAnchor &anchor, Ipc::StoreM
 /// starts checking with the entry chain slice at a given offset and
 /// returns a not-full (but not necessarily empty) slice, updating sliceOffset
 Ipc::StoreMap::Slice &
-MemStore::nextAppendableSlice(const sfileno entryIndex, sfileno &sliceOffset)
+MemStore::nextAppendableSlice(const sfileno fileNo, sfileno &sliceOffset)
 {
     // allocate the very first slot for the entry if needed
     if (sliceOffset < 0) {
+        Ipc::StoreMapAnchor &anchor = map->writeableEntry(fileNo);
+        Must(anchor.start < 0);
         Ipc::Mem::PageId page;
         sliceOffset = reserveSapForWriting(page); // throws
         extras->items[sliceOffset].page = page;
+        anchor.start = sliceOffset;
     }
 
     const size_t sliceCapacity = Ipc::Mem::PageSize();
     do {
-        Ipc::StoreMap::Slice &slice = map->writeableSlice(entryIndex, sliceOffset);
+        Ipc::StoreMap::Slice &slice = map->writeableSlice(fileNo, sliceOffset);
 
         if (slice.size >= sliceCapacity) {
             if (slice.next >= 0) {
@@ -779,7 +780,7 @@ MemStore::nextAppendableSlice(const sfileno entryIndex, sfileno &sliceOffset)
             Ipc::Mem::PageId page;
             slice.next = sliceOffset = reserveSapForWriting(page);
             extras->items[sliceOffset].page = page;
-            debugs(20, 7, "entry " << entryIndex << " new slice: " << sliceOffset);
+            debugs(20, 7, "entry " << fileNo << " new slice: " << sliceOffset);
         }
 
         return slice;
@@ -927,7 +928,7 @@ MemStore::unlink(StoreEntry &e)
     if (e.mem_obj && e.mem_obj->memCache.index >= 0) {
         map->freeEntry(e.mem_obj->memCache.index);
         disconnect(e);
-    } else {
+    } else if (map) {
         // the entry may have been loaded and then disconnected from the cache
         map->freeEntryByKey(reinterpret_cast<cache_key*>(e.key));
     }

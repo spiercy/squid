@@ -637,7 +637,7 @@ Rock::Rebuild::useNewSlot(const SlotId slotId, const DbCellHeader &header)
 
     const cache_key *const key =
         reinterpret_cast<const cache_key*>(header.key);
-    const sfileno fileno = sd->map->anchorIndexByKey(key);
+    const sfileno fileno = sd->map->fileNoByKey(key);
     assert(0 <= fileno && fileno < dbEntryLimit);
 
     LoadingEntry &le = entries[fileno];

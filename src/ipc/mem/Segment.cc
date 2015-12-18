@@ -97,7 +97,7 @@ Ipc::Mem::Segment::create(const off_t aSize)
                theName.termedBuf(), xstrerror());
     }
 
-    if (ftruncate(theFD, aSize)) {
+    if (ftruncate(theFD, 0) || ftruncate(theFD, aSize)) {
         const int savedError = errno;
         unlink();
         debugs(54, 5, HERE << "ftruncate " << theName << ": " << xstrerr(savedError));

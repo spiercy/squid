@@ -27,12 +27,19 @@ StoreMapAnchorsId(const SBuf &path)
     return Ipc::Mem::Segment::Name(path, "anchors");
 }
 
+static SBuf
+StoreMapFileNosId(const SBuf &path)
+{
+    return Ipc::Mem::Segment::Name(path, "filenos");
+}
+
 Ipc::StoreMap::Owner *
 Ipc::StoreMap::Init(const SBuf &path, const int sliceLimit)
 {
     assert(sliceLimit > 0); // we should not be created otherwise
     const int anchorLimit = min(sliceLimit, static_cast<int>(SwapFilenMax));
     Owner *owner = new Owner;
+    owner->fileNos = shm_new(FileNos)(StoreMapFileNosId(path).c_str(), anchorLimit);
     owner->anchors = shm_new(Anchors)(StoreMapAnchorsId(path).c_str(), anchorLimit);
     owner->slices = shm_new(Slices)(StoreMapSlicesId(path).c_str(), sliceLimit);
     debugs(54, 5, "created " << path << " with " << anchorLimit << '+' << sliceLimit);
@@ -40,10 +47,12 @@ Ipc::StoreMap::Init(const SBuf &path, const int sliceLimit)
 }
 
 Ipc::StoreMap::StoreMap(const SBuf &aPath): cleaner(NULL), path(aPath),
+    fileNos(shm_old(FileNos)(StoreMapFileNosId(path).c_str())),
     anchors(shm_old(Anchors)(StoreMapAnchorsId(path).c_str())),
     slices(shm_old(Slices)(StoreMapSlicesId(path).c_str()))
 {
     debugs(54, 5, "attached " << path << " with " <<
+           fileNos->capacity << '+' <<
            anchors->capacity << '+' << slices->capacity);
     assert(entryLimit() > 0); // key-to-position mapping requires this
     assert(entryLimit() <= sliceLimit()); // at least one slice per entry
@@ -90,7 +99,7 @@ Ipc::StoreMap::openForWriting(const cache_key *const key, sfileno &fileno)
 {
     debugs(54, 5, "opening entry with key " << storeKeyText(key)
            << " for writing " << path);
-    const int idx = anchorIndexByKey(key);
+    const int idx = fileNoByKey(key);
 
     if (Anchor *anchor = openForWritingAt(idx)) {
         fileno = idx;
@@ -123,6 +132,7 @@ Ipc::StoreMap::openForWritingAt(const sfileno fileno, bool overwriteExisting)
 
         assert(s.empty());
         s.start = -1; // we have not allocated any slices yet
+        s.splicingPoint = -1;
         ++anchors->count;
 
         //s.setKey(key); // XXX: the caller should do that
@@ -165,10 +175,7 @@ Ipc::StoreMap::Slice &
 Ipc::StoreMap::writeableSlice(const AnchorId anchorId, const SliceId sliceId)
 {
     const Anchor &anchor = anchorAt(anchorId);
-    // for simplicity, make an exception for MemStore::nextAppendableSlice()
-    // that writes [new] prefix using an update lock. TODO: Can we do better?
-    if (!anchor.writing())
-        AssertFlagIsSet(anchor.lock.updating);
+    assert(anchor.writing());
     assert(validSlice(sliceId));
     return sliceAt(sliceId);
 }
@@ -213,11 +220,21 @@ Ipc::StoreMap::abortWriting(const sfileno fileno)
 }
 
 void
-Ipc::StoreMap::abortUpdate(const sfileno fileno, const SliceId firstSliceId)
+Ipc::StoreMap::abortUpdating(Update &update)
 {
-    debugs(54, 5, "aborting entry " << fileno << " for update " << path);
-    closeForUpdateFinal(fileno, firstSliceId);
-    debugs(54, 5, "aborted entry " << fileno << " for update " << path);
+    const sfileno fileno = update.stale.fileNo;
+    debugs(54, 5, "aborting entry " << fileno << " for updating " << path);
+    if (update.stale) {
+        AssertFlagIsSet(update.stale.anchor->lock.updating);
+        update.stale.anchor->lock.unlockHeaders();
+        closeForReading(update.stale.fileNo);
+        update.stale = Update::Edition();
+    }
+    if (update.fresh) {
+        abortWriting(update.fresh.fileNo);
+        update.fresh = Update::Edition();
+    }
+    debugs(54, 5, "aborted entry " << fileno << " for updating " << path);
 }
 
 const Ipc::StoreMap::Anchor *
@@ -257,7 +274,7 @@ Ipc::StoreMap::freeEntryByKey(const cache_key *const key)
     debugs(54, 5, "marking entry with key " << storeKeyText(key)
            << " to be freed in " << path);
 
-    const int idx = anchorIndexByKey(key);
+    const int idx = fileNoByKey(key);
     Anchor &s = anchorAt(idx);
     if (s.lock.lockExclusive()) {
         if (s.sameKey(key))
@@ -282,7 +299,7 @@ Ipc::StoreMap::freeChain(const sfileno fileno, Anchor &inode, const bool keepLoc
     debugs(54, 7, "freeing entry " << fileno <<
            " in " << path);
     if (!inode.empty())
-        freeChainAt(inode.start);
+        freeChainAt(inode.start, inode.splicingPoint);
     inode.waitingToBeFreed = false;
     inode.rewind();
 
@@ -294,7 +311,7 @@ Ipc::StoreMap::freeChain(const sfileno fileno, Anchor &inode, const bool keepLoc
 
 /// unconditionally frees an already locked chain of slots; no anchor maintenance
 void
-Ipc::StoreMap::freeChainAt(SliceId sliceId)
+Ipc::StoreMap::freeChainAt(SliceId sliceId, const SliceId splicingPoint)
 {
     static uint64_t ChainId = 0; // to pair freeing/freed calls in debugs()
     const uint64_t chainId = ++ChainId;
@@ -306,6 +323,11 @@ Ipc::StoreMap::freeChainAt(SliceId sliceId)
         slice.next = -1;
         if (cleaner)
             cleaner->noteFreeMapSlice(sliceId); // might change slice state
+        if (sliceId == splicingPoint) {
+            debugs(54, 5, "preserving chain #" << chainId << " in " << path <<
+                   " suffix after slice " << splicingPoint);
+            break; // do not free the rest of the chain
+        }
         sliceId = nextId;
     }
     debugs(54, 7, "freed chain #" << chainId << " in " << path);
@@ -335,7 +357,7 @@ Ipc::StoreMap::openForReading(const cache_key *const key, sfileno &fileno)
 {
     debugs(54, 5, "opening entry with key " << storeKeyText(key)
            << " for reading " << path);
-    const int idx = anchorIndexByKey(key);
+    const int idx = fileNoByKey(key);
     if (const Anchor *slot = openForReadingAt(idx)) {
         if (slot->sameKey(key)) {
             fileno = idx;
@@ -386,100 +408,151 @@ Ipc::StoreMap::closeForReading(const sfileno fileno)
     debugs(54, 5, "closed entry " << fileno << " for reading " << path);
 }
 
-Ipc::StoreMap::Anchor *
-Ipc::StoreMap::openForUpdate(const cache_key *const key, sfileno &fileno)
+bool
+Ipc::StoreMap::openForUpdating(Update &update)
 {
-    debugs(54, 5, "opening entry with key " << storeKeyText(key)
-           << " for update " << path);
-    const int idx = anchorIndexByKey(key);
-    if (Anchor *anchor = openForUpdateAt(idx)) {
-        if (anchor->sameKey(key)) {
-            fileno = idx;
-            return anchor; // locked for update
-        }
-        closeForUpdateFinal(fileno);
-        debugs(54, 7, "closed mismatching entry " << idx << " for update " << path);
-    }
-    return nullptr;
-}
-
-Ipc::StoreMap::Anchor *
-Ipc::StoreMap::openForUpdateAt(const sfileno fileno)
-{
-    debugs(54, 5, "opening entry " << fileno << " for update " << path);
+    Must(update.entry);
+    const StoreEntry &entry = *update.entry;
+    debugs(54, 5, "opening entry of " << entry << " for updating " << path);
 
     // Unreadable entries cannot (e.g., empty and otherwise problematic entries)
     // or should not (e.g., entries still forming their metadata) be updated.
-    if (!openForReadingAt(fileno)) {
-        debugs(54, 5, "cannot open unreadable entry " << fileno <<
-               " for update " << path);
-        return nullptr;
+    const cache_key *const key = reinterpret_cast<const cache_key*>(entry.key);
+    if (!openForReading(key, update.stale.fileNo)) {
+        debugs(54, 5, "cannot open unreadable entry of " << entry <<
+               " for updating " << path);
+        return false;
     }
 
-    Anchor &s = anchorAt(fileno);
-    if (s.writing()) {
+    update.stale.anchor = &anchorAt(update.stale.fileNo);
+    if (update.stale.anchor->writing()) {
         // TODO: Support updating appending entries.
-        // For example, MemStore::finishUpdatingHeaders() would not know how
+        // For example, MemStore::updateHeaders() would not know how
         // many old prefix body bytes to copy to the new prefix if the last old
         // prefix slice has not been formed yet (i.e., still gets more bytes).
-        debugs(54, 5, "cannot open appending entry " << fileno <<
-               " for update " << path);
-        closeForReading(fileno);
-        return nullptr;
+        debugs(54, 5, "cannot open appending entry " << update.stale.fileNo <<
+               " for updating " << path);
+        closeForReading(update.stale.fileNo);
+        return false;
     }
 
-    if (!s.lock.lockHeaders()) {
-        debugs(54, 5, "cannot open updating entry " << fileno <<
-               " for update " << path);
-        closeForReading(fileno);
-        return nullptr;
+    if (!update.stale.anchor->lock.lockHeaders()) {
+        debugs(54, 5, "cannot open updating entry " << update.stale.fileNo <<
+               " for updating " << path);
+        closeForReading(update.stale.fileNo);
+        return false;
     }
 
-    debugs(54, 5, "opened entry " << fileno << " for update " << path);
-    return &s;
+    update.stale.name = nameByKey(key);
+
+    /* stale anchor is properly locked; we can now use abortUpdating() if needed */
+
+    if (!openKeyless(update.fresh)) {
+        debugs(54, 5, "cannot open freshless entry " << update.stale.fileNo <<
+               " for updating " << path);
+        abortUpdating(update);
+        return false;
+    }
+
+    debugs(54, 5, "opened entry " << update.stale.fileNo << " for updating " << path <<
+           " using entry " << update.fresh.fileNo);
+    Must(update.stale);
+    Must(update.fresh);
+    return true;
+}
+
+/// finds an anchor that is currently not associated with any entry key and
+/// locks it for writing so ensure exclusive access during updates
+bool
+Ipc::StoreMap::openKeyless(Update::Edition &edition)
+{
+    // Hopefully, we find a rewritable entry much sooner (TODO: use time?).
+    // The min() will protect us from division by zero inside the loop.
+    // TODO: Refactor this and purgeOne() loops into C++11 range iterator.
+    const int searchLimit = min(10000, entryLimit());
+    int tries = 0;
+    for (; tries < searchLimit; ++tries) {
+        Update::Edition temp;
+        temp.name = static_cast<sfileno>(++anchors->victim % entryLimit());
+        temp.fileNo = fileNoByName(temp.name);
+        if ((temp.anchor = openForWritingAt(temp.fileNo))) {
+            debugs(54, 5, "created entry " << temp.fileNo <<
+                   " for updating " << path);
+            Must(temp);
+            edition = temp;
+            return true;
+        }
+    }
+    debugs(54, 3, "failed " << path << "; tried: " << tries);
+    return false;
 }
 
 void
-Ipc::StoreMap::closeForUpdate(const sfileno fileno, const SliceId oldPrefixLastSliceId, const SliceId newPrefixFirstSliceId, const SliceId newPrefixLastSliceId)
+Ipc::StoreMap::closeForUpdating(Update &update)
 {
-    Anchor &anchor = anchorAt(fileno);
-    AssertFlagIsSet(anchor.lock.updating);
-    Must(oldPrefixLastSliceId >= 0);
-    Must(newPrefixFirstSliceId >= 0);
-    Must(newPrefixLastSliceId >= 0);
+    Must(update.stale.anchor);
+    Must(update.fresh.anchor);
+    AssertFlagIsSet(update.stale.anchor->lock.updating);
+    Must(update.stale.splicingPoint >= 0);
+    Must(update.fresh.splicingPoint >= 0);
 
-    /* change the old chain prefix to the new one, leaving the suffix as is */
+    /* the stale prefix cannot overlap with the fresh one (a weak check) */
+    Must(update.stale.anchor->start != update.fresh.anchor->start);
+    Must(update.stale.anchor->start != update.fresh.splicingPoint);
+    Must(update.stale.splicingPoint != update.fresh.anchor->start);
+    Must(update.stale.splicingPoint != update.fresh.splicingPoint);
 
-    /* the old prefix cannot overlap with the new one (a weak check) */
-    Must(anchor.start != newPrefixFirstSliceId);
-    Must(anchor.start != newPrefixLastSliceId);
-    Must(oldPrefixLastSliceId != newPrefixFirstSliceId);
-    Must(oldPrefixLastSliceId != newPrefixLastSliceId);
+    /* the relative order of most operations is significant here */
 
-    /* the relative order of several operations is significant here */
-    Slice &newPrefixLastSlice = sliceAt(newPrefixLastSliceId);
-    Must(newPrefixLastSlice.next < 0); // the new chain is properly terminated
-    const SliceId suffixFirstSliceId = sliceAt(oldPrefixLastSliceId).next; // may be negative
-    newPrefixLastSlice.next = suffixFirstSliceId; // new chain uses the old chain suffix
-    const SliceId oldPrefixFirstSliceId = anchor.start; // remember so that we can free the old prefix
-    anchor.start = newPrefixFirstSliceId; // and now all readers will see/use the new chain
-    sliceAt(oldPrefixLastSliceId).next = -1; // truncate the old and now unreachable prefix
-    closeForUpdateFinal(fileno, oldPrefixFirstSliceId); // unlock and free the old prefix
-    debugs(54, 5, "closed entry " << fileno << " for update " << path <<
-           " with new [" << newPrefixFirstSliceId << ',' << newPrefixLastSliceId <<
-           "] prefix containing at least " << newPrefixLastSlice.size << " bytes");
-}
+    /* splice the fresh chain prefix with the stale chain suffix */
+    Slice &freshSplicingSlice = sliceAt(update.fresh.splicingPoint);
+    Must(freshSplicingSlice.next < 0); // the fresh chain is properly terminated
+    const SliceId suffixStart = sliceAt(update.stale.splicingPoint).next; // may be negative
+    freshSplicingSlice.next = suffixStart; // fresh chain uses the stale chain suffix
 
-/// a common last step of various update-ending methods
-void
-Ipc::StoreMap::closeForUpdateFinal(const sfileno fileno, const SliceId chainToFree)
-{
-    Anchor &anchor = anchorAt(fileno);
-    AssertFlagIsSet(anchor.lock.updating);
-    if (chainToFree >= 0)
-        freeChainAt(chainToFree);
-    anchor.lock.unlockHeaders();
-    closeForReading(fileno);
+    // make the fresh anchor/chain readable for everybody
+    update.fresh.anchor->lock.switchExclusiveToShared();
+    // but the fresh anchor is still invisible to anybody but us
+
+    // This freeEntry() code duplicates the code below to minimize the time when
+    // the freeEntry() race condition (see the Race: comment below) might occur.
+    if (update.stale.anchor->waitingToBeFreed)
+        freeEntry(update.fresh.fileNo);
+
+    /* any external changes were applied to the stale anchor/chain until now */
+    fileNos->items[update.stale.name] = update.fresh.fileNo;
+    /* any external changes will apply to the fresh anchor/chain from now on */
+
+    // Race: If the stale entry was deleted by some kid during the assignment,
+    // then we propagate that event to the fresh anchor and chain. Since this
+    // update is not atomically combined with the assignment above, another kid
+    // might get a fresh entry just before we have a chance to free it. However,
+    // such deletion races are always possible even without updates.
+    if (update.stale.anchor->waitingToBeFreed)
+        freeEntry(update.fresh.fileNo);
+
+    /* free the stale chain prefix except for the shared suffix */
+    update.stale.anchor->splicingPoint = update.stale.splicingPoint;
+    freeEntry(update.stale.fileNo);
+
+    // make the stale anchor/chain reusable, reachable via its new location
+    fileNos->items[update.fresh.name] = update.stale.fileNo;
+
+    const Update updateSaved = update; // for post-close debugging below
+
+    /* unlock the stale anchor/chain */
+    update.stale.anchor->lock.unlockHeaders();
+    closeForReading(update.stale.fileNo);
+    update.stale = Update::Edition();
+
+    // finally, unlock the fresh entry
+    closeForReading(update.fresh.fileNo);
+    update.fresh = Update::Edition();
+
+    debugs(54, 5, "closed entry " << *updateSaved.entry <<
+           " for updating " << path << " to fresh entry " << updateSaved.fresh.fileNo <<
+           " with [" << updateSaved.fresh.anchor->start << ',' << updateSaved.fresh.splicingPoint <<
+           "] prefix containing at least " << freshSplicingSlice.size << " bytes");
 }
 
 bool
@@ -569,17 +642,34 @@ Ipc::StoreMap::anchorAt(const sfileno fileno) const
 }
 
 sfileno
-Ipc::StoreMap::anchorIndexByKey(const cache_key *const key) const
+Ipc::StoreMap::nameByKey(const cache_key *const key) const
 {
     const uint64_t *const k = reinterpret_cast<const uint64_t *>(key);
     // TODO: use a better hash function
-    return (k[0] + k[1]) % entryLimit();
+    const int hash = (k[0] + k[1]) % entryLimit();
+    return hash;
+}
+
+sfileno
+Ipc::StoreMap::fileNoByName(const sfileno name) const
+{
+    const int fileNo = fileNos->items[name];;
+    // fileNos->items are initialized to zero, which we treat as "name is fileno";
+    // a positive fileNo means the entry anchor got moved to that new fileNo
+    return fileNo ? fileNo : name;;
+}
+
+sfileno
+Ipc::StoreMap::fileNoByKey(const cache_key *const key) const
+{
+    const int name = nameByKey(key);
+    return fileNoByName(name);
 }
 
 Ipc::StoreMap::Anchor &
 Ipc::StoreMap::anchorByKey(const cache_key *const key)
 {
-    return anchorAt(anchorIndexByKey(key));
+    return anchorAt(fileNoByKey(key));
 }
 
 Ipc::StoreMap::Slice&
@@ -597,7 +687,7 @@ Ipc::StoreMap::sliceAt(const SliceId sliceId) const
 
 /* Ipc::StoreMapAnchor */
 
-Ipc::StoreMapAnchor::StoreMapAnchor(): start(0)
+Ipc::StoreMapAnchor::StoreMapAnchor(): start(0), splicingPoint(-1)
 {
     memset(&key, 0, sizeof(key));
     memset(&basics, 0, sizeof(basics));
@@ -629,25 +719,6 @@ Ipc::StoreMapAnchor::set(const StoreEntry &from)
     basics.swap_file_sz = from.swap_file_sz;
     basics.refcount = from.refcount;
     basics.flags = from.flags;
-    // keep in sync with update()
-}
-
-void
-Ipc::StoreMapAnchor::update(const StoreEntry &from)
-{
-    assert(reading());
-    AssertFlagIsSet(lock.updating);
-    // XXX: This assignment sequence is not atomic. Partial updates are very
-    // unlikely but not impossible. If they become a real problem, add another
-    // level of indirection so that we can switch entire anchors at once, but
-    // doing so requires a yet another set of locks and cleanup flags/code.
-    // TODO: Do we need to store these in RAM at all?
-    basics.timestamp = from.timestamp;
-    basics.lastref = from.lastref;
-    basics.expires = from.expires;
-    basics.lastmod = from.lastmod;
-    // other fields are not meant to be updated
-    // keep in sync with set()
 }
 
 void
@@ -655,17 +726,22 @@ Ipc::StoreMapAnchor::rewind()
 {
     assert(writing());
     start = 0;
+    splicingPoint = -1;
     memset(&key, 0, sizeof(key));
     memset(&basics, 0, sizeof(basics));
     // but keep the lock
 }
 
-Ipc::StoreMap::Owner::Owner(): anchors(NULL), slices(NULL)
+Ipc::StoreMap::Owner::Owner():
+    fileNos(nullptr),
+    anchors(nullptr),
+    slices(nullptr)
 {
 }
 
 Ipc::StoreMap::Owner::~Owner()
 {
+    delete fileNos;
     delete anchors;
     delete slices;
 }

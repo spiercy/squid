@@ -77,7 +77,7 @@ protected:
     bool copyFromShm(StoreEntry &e, const sfileno index, const Ipc::StoreMapAnchor &anchor);
     bool copyFromShmSlice(StoreEntry &e, const StoreIOBuffer &buf, bool eof);
 
-    void finishUpdatingHeaders(StoreEntry *updatedE, Ipc::StoreMapAnchor &anchor, const sfileno index);
+    void updateHeadersOrThrow(Ipc::StoreMapUpdate &update);
 
     void anchorEntry(StoreEntry &e, const sfileno index, const Ipc::StoreMapAnchor &anchor);
     bool updateCollapsedWith(StoreEntry &collapsed, const sfileno index, const Ipc::StoreMapAnchor &anchor);
