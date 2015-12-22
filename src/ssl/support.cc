@@ -282,7 +282,8 @@ ssl_verify_cb(int ok, X509_STORE_CTX * ctx)
 
         Ssl::CertErrors *errs = static_cast<Ssl::CertErrors *>(SSL_get_ex_data(ssl, ssl_ex_index_ssl_errors));
         if (!errs) {
-            errs = new Ssl::CertErrors(Ssl::CertError(error_no, broken_cert));
+            int depth = X509_STORE_CTX_get_error_depth(ctx);
+            errs = new Ssl::CertErrors(Ssl::CertError(error_no, broken_cert, depth));
             if (!SSL_set_ex_data(ssl, ssl_ex_index_ssl_errors,  (void *)errs)) {
                 debugs(83, 2, "Failed to set ssl error_no in ssl_verify_cb: Certificate " << buffer);
                 delete errs;
@@ -1874,12 +1875,12 @@ Ssl::CreateServer(SSL_CTX *sslContext, const int fd, const char *squidCtx)
     return SslCreate(sslContext, fd, Ssl::Bio::BIO_TO_CLIENT, squidCtx);
 }
 
-Ssl::CertError::CertError(ssl_error_t anErr, X509 *aCert): code(anErr)
+Ssl::CertError::CertError(ssl_error_t anErr, X509 *aCert, int aDepth): code(anErr), depth(aDepth)
 {
     cert.resetAndLock(aCert);
 }
 
-Ssl::CertError::CertError(CertError const &err): code(err.code)
+Ssl::CertError::CertError(CertError const &err): code(err.code), depth(err.depth)
 {
     cert.resetAndLock(err.cert.get());
 }

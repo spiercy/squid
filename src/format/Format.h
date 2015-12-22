@@ -11,6 +11,9 @@
 
 #include "base/RefCount.h"
 #include "ConfigParser.h"
+#if USE_OPENSSL
+#include "ssl/support.h"
+#endif
 
 /*
  * Squid configuration allows users to define custom formats in
@@ -53,6 +56,12 @@ public:
     /// dump this whole list of formats into the provided StoreEntry
     void dump(StoreEntry * entry, const char *directiveName);
 
+private:
+#if USE_OPENSSL
+    char *sslErrorName(Ssl::ssl_error_t, char *buf, size_t size) const;
+#endif
+
+public:
     char *name;
     Token *format;
     Format *next;

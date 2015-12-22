@@ -76,7 +76,8 @@ class CertError
 public:
     ssl_error_t code; ///< certificate error code
     X509_Pointer cert; ///< certificate with the above error code
-    CertError(ssl_error_t anErr, X509 *aCert);
+    int depth;
+    CertError(ssl_error_t anErr, X509 *aCert, int depth = -1);
     CertError(CertError const &err);
     CertError & operator = (const CertError &old);
     bool operator == (const CertError &ce) const;
