@@ -193,6 +193,14 @@ static TokenTableEntry TokenTableSsl[] = {
     /*{"<cert_subject", LFT_SSL_SERVER_CERT_SUBJECT}, */
     /*{"<cert_issuer", LFT_SSL_SERVER_CERT_ISSUER}, */
     {"<cert_errors", LFT_SSL_SERVER_CERT_ERRORS},
+    {">negotiated_version", LFT_TLS_CLIENT_NEGOTIATED_VERSION},
+    {"<negotiated_version", LFT_TLS_SERVER_NEGOTIATED_VERSION},
+    {">negotiated_cipher", LFT_TLS_CLIENT_NEGOTIATED_CIPHER},
+    {"<negotiated_cipher", LFT_TLS_SERVER_NEGOTIATED_CIPHER},
+    {">received_hello_version", LFT_TLS_CLIENT_RECEIVED_HELLO_VERSION},
+    {"<received_hello_version", LFT_TLS_SERVER_RECEIVED_HELLO_VERSION},
+    {">received_supported_version", LFT_TLS_CLIENT_SUPPORTED_VERSION},
+    {"<received_supported_version", LFT_TLS_SERVER_SUPPORTED_VERSION},
     {NULL, LFT_NONE}
 };
 #endif
@@ -546,6 +554,14 @@ Format::Token::parse(const char *def, Quoting *quoting)
 #if !USE_SQUID_EUI
     case LFT_CLIENT_EUI:
         debugs(46, DBG_CRITICAL, "WARNING: The \">eui\" formatting code requires EUI features which are disabled in this Squid.");
+        break;
+#endif
+
+#if USE_OPENSSL
+    case LFT_TLS_SERVER_NEGOTIATED_VERSION:
+    case LFT_TLS_SERVER_RECEIVED_HELLO_VERSION:
+    case LFT_TLS_SERVER_SUPPORTED_VERSION:
+        Config.onoff.logTlsServerHelloDetails = 1;
         break;
 #endif
 

@@ -150,7 +150,7 @@ Ssl::PeerConnector::initializeSsl()
         if (SSL *clientSsl = fd_table[clientConn->fd].ssl) {
             BIO *b = SSL_get_rbio(clientSsl);
             cltBio = static_cast<Ssl::ClientBio *>(b->ptr);
-            const Ssl::Bio::sslFeatures &features = cltBio->getFeatures();
+            const Ssl::Bio::sslFeatures &features = cltBio->receivedHelloFeatures();
             if (!features.serverName.isEmpty())
                 hostName = new SBuf(features.serverName);
         }
@@ -170,7 +170,7 @@ Ssl::PeerConnector::initializeSsl()
         Must(!csd->serverBump() || csd->serverBump()->step <= Ssl::bumpStep2);
         if (csd->sslBumpMode == Ssl::bumpPeek || csd->sslBumpMode == Ssl::bumpStare) {
             assert(cltBio);
-            const Ssl::Bio::sslFeatures &features = cltBio->getFeatures();
+            const Ssl::Bio::sslFeatures &features = cltBio->receivedHelloFeatures();
             if (features.sslVersion != -1) {
                 features.applyToSSL(ssl, csd->sslBumpMode);
                 // Should we allow it for all protocols?
@@ -312,6 +312,9 @@ Ssl::PeerConnector::sslFinalized()
     const int fd = serverConnection()->fd;
     SSL *ssl = fd_table[fd].ssl;
 
+    // Retrieve SSL server informations if any
+    serverConnection()->tlsNegotiations()->fillWith(ssl);
+
     // In the case the session is resuming, the certificates does not exist and
     // we did not do any cert validation
     if (resumingSession)
@@ -443,8 +446,12 @@ Ssl::PeerConnector::checkForPeekAndSpliceMatched(const Ssl::BumpMode action)
         splice = true;
         // Ssl Negotiation stops here. Last SSL checks for valid certificates
         // and if done, switch to tunnel mode
-        if (sslFinalized())
+        if (sslFinalized()) {
+            //retrieved received SSL client informations
+            SSL *clientSsl = fd_table[clientConn->fd].ssl;
+            clientConn->tlsNegotiations()->fillWith(clientSsl);
             switchToTunnel(request.getRaw(), clientConn, serverConn);
+        }
     }
 }
 
@@ -671,6 +678,9 @@ Ssl::PeerConnector::handleNegotiateError(const int ret)
     default:
         break; // no special error handling for all other errors
     }
+
+    // Retrieve SSL server informations if any
+    serverConnection()->tlsNegotiations()->fillWith(ssl);
 
     ErrorState *const anErr = ErrorState::NewForwarding(ERR_SECURE_CONNECT_FAIL, request.getRaw());
     anErr->xerrno = sysErrNo;

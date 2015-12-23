@@ -87,6 +87,28 @@ public:
 /// Holds a list of certificate SSL errors
 typedef CbDataList<Ssl::CertError> CertErrors;
 
+class NegotiationHistory
+{
+public:
+    NegotiationHistory(): helloVersion_(-1), supportedVersion_(-1), version_(-1), cipher(NULL) {}
+    void fillWith(SSL *); ///< Extract negotiation information from TLS object
+    const char *cipherName() const; ///< The name of negotiated cipher
+    /// String representation of TLS negotiated version
+    const char *negotiatedVersion() const {return printTlsVersion(version_);}
+    /// String representation of the received TLS hello message version.
+    const char *helloVersion() const {return printTlsVersion(helloVersion_);}
+    /// String representation of the maximum supported TLS version
+    /// by remote peer
+    const char *supportedVersion() const {return printTlsVersion(supportedVersion_);}
+private:
+    /// String representation of the TLS version 'v'
+    const char *printTlsVersion(int v) const;
+    int helloVersion_; ///< The TLS version of the hello message
+    int supportedVersion_; ///< The maximum supported TLS version
+    int version_; ///< The negotiated TLS version
+    const SSL_CIPHER *cipher; ///< The negotiated cipher
+};
+
 } //namespace Ssl
 
 /// \ingroup ServerProtocolSSLAPI

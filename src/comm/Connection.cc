@@ -15,6 +15,9 @@
 #include "neighbors.h"
 #include "SquidConfig.h"
 #include "SquidTime.h"
+#if USE_OPENSSL
+#include "ssl/support.h"
+#endif
 
 class CachePeer;
 bool
@@ -33,6 +36,9 @@ Comm::Connection::Connection() :
     flags(COMM_NONBLOCKING),
     peer_(NULL),
     startTime_(squid_curtime)
+#if USE_OPENSSL
+    , tlsHistory(NULL)
+#endif
 {
     *rfc931 = 0; // quick init the head. the rest does not matter.
 }
@@ -47,6 +53,9 @@ Comm::Connection::~Connection()
     }
 
     cbdataReferenceDone(peer_);
+#if USE_OPENSSL
+    delete tlsHistory;
+#endif
 }
 
 Comm::ConnectionPointer
@@ -121,3 +130,13 @@ Comm::Connection::timeLeft(const time_t idleTimeout) const
     return min(lifeTimeLeft, idleTimeout);
 }
 
+#if USE_OPENSSL
+Ssl::NegotiationHistory *
+Comm::Connection::tlsNegotiations()
+{
+    if (!tlsHistory)
+        tlsHistory = new Ssl::NegotiationHistory;
+    return tlsHistory;
+}
+
+#endif

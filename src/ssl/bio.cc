@@ -229,7 +229,7 @@ Ssl::ClientBio::read(char *buf, int size, BIO *table)
     }
 
     if (helloState == atHelloNone) {
-        helloSize = features.parseMsgHead(rbuf);
+        helloSize = receivedHelloFeatures_.parseMsgHead(rbuf);
         if (helloSize == 0) {
             // Not enough bytes to get hello message size
             BIO_set_retry_read(table);
@@ -250,7 +250,7 @@ Ssl::ClientBio::read(char *buf, int size, BIO *table)
             BIO_set_retry_read(table);
             return -1;
         }
-        features.get(rbuf);
+        receivedHelloFeatures_.get(rbuf);
         helloState = atHelloReceived;
     }
 
@@ -505,19 +505,25 @@ Ssl::ServerBio::flush(BIO *table)
     }
 }
 
+void
+Ssl::ServerBio::extractHelloFeatures()
+{
+    if (!receivedHelloFeatures_.initialized_)
+        receivedHelloFeatures_.get(rbuf, false);
+}
+
 bool
 Ssl::ServerBio::resumingSession()
 {
-    if (!serverFeatures.initialized_)
-        serverFeatures.get(rbuf, false);
+    extractHelloFeatures();
 
-    if (!clientFeatures.sessionId.isEmpty() && !serverFeatures.sessionId.isEmpty())
-        return clientFeatures.sessionId == serverFeatures.sessionId;
+    if (!clientFeatures.sessionId.isEmpty() && !receivedHelloFeatures_.sessionId.isEmpty())
+        return clientFeatures.sessionId == receivedHelloFeatures_.sessionId;
 
     // is this a session resuming attempt using TLS tickets?
     if (clientFeatures.hasTlsTicket &&
-            serverFeatures.tlsTicketsExtension &&
-            serverFeatures.hasCcsOrNst)
+            receivedHelloFeatures_.tlsTicketsExtension &&
+            receivedHelloFeatures_.hasCcsOrNst)
         return true;
 
     return false;
@@ -642,7 +648,18 @@ squid_ssl_info(const SSL *ssl, int where, int ret)
     }
 }
 
-Ssl::Bio::sslFeatures::sslFeatures(): sslVersion(-1), compressMethod(-1), helloMsgSize(0), unknownCiphers(false), doHeartBeats(true), tlsTicketsExtension(false), hasTlsTicket(false), tlsStatusRequest(false), hasCcsOrNst(false), initialized_(false)
+Ssl::Bio::sslFeatures::sslFeatures():
+    sslHelloVersion(-1),
+    sslVersion(-1),
+    compressMethod(-1),
+    helloMsgSize(0),
+    unknownCiphers(false),
+    doHeartBeats(true),
+    tlsTicketsExtension(false),
+    hasTlsTicket(false),
+    tlsStatusRequest(false),
+    hasCcsOrNst(false),
+    initialized_(false)
 {
     memset(client_random, 0, SSL3_RANDOM_SIZE);
 }
@@ -773,7 +790,7 @@ Ssl::Bio::sslFeatures::parseMsgHead(const MemBuf &buf)
     if (head[0] == 0x16) {
         debugs(83, 7, "SSL version 3 handshake message");
         // The SSL version exist in the 2nd and 3rd bytes
-        sslVersion = (head[1] << 8) | head[2];
+        sslHelloVersion = (head[1] << 8) | head[2];
         debugs(83, 7, "SSL Version :" << std::hex << std::setw(8) << std::setfill('0') << sslVersion);
         // The hello message size exist in 4th and 5th bytes
         helloMsgSize = (head[3] << 8) + head[4];
@@ -781,7 +798,7 @@ Ssl::Bio::sslFeatures::parseMsgHead(const MemBuf &buf)
         helloMsgSize +=5;
     } else if ((head[0] & 0x80) && head[2] == 0x01 && head[3] == 0x03) {
         debugs(83, 7, "SSL version 2 handshake message with v3 support");
-        sslVersion = (head[3] << 8) | head[4];
+        sslHelloVersion = 0x0002;
         debugs(83, 7, "SSL Version :" << std::hex << std::setw(8) << std::setfill('0') << sslVersion);
         // The hello message size exist in 2nd byte
         helloMsgSize = head[1];
@@ -1098,6 +1115,10 @@ Ssl::Bio::sslFeatures::parseV23Hello(const unsigned char *hello, size_t size)
     debugs(83, 7, "Get fake features from v23 ClientHello message.");
     if (size < 7)
         return false;
+
+    // Get the SSL version supported by client
+    sslVersion = (hello[3] << 8) | hello[4];
+
     //Ciphers list. It is stored after the Session ID.
     const unsigned int ciphersLen = (hello[5] << 8) | hello[6];
     const unsigned char *ciphers = hello + 11;

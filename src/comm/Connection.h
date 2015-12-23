@@ -28,6 +28,13 @@
 
 class CachePeer;
 
+#if USE_OPENSSL
+namespace Ssl
+{
+class NegotiationHistory;
+};
+#endif
+
 namespace Comm
 {
 
@@ -107,6 +114,12 @@ public:
     time_t timeLeft(const time_t idleTimeout) const;
 
     void noteStart() {startTime_ = squid_curtime;}
+
+#if USE_OPENSSL
+    Ssl::NegotiationHistory *tlsNegotiations();
+    const Ssl::NegotiationHistory *hasTlsNegotiations() const {return tlsHistory;}
+#endif
+
 private:
     /** These objects may not be exactly duplicated. Use copyDetails() instead. */
     Connection(const Connection &c);
@@ -149,6 +162,11 @@ private:
 
     /** The time the connection object was created */
     time_t startTime_;
+
+#if USE_OPENSSL
+    /** SSL conenction details*/
+    Ssl::NegotiationHistory *tlsHistory;
+#endif
 };
 
 }; // namespace Comm
