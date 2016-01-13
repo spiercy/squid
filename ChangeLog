@@ -1,3 +1,53 @@
+Changes to squid-3.5.13 (06 Jan 2016):
+
+	- Bug 4397: DragonFly BSD, POSIX shared memory is implemented as filepath
+	- Bug 4387: Kerberos build errors on Solaris
+	- TLS: Support Ephemeral Elliptic Curve Diffie-Hellman (EECDH) key exchange
+	- TLS: Complete certificate chains using external intermediate certificates
+	- Avoid memory leaks when an X.509 certificate validator is used with SslBump
+	- Fix connection retry and fallback after failed server TLS connections
+	- Fix GnuTLS detection via pkg-config
+	- Fix startup crash with a misconfigured (too-small) shared memory cache
+	- ... and some documentation updates
+
+Changes to squid-3.5.12 (28 Nov 2015):
+
+	- Bug 4374: refresh_pattern config parser (%)
+	- Bug 4373: assertion 'calloutContext->redirect_state == REDIRECT_NONE'
+	- Bug 4228: links with krb5 libs despite --without options
+	- Fix SSL_get_certificate() problem detection
+	- Fix TLS handshake problem during Renegotiation
+	- Fix cache_peer forceddomain= in CONNECT
+	- Fix status code-based HTTP reason phrase for eCAP-generated messages
+	- Fix build errors in cpuafinity.cc
+	- ... and several documentation updates
+
+Changes to squid-3.5.11 (01 Nov 2015):
+
+	- Bug 3574: crashes on reconfigure and startup
+	- Bug 4347: compile errors with LibreSSL 2.3
+	- Bug 4281: copy-paste typos in src/tools.cc
+	- Bug 4279: No response from proxy for FTP-download of non-existing file
+	- Bug 4188: Bumping intercepted SSL connections does not work on Solaris
+	- Fix incorrect authentication headers on cache digest requests
+	- Fix connection stats, including %<lp, missing for persistent connections
+	- Fix invalid memory access issues in SBuf
+	- Avoid errors when parsing manager ACL in old squid.conf
+
+Changes to squid-3.5.10 (01 Oct 2015):
+
+	- Regression Fix cache_peer login=PASS(THRU) after CVE-2015-5400
+	- Regression Bug 4326: base64 binary encoder rejects data beginning with nil byte
+	- Bug 4323: Netfilter broken cross-includes with Linux 4.2
+	- Bug 4328: %un format code does not work for external ACLs in credentials-fetching rules
+	- Bug 4208: more than one port in wccp2_service_info line causes error
+	- Bug 4304: PeerConnector.cc:743 "!callback" assertion.
+	- Bug 4330: Do not use SSL_METHOD::put_cipher_by_char to determine size of SSL hello ciphers
+	- Relicense ntlm_fake_auth.pl to GPLv2+
+	- Relicense smb_lm auth helper to GPLv2+
+	- Relicense SSPI helper to GPLv2+
+	- ... and several minor performance optimizations
+
 Changes to squid-3.5.9 (17 Sep 2015):
 
 	- Regression Bug 3618: ntlm_smb_lm_auth rejects correct passwords

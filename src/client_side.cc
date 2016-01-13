@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -5005,7 +5005,7 @@ ConnStateData::handleIdleClientPinnedTlsRead()
     // the connection, sent us some unexpected HTTP data, or started TLS
     // renegotiations. We should close the connection except for the last case.
 
-    Must(pinning.serverConnection != nullptr);
+    Must(pinning.serverConnection != NULL);
     SSL *ssl = fd_table[pinning.serverConnection->fd].ssl;
     if (!ssl)
         return false;
@@ -5021,7 +5021,7 @@ ConnStateData::handleIdleClientPinnedTlsRead()
     switch(const int error = SSL_get_error(ssl, readResult)) {
     case SSL_ERROR_WANT_WRITE:
         debugs(83, DBG_IMPORTANT, pinning.serverConnection << " TLS SSL_ERROR_WANT_WRITE request for idle pinned connection");
-        // fall through to restart monitoring, for now
+    // fall through to restart monitoring, for now
     case SSL_ERROR_NONE:
     case SSL_ERROR_WANT_READ:
         startPinnedConnectionMonitoring();

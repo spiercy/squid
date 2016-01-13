@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -840,7 +840,7 @@ setMaxFD(void)
 #endif
 
     if (getrlimit(RLIMIT_NOFILE, &rl) < 0) {
-        debugs(50, DBG_CRITICAL, "setrlimit: RLIMIT_NOFILE: " << xstrerror());
+        debugs(50, DBG_CRITICAL, "getrlimit: RLIMIT_NOFILE: " << xstrerror());
     } else if (Config.max_filedescriptors > 0) {
 #if USE_SELECT || USE_SELECT_WIN32
         /* select() breaks if this gets set too big */
@@ -886,7 +886,7 @@ setSystemLimits(void)
 #endif
 
     if (getrlimit(RLIMIT_NOFILE, &rl) < 0) {
-        debugs(50, DBG_CRITICAL, "setrlimit: RLIMIT_NOFILE: " << xstrerror());
+        debugs(50, DBG_CRITICAL, "getrlimit: RLIMIT_NOFILE: " << xstrerror());
     } else {
         rl.rlim_cur = Squid_MaxFD;
         if (setrlimit(RLIMIT_NOFILE, &rl) < 0) {

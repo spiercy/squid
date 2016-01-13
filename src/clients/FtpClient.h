@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -96,7 +96,8 @@ public:
     virtual ~Client();
 
     /// handle a fatal transaction error, closing the control connection
-    virtual void failed(err_type error = ERR_NONE, int xerrno = 0);
+    virtual void failed(err_type error = ERR_NONE, int xerrno = 0,
+                        ErrorState *ftperr = NULL);
 
     /// read timeout handler
     virtual void timeout(const CommTimeoutCbParams &io);

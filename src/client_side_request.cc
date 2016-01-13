@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -1706,7 +1706,6 @@ ClientHttpRequest::doCallouts()
 
         if (!calloutContext->redirect_done) {
             calloutContext->redirect_done = true;
-            assert(calloutContext->redirect_state == REDIRECT_NONE);
 
             if (Config.Program.redirect) {
                 debugs(83, 3, HERE << "Doing calloutContext->clientRedirectStart()");
@@ -1725,7 +1724,6 @@ ClientHttpRequest::doCallouts()
 
         if (!calloutContext->store_id_done) {
             calloutContext->store_id_done = true;
-            assert(calloutContext->store_id_state == REDIRECT_NONE);
 
             if (Config.Program.store_id) {
                 debugs(83, 3,"Doing calloutContext->clientStoreIdStart()");

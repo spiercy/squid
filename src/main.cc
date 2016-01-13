@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -1024,6 +1024,7 @@ mainInitialize(void)
 
     squid_signal(SIGPIPE, SIG_IGN, SA_RESTART);
     squid_signal(SIGCHLD, sig_child, SA_NODEFER | SA_RESTART);
+    squid_signal(SIGHUP, reconfigure, SA_RESTART);
 
     setEffectiveUser();
 
@@ -1188,8 +1189,6 @@ mainInitialize(void)
     squid_signal(SIGUSR2, sigusr2_handle, SA_RESTART);
 
 #endif
-
-    squid_signal(SIGHUP, reconfigure, SA_RESTART);
 
     squid_signal(SIGTERM, shut_down, SA_NODEFER | SA_RESETHAND | SA_RESTART);
 
@@ -1435,6 +1434,7 @@ SquidMain(int argc, char **argv)
         Format::Token::Init(); // XXX: temporary. Use a runners registry of pre-parse runners instead.
 
         try {
+            do_reconfigure = 0; // ignore any early (boot/startup) reconfigure signals
             parse_err = parseConfigFile(ConfigFile);
         } catch (...) {
             // for now any errors are a fatal condition...

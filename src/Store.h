@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -50,8 +50,6 @@ enum { SwapFilenMax = 0xFFFFFF }; // keep in sync with StoreEntry::swap_filen
  */
 class StoreEntry : public hash_link
 {
-public:
-    MEMPROXY_CLASS(StoreEntry);
 
 public:
     static DeferredRead::DeferrableRead DeferReader;
@@ -186,6 +184,8 @@ public:
         return false;
     };
 
+    void *operator new(size_t byteCount);
+    void operator delete(void *address);
     void setReleaseFlag();
 #if USE_SQUID_ESI
 
@@ -241,8 +241,6 @@ private:
     bool validLength() const;
     bool hasOneOfEtags(const String &reqETags, const bool allowWeakMatch) const;
 };
-
-MEMPROXY_CLASS_INLINE(StoreEntry);
 
 std::ostream &operator <<(std::ostream &os, const StoreEntry &e);
 

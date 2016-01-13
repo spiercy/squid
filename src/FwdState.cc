@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -672,20 +672,15 @@ FwdState::connectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, in
     }
 
     serverConn = conn;
-    flags.connected_okay = true;
-
     debugs(17, 3, HERE << serverConnection() << ": '" << entry->url() << "'" );
 
     comm_add_close_handler(serverConnection()->fd, fwdServerClosedWrapper, this);
-
-    if (serverConnection()->getPeer())
-        peerConnectSucceded(serverConnection()->getPeer());
 
 #if USE_OPENSSL
     if (!request->flags.pinned) {
         const CachePeer *p = serverConnection()->getPeer();
         const bool peerWantsTls = p && p->use_ssl;
-        // userWillSslToPeerForUs assumes CONNECT == HTTPS
+        // userWillTlsToPeerForUs assumes CONNECT == HTTPS
         const bool userWillTlsToPeerForUs = p && p->options.originserver &&
                                             request->method == Http::METHOD_CONNECT;
         const bool needTlsToPeer = peerWantsTls && !userWillTlsToPeerForUs;
@@ -719,10 +714,16 @@ FwdState::connectedToPeer(Ssl::PeerConnectorAnswer &answer)
     if (ErrorState *error = answer.error.get()) {
         fail(error);
         answer.error.clear(); // preserve error for errorSendComplete()
-        self = NULL;
+        if (CachePeer *p = serverConnection()->getPeer())
+            peerConnectFailed(p);
+        retryOrBail();
         return;
     }
 
+    if (serverConnection()->getPeer())
+        peerConnectSucceded(serverConnection()->getPeer());
+
+    flags.connected_okay = true;
     dispatch();
 }
 #endif
@@ -772,6 +773,21 @@ FwdState::timeLeft() const
         return (time_t)ctimeout;
 }
 
+/// called when serverConn is set to an _open_ to-peer connection
+void
+FwdState::syncWithServerConn(const char *host)
+{
+    if (Ip::Qos::TheConfig.isAclTosActive())
+        Ip::Qos::setSockTos(serverConn, GetTosToServer(request));
+
+#if SO_MARK
+    if (Ip::Qos::TheConfig.isAclNfmarkActive())
+        Ip::Qos::setSockNfmark(serverConn, GetNfmarkToServer(request));
+#endif
+
+    request->hier.note(serverConn, host);
+}
+
 /**
  * Called after forwarding path selection (via peer select) has taken place
  * and whenever forwarding needs to attempt a new connection (routing failover).
@@ -812,23 +828,11 @@ FwdState::connectStart()
             flags.connected_okay = true;
             ++n_tries;
             request->flags.pinned = true;
-            request->hier.note(serverConn, pinned_connection->pinning.host);
             if (pinned_connection->pinnedAuth())
                 request->flags.auth = true;
             comm_add_close_handler(serverConn->fd, fwdServerClosedWrapper, this);
 
-            /* Update server side TOS and Netfilter mark on the connection. */
-            if (Ip::Qos::TheConfig.isAclTosActive()) {
-                debugs(17, 3, HERE << "setting tos for pinned connection to " << (int)serverConn->tos );
-                serverConn->tos = GetTosToServer(request);
-                Ip::Qos::setSockTos(serverConn, serverConn->tos);
-            }
-#if SO_MARK
-            if (Ip::Qos::TheConfig.isAclNfmarkActive()) {
-                serverConn->nfmark = GetNfmarkToServer(request);
-                Ip::Qos::setSockNfmark(serverConn, serverConn->nfmark);
-            }
-#endif
+            syncWithServerConn(pinned_connection->pinning.host);
 
             // the server may close the pinned connection before this request
             pconnRace = racePossible;
@@ -867,17 +871,7 @@ FwdState::connectStart()
 
         comm_add_close_handler(serverConnection()->fd, fwdServerClosedWrapper, this);
 
-        /* Update server side TOS and Netfilter mark on the connection. */
-        if (Ip::Qos::TheConfig.isAclTosActive()) {
-            const tos_t tos = GetTosToServer(request);
-            Ip::Qos::setSockTos(temp, tos);
-        }
-#if SO_MARK
-        if (Ip::Qos::TheConfig.isAclNfmarkActive()) {
-            const nfmark_t nfmark = GetNfmarkToServer(request);
-            Ip::Qos::setSockNfmark(temp, nfmark);
-        }
-#endif
+        syncWithServerConn(request->GetHost());
 
         dispatch();
         return;

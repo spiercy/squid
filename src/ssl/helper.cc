@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -10,12 +10,14 @@
 #include "../helper.h"
 #include "anyp/PortCfg.h"
 #include "helper/Reply.h"
+#include "HttpRequest.h"
 #include "SquidConfig.h"
 #include "SquidString.h"
 #include "SquidTime.h"
 #include "ssl/cert_validate_message.h"
 #include "ssl/Config.h"
 #include "ssl/helper.h"
+#include "ssl/PeerConnector.h"
 #include "SwapDir.h"
 #include "wordlist.h"
 

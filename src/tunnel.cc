@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -974,9 +974,11 @@ tunnelConnectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, int xe
     debugs(26, 4, HERE << "determine post-connect handling pathway.");
     if (conn->getPeer()) {
         tunnelState->request->peer_login = conn->getPeer()->login;
+        tunnelState->request->peer_domain = conn->getPeer()->domain;
         tunnelState->request->flags.proxying = !(conn->getPeer()->options.originserver);
     } else {
         tunnelState->request->peer_login = NULL;
+        tunnelState->request->peer_domain = NULL;
         tunnelState->request->flags.proxying = false;
     }
 
@@ -1251,9 +1253,11 @@ switchToTunnel(HttpRequest *request, Comm::ConnectionPointer &clientConn, Comm::
     debugs(26, 4, "determine post-connect handling pathway.");
     if (srvConn->getPeer()) {
         tunnelState->request->peer_login = srvConn->getPeer()->login;
+        tunnelState->request->peer_domain = srvConn->getPeer()->domain;
         tunnelState->request->flags.proxying = !(srvConn->getPeer()->options.originserver);
     } else {
         tunnelState->request->peer_login = NULL;
+        tunnelState->request->peer_domain = NULL;
         tunnelState->request->flags.proxying = false;
     }
 
