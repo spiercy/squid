@@ -11,7 +11,6 @@
 
 #if USE_DELAY_POOLS
 
-#include <map>
 #include "acl/Acl.h"
 #include "base/RefCount.h"
 #include "DelayBucket.h"
@@ -74,11 +73,6 @@ class MessageDelayConfig
     public:
         void parseResponseDelayPool();
         void parseResponseDelayPoolAccess(ConfigParser &parser);
-
-        std::map<SBuf, int64_t> params;
-
-    private:
-        void resetParams();
 };
 
 #endif

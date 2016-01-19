@@ -1402,17 +1402,12 @@ ClientSocketContext::sendStartOfMessage(HttpReply * rep, StoreIOBuffer bodyData)
     }
 
 #if USE_DELAY_POOLS
-    ACLFilledChecklist ch(NULL, http->request, NULL);
-    ch.src_addr = clientConnection->remote;
-    ch.my_addr = clientConnection->local;
-
     for (const auto &pool: MessageDelayPools::Instance()->pools) {
         if (pool->access) {
-            ch.changeAcl(pool->access);
-            allow_t answer = ch.fastCheck();
+            std::unique_ptr<ACLFilledChecklist> chl(clientAclChecklistCreate(pool->access, http));
+            const allow_t answer = chl->fastCheck();
             if (answer == ACCESS_ALLOWED) {
                 writeQuotaHandler = pool->createBucket();
-                writeQuotaHandler->clientConnection = clientConnection;
                 fd_table[clientConnection->fd].writeQuotaHandler = writeQuotaHandler;
                 break;
             } else {

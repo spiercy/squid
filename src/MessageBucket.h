@@ -31,7 +31,6 @@ public:
     int quota();
     void bytesIn(int qty);
 
-    Comm::ConnectionPointer clientConnection;
     double bucketSize; ///< how much can be written now
     bool selectWaiting; ///< is between commSetSelect and commHandleWrite
 

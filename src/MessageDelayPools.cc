@@ -10,6 +10,7 @@
 
 #if USE_DELAY_POOLS
 #include <algorithm>
+#include <map>
 #include "event.h"
 #include "SquidTime.h"
 #include "DelaySpec.h"
@@ -129,28 +130,33 @@ MessageDelayPool::createBucket()
     return new MessageBucket(bucketSpeedLimit, bucketSpeedLimit * (initialFillLevel / 100.0), maxBucketSize, this);
 }
 
-void MessageDelayConfig::resetParams() {
-    params[SBuf("bucket_speed_limit=")] = -1;
-    params[SBuf("max_bucket_size=")] = -1;
-    params[SBuf("aggregate_speed_limit=")] = -1;
-    params[SBuf("max_aggregate_size=")] = -1;
-    params[SBuf("initial_fill_level=")] = 50;
-}
-
-void MessageDelayConfig::parseResponseDelayPool()
+void
+MessageDelayConfig::parseResponseDelayPool()
 {
-    resetParams();
-    const char *token = ConfigParser::NextToken();
-    if (!token) {
-        debugs(3, DBG_CRITICAL, "ERROR: required parameter \"name\" for response_delay_pool option missing");
+    std::map<SBuf, int64_t> params = {
+        {SBuf("bucket_speed_limit="), -1},
+        {SBuf("max_bucket_size="), -1},
+        {SBuf("aggregate_speed_limit="), -1},
+        {SBuf("max_aggregate_size="), -1},
+        {SBuf("initial_fill_level="), 50}
+    };
+    const SBuf name(ConfigParser::NextToken());
+    if (name.isEmpty()) {
+        debugs(3, DBG_CRITICAL, "ERROR: required parameter \"name\" for response_delay_pool option missing.");
         self_destruct();
     }
-    const SBuf name(token);
-    while ((token = ConfigParser::NextToken())) {
-        for (auto &p: params) {
-            SBuf n = p.first;
-            if (!strncmp(token, n.c_str(), p.first.length()))
-                p.second = xatoll(token + p.first.length(), 10);
+    while (const char *token = ConfigParser::NextToken()) {
+        auto it = params.begin();
+        for (; it != params.end(); ++it) {
+            SBuf n = it->first;
+            if (!strncmp(token, n.c_str(), n.length())) {
+                it->second = xatoll(token + it->first.length(), 10);
+                break;
+            }
+        }
+        if (it == params.end()) {
+            debugs(3, DBG_CRITICAL, "ERROR: option " << token << " is not supported for response_delay_pool.");
+            self_destruct();
         }
     }
     for (const auto &p: params) {
@@ -171,7 +177,8 @@ void MessageDelayConfig::parseResponseDelayPool()
     MessageDelayPools::Instance()->add(pool);
 }
 
-void MessageDelayConfig::parseResponseDelayPoolAccess(ConfigParser &parser) {
+void
+MessageDelayConfig::parseResponseDelayPoolAccess(ConfigParser &parser) {
     const char *token = ConfigParser::NextToken();
     if (!token) {
         debugs(3, DBG_CRITICAL, "ERROR: required pool_name option missing");

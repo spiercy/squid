@@ -148,7 +148,9 @@ private:
 
     bool mayUseConnection_; /* This request may use the connection. Don't read anymore requests for now */
     bool connRegistered_;
+#if USE_DELAY_POOLS
     MessageBucket::Pointer writeQuotaHandler;
+#endif
 };
 
 class ConnectionDetail;

@@ -42,7 +42,8 @@ MessageBucket::quota()
     return min(bucketSize, static_cast<double>(theAggregate->level()));
 }
     
-void MessageBucket::bytesIn(int qty)
+void
+MessageBucket::bytesIn(int qty)
 { 
     bucketSize -= qty;
     if (bucketSize < 0.0) {
