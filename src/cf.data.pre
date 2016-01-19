@@ -6818,7 +6818,7 @@ DOC_START
 
 			aggregate_speed_limit=...	the speed limit to the aggregate bucket(bytes/s)
 
-			max_aggregate_size=bytes=...	the maximus size of the aggregate bucket
+			max_aggregate_size=bytes=...	the maximum size of the aggregate bucket
 
 			initial_fill_level=...		the initial bucket size as a percentage of max_bucket_size
 
