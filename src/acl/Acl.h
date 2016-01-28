@@ -17,6 +17,7 @@
 #include "MemPool.h"
 #include "SBufList.h"
 
+#include <map>
 #include <ostream>
 #include <string>
 #include <vector>
