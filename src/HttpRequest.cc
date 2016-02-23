@@ -347,7 +347,7 @@ HttpRequest::swapOut(StoreEntry * e)
 
 /* packs request-line and headers, appends <crlf> terminator */
 void
-HttpRequest::pack(Packable * p)
+HttpRequest::pack(Packable * p) const
 {
     assert(p);
     /* pack request-line */
