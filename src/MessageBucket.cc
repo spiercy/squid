@@ -41,10 +41,10 @@ MessageBucket::quota()
 {
     return min(bucketSize, static_cast<double>(theAggregate->level()));
 }
-    
+
 void
 MessageBucket::bytesIn(int qty)
-{ 
+{
     bucketSize -= qty;
     if (bucketSize < 0.0) {
         debugs(77, DBG_IMPORTANT, "drained too much"); // should not happen
