@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -23,8 +23,6 @@
 Security::PeerOptions Security::ProxyOutgoingConfig;
 
 Security::PeerOptions::PeerOptions(const Security::PeerOptions &p) :
-    certFile(p.certFile),
-    privateKeyFile(p.privateKeyFile),
     sslOptions(p.sslOptions),
     caDir(p.caDir),
     crlFile(p.crlFile),
@@ -33,6 +31,7 @@ Security::PeerOptions::PeerOptions(const Security::PeerOptions &p) :
     sslDomain(p.sslDomain),
     parsedOptions(p.parsedOptions),
     parsedFlags(p.parsedFlags),
+    certs(p.certs),
     caFiles(p.caFiles),
     parsedCrl(p.parsedCrl),
     sslVersion(p.sslVersion),
@@ -56,15 +55,16 @@ Security::PeerOptions::parse(const char *token)
     }
 
     if (strncmp(token, "cert=", 5) == 0) {
-        certFile = SBuf(token + 5);
-        if (privateKeyFile.isEmpty())
-            privateKeyFile = certFile;
+        KeyData t;
+        t.privateKeyFile = t.certFile = SBuf(token + 5);
+        certs.emplace_back(t);
     } else if (strncmp(token, "key=", 4) == 0) {
-        privateKeyFile = SBuf(token + 4);
-        if (certFile.isEmpty()) {
-            debugs(3, DBG_PARSE_NOTE(1), "WARNING: cert= option needs to be set before key= is used.");
-            certFile = privateKeyFile;
+        if (certs.empty() || certs.back().certFile.isEmpty()) {
+            debugs(3, DBG_PARSE_NOTE(1), "ERROR: cert= option must be set before key= is used.");
+            return;
         }
+        KeyData &t = certs.back();
+        t.privateKeyFile = SBuf(token + 4);
     } else if (strncmp(token, "version=", 8) == 0) {
         debugs(0, DBG_PARSE_NOTE(1), "UPGRADE WARNING: SSL version= is deprecated. Use options= to limit protocols instead.");
         sslVersion = xatoi(token + 8);
@@ -91,8 +91,18 @@ Security::PeerOptions::parse(const char *token)
         }
         sslFlags = SBuf(token + 6);
         parsedFlags = parseFlags();
+    } else if (strncmp(token, "default-ca=off", 14) == 0 || strncmp(token, "no-default-ca", 13) == 0) {
+        if (flags.tlsDefaultCa.configured() && flags.tlsDefaultCa)
+            fatalf("ERROR: previous default-ca settings conflict with %s", token);
+        flags.tlsDefaultCa.configure(false);
+    } else if (strncmp(token, "default-ca=on", 13) == 0 || strncmp(token, "default-ca", 10) == 0) {
+        if (flags.tlsDefaultCa.configured() && !flags.tlsDefaultCa)
+            fatalf("ERROR: previous default-ca settings conflict with %s", token);
+        flags.tlsDefaultCa.configure(true);
     } else if (strncmp(token, "domain=", 7) == 0) {
         sslDomain = SBuf(token + 7);
+    } else if (strncmp(token, "no-npn", 6) == 0) {
+        flags.tlsNpn = false;
     } else {
         debugs(3, DBG_CRITICAL, "ERROR: Unknown TLS option '" << token << "'");
         return;
@@ -109,11 +119,13 @@ Security::PeerOptions::dumpCfg(Packable *p, const char *pfx) const
         return; // no other settings are relevant
     }
 
-    if (!certFile.isEmpty())
-        p->appendf(" %scert=" SQUIDSBUFPH, pfx, SQUIDSBUFPRINT(certFile));
+    for (auto &i : certs) {
+        if (!i.certFile.isEmpty())
+            p->appendf(" %scert=" SQUIDSBUFPH, pfx, SQUIDSBUFPRINT(i.certFile));
 
-    if (!privateKeyFile.isEmpty() && privateKeyFile != certFile)
-        p->appendf(" %skey=" SQUIDSBUFPH, pfx, SQUIDSBUFPRINT(privateKeyFile));
+        if (!i.privateKeyFile.isEmpty() && i.privateKeyFile != i.certFile)
+            p->appendf(" %skey=" SQUIDSBUFPH, pfx, SQUIDSBUFPRINT(i.privateKeyFile));
+    }
 
     if (!sslOptions.isEmpty())
         p->appendf(" %soptions=" SQUIDSBUFPH, pfx, SQUIDSBUFPRINT(sslOptions));
@@ -133,6 +145,18 @@ Security::PeerOptions::dumpCfg(Packable *p, const char *pfx) const
 
     if (!sslFlags.isEmpty())
         p->appendf(" %sflags=" SQUIDSBUFPH, pfx, SQUIDSBUFPRINT(sslFlags));
+
+    if (flags.tlsDefaultCa.configured()) {
+        // default ON for peers / upstream servers
+        // default OFF for listening ports
+        if (flags.tlsDefaultCa)
+            p->appendf(" %sdefault-ca", pfx);
+        else
+            p->appendf(" %sdefault-ca=off", pfx);
+    }
+
+    if (!flags.tlsNpn)
+        p->appendf(" %sno-npn", pfx);
 }
 
 void
@@ -192,21 +216,56 @@ Security::PeerOptions::updateTlsVersionLimits()
     }
 }
 
-// XXX: make a GnuTLS variant
-Security::ContextPointer
+Security::ContextPtr
+Security::PeerOptions::createBlankContext() const
+{
+    Security::ContextPtr t = nullptr;
+
+#if USE_OPENSSL
+    Ssl::Initialize();
+
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L)
+    t = SSL_CTX_new(TLS_client_method());
+#else
+    t = SSL_CTX_new(SSLv23_client_method());
+#endif
+    if (!t) {
+        const auto x = ERR_error_string(ERR_get_error(), nullptr);
+        fatalf("Failed to allocate TLS client context: %s\n", x);
+    }
+
+#elif USE_GNUTLS
+    // Initialize for X.509 certificate exchange
+    if (const int x = gnutls_certificate_allocate_credentials(&t)) {
+        fatalf("Failed to allocate TLS client context: error=%d\n", x);
+    }
+
+#else
+    fatal("Failed to allocate TLS client context: No TLS library\n");
+
+#endif
+
+    return t;
+}
+
+Security::ContextPtr
 Security::PeerOptions::createClientContext(bool setOptions)
 {
-    Security::ContextPointer t = nullptr;
+    Security::ContextPtr t = nullptr;
 
     updateTlsVersionLimits();
 
 #if USE_OPENSSL
     // XXX: temporary performance regression. c_str() data copies and prevents this being a const method
-    t = sslCreateClientContext(certFile.c_str(), privateKeyFile.c_str(), sslCipher.c_str(),
-                               (setOptions ? parsedOptions : 0), parsedFlags);
+    t = sslCreateClientContext(*this, (setOptions ? parsedOptions : 0), parsedFlags);
+
+#elif USE_GNUTLS && WHEN_READY_FOR_GNUTLS
+    t = createBlankContext();
+
 #endif
 
     if (t) {
+        updateContextNpn(t);
         updateContextCa(t);
         updateContextCrl(t);
     }
@@ -371,12 +430,9 @@ Security::PeerOptions::parseOptions()
         SBuf option;
         long value = 0;
 
-        if (tok.int64(hex, 16, false)) {
-            /* Special case.. hex specification */
-            value = hex;
-        }
+        // Bug 4429: identify the full option name before determining text or numeric
+        if (tok.prefix(option, optChars)) {
 
-        else if (tok.prefix(option, optChars)) {
             // find the named option in our supported set
             for (struct ssl_option *opttmp = ssl_options; opttmp->name; ++opttmp) {
                 if (option.cmp(opttmp->name) == 0) {
@@ -384,21 +440,25 @@ Security::PeerOptions::parseOptions()
                     break;
                 }
             }
+
+            // Special case.. hex specification
+            ::Parser::Tokenizer tmp(option);
+            if (!value && tmp.int64(hex, 16, false) && tmp.atEnd()) {
+                value = hex;
+            }
         }
 
-        if (!value) {
-            fatalf("Unknown TLS option '" SQUIDSBUFPH "'", SQUIDSBUFPRINT(option));
-        }
-
-        switch (mode) {
-
-        case MODE_ADD:
-            op |= value;
-            break;
-
-        case MODE_REMOVE:
-            op &= ~value;
-            break;
+        if (value) {
+            switch (mode) {
+            case MODE_ADD:
+                op |= value;
+                break;
+            case MODE_REMOVE:
+                op &= ~value;
+                break;
+            }
+        } else {
+            debugs(83, DBG_PARSE_NOTE(1), "ERROR: Unknown TLS option " << option);
         }
 
         static const CharacterSet delims("TLS-option-delim",":,");
@@ -447,7 +507,7 @@ Security::PeerOptions::parseFlags()
     do {
         long found = 0;
         for (size_t i = 0; flagTokens[i].mask; ++i) {
-            if (tok.skip(flagTokens[i].label) == 0) {
+            if (tok.skip(flagTokens[i].label)) {
                 found = flagTokens[i].mask;
                 break;
             }
@@ -455,8 +515,10 @@ Security::PeerOptions::parseFlags()
         if (!found)
             fatalf("Unknown TLS flag '" SQUIDSBUFPH "'", SQUIDSBUFPRINT(tok.remaining()));
         if (found == SSL_FLAG_NO_DEFAULT_CA) {
-            debugs(83, DBG_PARSE_NOTE(2), "UPGRADE WARNING: flags=NO_DEFAULT_CA is deprecated. Use tls-no-default-ca instead.");
-            flags.noDefaultCa = true;
+            if (flags.tlsDefaultCa.configured() && flags.tlsDefaultCa)
+                fatal("ERROR: previous default-ca settings conflict with sslflags=NO_DEFAULT_CA");
+            debugs(83, DBG_PARSE_NOTE(2), "WARNING: flags=NO_DEFAULT_CA is deprecated. Use tls-default-ca=off instead.");
+            flags.tlsDefaultCa.configure(false);
         } else
             fl |= found;
     } while (tok.skipOne(delims));
@@ -487,8 +549,33 @@ Security::PeerOptions::loadCrlFile()
 #endif
 }
 
+#if USE_OPENSSL && defined(TLSEXT_TYPE_next_proto_neg)
+// Dummy next_proto_neg callback
+static int
+ssl_next_proto_cb(SSL *s, unsigned char **out, unsigned char *outlen, const unsigned char *in, unsigned int inlen, void *arg)
+{
+    static const unsigned char supported_protos[] = {8, 'h','t','t', 'p', '/', '1', '.', '1'};
+    (void)SSL_select_next_proto(out, outlen, in, inlen, supported_protos, sizeof(supported_protos));
+    return SSL_TLSEXT_ERR_OK;
+}
+#endif
+
 void
-Security::PeerOptions::updateContextCa(Security::ContextPointer &ctx)
+Security::PeerOptions::updateContextNpn(Security::ContextPtr &ctx)
+{
+    if (!flags.tlsNpn)
+        return;
+
+#if USE_OPENSSL && defined(TLSEXT_TYPE_next_proto_neg)
+    SSL_CTX_set_next_proto_select_cb(ctx, &ssl_next_proto_cb, nullptr);
+#endif
+
+    // NOTE: GnuTLS does not support the obsolete NPN extension.
+    //       it does support ALPN per-session, not per-context.
+}
+
+void
+Security::PeerOptions::updateContextCa(Security::ContextPtr &ctx)
 {
     debugs(83, 8, "Setting CA certificate locations.");
 
@@ -505,7 +592,7 @@ Security::PeerOptions::updateContextCa(Security::ContextPointer &ctx)
 #endif
     }
 
-    if (flags.noDefaultCa)
+    if (!flags.tlsDefaultCa)
         return;
 
 #if USE_OPENSSL
@@ -522,7 +609,7 @@ Security::PeerOptions::updateContextCa(Security::ContextPointer &ctx)
 }
 
 void
-Security::PeerOptions::updateContextCrl(Security::ContextPointer &ctx)
+Security::PeerOptions::updateContextCrl(Security::ContextPtr &ctx)
 {
 #if USE_OPENSSL
     bool verifyCrl = false;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,6 +11,7 @@
 
 #include "acl/forward.h"
 #include "base/RefCount.h"
+#include "base/YesNoNone.h"
 #include "ClientDelayConfig.h"
 #include "MessageDelayPools.h"
 #include "DelayConfig.h"
@@ -20,7 +21,10 @@
 #include "Notes.h"
 #include "security/forward.h"
 #include "SquidTime.h"
-#include "YesNoNone.h"
+#if USE_OPENSSL
+#include "ssl/support.h"
+#endif
+#include "store/forward.h"
 
 #if USE_OPENSSL
 class sslproxy_cert_sign;
@@ -38,11 +42,22 @@ class external_acl;
 class HeaderManglers;
 class RefreshPattern;
 class RemovalPolicySettings;
-class SwapDir;
 
 namespace AnyP
 {
 class PortCfg;
+}
+
+namespace Store {
+class DiskConfig {
+public:
+    RefCount<SwapDir> *swapDirs;
+    int n_allocated;
+    int n_configured;
+    /// number of disk processes required to support all cache_dirs
+    int n_strands;
+};
+#define INDEXSD(i) (Config.cacheSwap.swapDirs[i].getRaw())
 }
 
 /// the representation of the configuration. POD.
@@ -321,6 +336,9 @@ public:
         int hostStrictVerify;
         int client_dst_passthru;
         int dns_mdns;
+#if USE_OPENSSL
+        bool logTlsServerHelloDetails;
+#endif
     } onoff;
 
     int pipeline_max_prefetch;
@@ -393,17 +411,7 @@ public:
     } Ftp;
     RefreshPattern *Refresh;
 
-    struct _cacheSwap {
-        RefCount<SwapDir> *swapDirs;
-        int n_allocated;
-        int n_configured;
-        /// number of disk processes required to support all cache_dirs
-        int n_strands;
-    } cacheSwap;
-    /*
-     * I'm sick of having to keep doing this ..
-     */
-#define INDEXSD(i)   (Config.cacheSwap.swapDirs[(i)].getRaw())
+    Store::DiskConfig cacheSwap;
 
     struct {
         char *directory;
@@ -494,8 +502,9 @@ public:
     external_acl *externalAclHelperList;
 
     struct {
-        Security::ContextPointer sslContext;
+        Security::ContextPtr sslContext;
 #if USE_OPENSSL
+        char *foreignIntermediateCertsPath;
         acl_access *cert_error;
         sslproxy_cert_sign *cert_sign;
         sslproxy_cert_adapt *cert_adapt;

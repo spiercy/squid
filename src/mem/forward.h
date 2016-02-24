@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -46,9 +46,6 @@ typedef enum {
     MEM_64K_BUF,
     MEM_ACL_DENY_INFO_LIST,
     MEM_ACL_NAME_LIST,
-#if USE_CACHE_DIGESTS
-    MEM_CACHE_DIGEST,
-#endif
     MEM_CLIENT_INFO,
     MEM_LINK_LIST,
     MEM_DLINK_NODE,

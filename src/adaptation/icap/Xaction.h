@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -114,6 +114,7 @@ public:
     virtual void callEnd();
     /// clear stored error details, if any; used for retries/repeats
     virtual void clearError() {}
+    virtual AccessLogEntry::Pointer masterLogEntry();
     void dnsLookupDone(const ipcache_addrs *ia);
 
 protected:

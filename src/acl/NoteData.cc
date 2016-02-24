@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,8 +13,6 @@
 #include "acl/StringData.h"
 #include "ConfigParser.h"
 #include "Debug.h"
-#include "HttpRequest.h"
-#include "Notes.h"
 #include "wordlist.h"
 
 ACLNoteData::ACLNoteData() : values(new ACLStringData)
@@ -26,36 +24,14 @@ ACLNoteData::~ACLNoteData()
 }
 
 bool
-ACLNoteData::matchNotes(NotePairs *note)
+ACLNoteData::match(NotePairs::Entry *entry)
 {
-    if (note == NULL)
-        return false;
+    if (entry->name.cmp(name.termedBuf()) != 0)
+        return false; // name mismatch
 
-    debugs(28, 3, "Checking " << name);
-
-    if (values->empty())
-        return (note->findFirst(name.termedBuf()) != NULL);
-
-    for (std::vector<NotePairs::Entry *>::iterator i = note->entries.begin(); i!= note->entries.end(); ++i) {
-        if ((*i)->name.cmp(name.termedBuf()) == 0) {
-            if (values->match((*i)->value.termedBuf()))
-                return true;
-        }
-    }
-    return false;
-}
-
-bool
-ACLNoteData::match(HttpRequest *request)
-{
-    if (request->notes != NULL && matchNotes(request->notes.getRaw()))
-        return true;
-#if USE_ADAPTATION
-    const Adaptation::History::Pointer ah = request->adaptLogHistory();
-    if (ah != NULL && ah->metaHeaders != NULL && matchNotes(ah->metaHeaders.getRaw()))
-        return true;
-#endif
-    return false;
+    // a name-only note ACL matches any value; others require a values match
+    return values->empty() ||
+           values->match(entry->value.termedBuf());
 }
 
 SBufList
@@ -88,11 +64,12 @@ ACLNoteData::empty() const
     return name.size() == 0;
 }
 
-ACLData<HttpRequest *> *
+ACLData<NotePairs::Entry *> *
 ACLNoteData::clone() const
 {
     ACLNoteData * result = new ACLNoteData;
-    result->values = values->clone();
+    result->values = dynamic_cast<ACLStringData*>(values->clone());
+    assert(result->values);
     result->name = name;
     return result;
 }

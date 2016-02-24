@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -32,6 +32,7 @@
 #include "http.h"
 #include "http/one/ResponseParser.h"
 #include "http/one/TeChunkedParser.h"
+#include "http/Stream.h"
 #include "HttpControlMsg.h"
 #include "HttpHdrCc.h"
 #include "HttpHdrContRange.h"
@@ -152,6 +153,7 @@ void
 HttpStateData::httpStateConnClosed(const CommCloseCbParams &params)
 {
     debugs(11, 5, "httpStateFree: FD " << params.fd << ", httpState=" << params.data);
+    doneWithFwd = "httpStateConnClosed()"; // assume FwdState is monitoring too
     mustStop("HttpStateData::httpStateConnClosed");
 }
 
@@ -725,13 +727,12 @@ HttpStateData::processReplyHeader()
 
         if (!parsedOk) {
             // unrecoverable parsing error
+            // TODO: Use Raw! XXX: inBuf no longer has the [beginning of the] malformed header.
             debugs(11, 3, "Non-HTTP-compliant header:\n---------\n" << inBuf << "\n----------");
             flags.headers_parsed = true;
             HttpReply *newrep = new HttpReply;
-            newrep->sline.set(Http::ProtocolVersion(), hp->messageStatus());
-            HttpReply *vrep = setVirginReply(newrep);
-            entry->replaceHttpReply(vrep);
-            // XXX: close the server connection ?
+            newrep->sline.set(Http::ProtocolVersion(), hp->parseStatusCode);
+            setVirginReply(newrep);
             ctx_exit(ctx);
             return;
         }
@@ -768,6 +769,8 @@ HttpStateData::processReplyHeader()
 
     // done with Parser, now process using the HttpReply
     hp = NULL;
+
+    newrep->sources |= request->url.getScheme() == AnyP::PROTO_HTTPS ? HttpMsg::srcHttps : HttpMsg::srcHttp;
 
     newrep->removeStaleWarnings();
 
@@ -1722,10 +1725,15 @@ httpFixupAuthentication(HttpRequest * request, const HttpHeader * hdr_in, HttpHe
     if (strncmp(request->peer_login, "NEGOTIATE",strlen("NEGOTIATE")) == 0) {
         char *Token=NULL;
         char *PrincipalName=NULL,*p;
+        int negotiate_flags = 0;
+
         if ((p=strchr(request->peer_login,':')) != NULL ) {
             PrincipalName=++p;
         }
-        Token = peer_proxy_negotiate_auth(PrincipalName, request->peer_host);
+        if (request->flags.auth_no_keytab) {
+            negotiate_flags |= PEER_PROXY_NEGOTIATE_NOKEYTAB;
+        }
+        Token = peer_proxy_negotiate_auth(PrincipalName, request->peer_host, negotiate_flags);
         if (Token) {
             httpHeaderPutStrf(hdr_out, header, "Negotiate %s",Token);
         }
@@ -1818,7 +1826,8 @@ HttpStateData::httpBuildRequestHeader(HttpRequest * request,
 
         String strFwd = hdr_in->getList(Http::HdrType::X_FORWARDED_FOR);
 
-        if (strFwd.size() > 65536/2) {
+        // if we cannot double strFwd size, then it grew past 50% of the limit
+        if (!strFwd.canGrowBy(strFwd.size())) {
             // There is probably a forwarding loop with Via detection disabled.
             // If we do nothing, String will assert on overflow soon.
             // TODO: Terminate all transactions with huge XFF?
@@ -2455,21 +2464,11 @@ HttpStateData::sentRequestBody(const CommIoCbParams &io)
     Client::sentRequestBody(io);
 }
 
-// Quickly abort the transaction
-// TODO: destruction should be sufficient as the destructor should cleanup,
-// including canceling close handlers
 void
-HttpStateData::abortTransaction(const char *reason)
+HttpStateData::abortAll(const char *reason)
 {
     debugs(11,5, HERE << "aborting transaction for " << reason <<
            "; " << serverConnection << ", this " << this);
-
-    if (Comm::IsConnOpen(serverConnection)) {
-        serverConnection->close();
-        return;
-    }
-
-    fwd->handleUnregisteredServerEnd();
-    mustStop("HttpStateData::abortTransaction");
+    mustStop(reason);
 }
 

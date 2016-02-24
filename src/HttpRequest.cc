@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -19,6 +19,7 @@
 #include "gopher.h"
 #include "http.h"
 #include "http/one/RequestParser.h"
+#include "http/Stream.h"
 #include "HttpHdrCc.h"
 #include "HttpHeaderRange.h"
 #include "HttpRequest.h"
@@ -250,6 +251,8 @@ HttpRequest::inheritProperties(const HttpMsg *aMsg)
     clientConnectionManager = aReq->clientConnectionManager;
 
     notes = aReq->notes;
+
+    sources = aReq->sources;
     return true;
 }
 

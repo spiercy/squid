@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -57,8 +57,9 @@
 #include "SquidString.h"
 #include "ssl/ProxyCerts.h"
 #include "Store.h"
+#include "store/Disk.h"
+#include "store/Disks.h"
 #include "StoreFileSystem.h"
-#include "SwapDir.h"
 #include "tools.h"
 #include "util.h"
 #include "wordlist.h"
@@ -865,6 +866,11 @@ configDoConfigure(void)
         Config2.effectiveGroupID = grp->gr_gid;
     }
 
+#if USE_OPENSSL
+    if (Config.ssl_client.foreignIntermediateCertsPath)
+        Ssl::loadSquidUntrusted(Config.ssl_client.foreignIntermediateCertsPath);
+#endif
+
     if (Security::ProxyOutgoingConfig.encryptTransport) {
         debugs(3, DBG_IMPORTANT, "Initializing https:// proxy context");
         Config.ssl_client.sslContext = Security::ProxyOutgoingConfig.createClientContext(false);
@@ -875,6 +881,9 @@ configDoConfigure(void)
             debugs(3, DBG_IMPORTANT, "ERROR: proxying https:// currently still requires --with-openssl");
 #endif
         }
+#if USE_OPENSSL
+        Ssl::useSquidUntrusted(Config.ssl_client.sslContext);
+#endif
     }
 
     for (CachePeer *p = Config.peers; p != NULL; p = p->next) {
@@ -895,18 +904,11 @@ configDoConfigure(void)
 
 #if USE_OPENSSL
     for (AnyP::PortCfgPointer s = HttpPortList; s != NULL; s = s->next) {
-        if (!s->flags.tunnelSslBumping)
+        if (!s->secure.encryptTransport)
             continue;
-
-        debugs(3, DBG_IMPORTANT, "Initializing http_port " << s->s << " SSL context");
+        debugs(3, DBG_IMPORTANT, "Initializing " << AnyP::UriScheme(s->transport.protocol) << "_port " << s->s << " TLS context");
         s->configureSslServerContext();
     }
-
-    for (AnyP::PortCfgPointer s = HttpsPortList; s != NULL; s = s->next) {
-        debugs(3, DBG_IMPORTANT, "Initializing https_port " << s->s << " SSL context");
-        s->configureSslServerContext();
-    }
-
 #endif
 
     // prevent infinite fetch loops in the request parser
@@ -1755,7 +1757,7 @@ parse_http_header_replace(HeaderManglers **pm)
 #endif
 
 static void
-dump_cachedir(StoreEntry * entry, const char *name, SquidConfig::_cacheSwap swap)
+dump_cachedir(StoreEntry * entry, const char *name, const Store::DiskConfig &swap)
 {
     SwapDir *s;
     int i;
@@ -1844,7 +1846,7 @@ find_fstype(char *type)
 }
 
 static void
-parse_cachedir(SquidConfig::_cacheSwap * swap)
+parse_cachedir(Store::DiskConfig *swap)
 {
     char *type_str;
     char *path_str;
@@ -2186,6 +2188,8 @@ parse_peer(CachePeer ** head)
         } else if (!strncmp(token, "login=", 6)) {
             p->login = xstrdup(token + 6);
             rfc1738_unescape(p->login);
+        } else if (!strcmp(token, "auth-no-keytab")) {
+            p->options.auth_no_keytab = 1;
         } else if (!strncmp(token, "connect-timeout=", 16)) {
             p->connect_timeout = xatoi(token + 16);
         } else if (!strncmp(token, "connect-fail-limit=", 19)) {
@@ -2683,9 +2687,7 @@ parse_refreshpattern(RefreshPattern ** head)
 
     min = (time_t) (i * 60);    /* convert minutes to seconds */
 
-    i = GetPercentage();    /* token: pct */
-
-    pct = (double) i / 100.0;
+    pct = GetPercentage(false);    /* token: pct . with no limit on size */
 
     i = GetInteger();       /* token: max */
 
@@ -3846,6 +3848,7 @@ configFreeMemory(void)
     free_all();
 #if USE_OPENSSL
     SSL_CTX_free(Config.ssl_client.sslContext);
+    Ssl::unloadSquidUntrusted();
 #endif
 }
 
@@ -3863,7 +3866,7 @@ requirePathnameExists(const char *name, const char *path)
     }
 
     if (stat(path, &sb) < 0) {
-        debugs(0, DBG_CRITICAL, (opt_parse_cfg_only?"FATAL ":"") << "ERROR: " << name << " " << path << ": " << xstrerror());
+        debugs(0, DBG_CRITICAL, (opt_parse_cfg_only?"FATAL: ":"ERROR: ") << name << " " << path << ": " << xstrerror());
         // keep going to find more issues if we are only checking the config file with "-k parse"
         if (opt_parse_cfg_only)
             return;

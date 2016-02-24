@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,10 +12,12 @@
 #include "anyp/PortCfg.h"
 #include "base/Subscription.h"
 #include "client_side.h"
-#include "disk.h"
+#include "fatal.h"
 #include "fde.h"
 #include "fqdncache.h"
+#include "fs_io.h"
 #include "htcp.h"
+#include "http/Stream.h"
 #include "ICP.h"
 #include "ip/Intercept.h"
 #include "ip/QosConfig.h"
@@ -26,7 +28,7 @@
 #include "SquidConfig.h"
 #include "SquidMath.h"
 #include "SquidTime.h"
-#include "SwapDir.h"
+#include "store/Disks.h"
 #include "tools.h"
 #include "wordlist.h"
 
@@ -421,13 +423,6 @@ getMyHostname(void)
     if (HttpPortList != NULL && sa.isAnyAddr())
         sa = HttpPortList->s;
 
-#if USE_OPENSSL
-
-    if (HttpsPortList != NULL && sa.isAnyAddr())
-        sa = HttpsPortList->s;
-
-#endif
-
     /*
      * If the first http_port address has a specific address, try a
      * reverse DNS lookup on it.
@@ -539,19 +534,22 @@ leave_suid(void)
     }
 
 #if HAVE_SETRESUID
-
-    if (setresuid(Config2.effectiveUserID, Config2.effectiveUserID, 0) < 0)
-        debugs(50, DBG_CRITICAL, "ALERT: setresuid: " << xstrerror());
+    if (setresuid(Config2.effectiveUserID, Config2.effectiveUserID, 0) < 0) {
+        const auto xerrno = errno;
+        fatalf("FATAL: setresuid: %s", xstrerr(xerrno));
+    }
 
 #elif HAVE_SETEUID
-
-    if (seteuid(Config2.effectiveUserID) < 0)
-        debugs(50, DBG_CRITICAL, "ALERT: seteuid: " << xstrerror());
+    if (seteuid(Config2.effectiveUserID) < 0) {
+        const auto xerrno = errno;
+        fatalf("FATAL: seteuid: %s", xstrerr(xerrno));
+    }
 
 #else
-
-    if (setuid(Config2.effectiveUserID) < 0)
-        debugs(50, DBG_CRITICAL, "ALERT: setuid: " << xstrerror());
+    if (setuid(Config2.effectiveUserID) < 0) {
+        const auto xerrno = errno;
+        fatalf("FATAL: setuid: %s", xstrerr(xerrno));
+    }
 
 #endif
 
@@ -571,8 +569,10 @@ enter_suid(void)
 {
     debugs(21, 3, "enter_suid: PID " << getpid() << " taking root privileges");
 #if HAVE_SETRESUID
-    if (setresuid((uid_t)-1, 0, (uid_t)-1) < 0)
-        debugs (21, 3, "enter_suid: setresuid failed: " << xstrerror ());
+    if (setresuid((uid_t)-1, 0, (uid_t)-1) < 0) {
+        const auto xerrno = errno;
+        debugs (21, 3, "enter_suid: setresuid failed: " << xstrerr(xerrno));
+    }
 #else
 
     setuid(0);
@@ -810,7 +810,7 @@ setMaxFD(void)
 #endif
 
     if (getrlimit(RLIMIT_NOFILE, &rl) < 0) {
-        debugs(50, DBG_CRITICAL, "setrlimit: RLIMIT_NOFILE: " << xstrerror());
+        debugs(50, DBG_CRITICAL, "getrlimit: RLIMIT_NOFILE: " << xstrerror());
     } else if (Config.max_filedescriptors > 0) {
 #if USE_SELECT || USE_SELECT_WIN32
         /* select() breaks if this gets set too big */
@@ -856,7 +856,7 @@ setSystemLimits(void)
 #endif
 
     if (getrlimit(RLIMIT_NOFILE, &rl) < 0) {
-        debugs(50, DBG_CRITICAL, "setrlimit: RLIMIT_NOFILE: " << xstrerror());
+        debugs(50, DBG_CRITICAL, "getrlimit: RLIMIT_NOFILE: " << xstrerror());
     } else {
         rl.rlim_cur = Squid_MaxFD;
         if (setrlimit(RLIMIT_NOFILE, &rl) < 0) {
@@ -1077,16 +1077,6 @@ getMyPort(void)
         if (p != NULL)
             return p->s.port();
     }
-
-#if USE_OPENSSL
-    if ((p = HttpsPortList) != NULL) {
-        // skip any special interception ports
-        while (p != NULL && p->flags.isIntercepted())
-            p = p->next;
-        if (p != NULL)
-            return p->s.port();
-    }
-#endif
 
     if ((p = FtpPortList) != NULL) {
         // skip any special interception ports

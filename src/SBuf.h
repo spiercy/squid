@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,6 +13,7 @@
 
 #include "base/InstanceId.h"
 #include "Debug.h"
+#include "globals.h"
 #include "MemBlob.h"
 #include "SBufExceptions.h"
 #include "SquidString.h"
@@ -82,7 +83,7 @@ public:
 class CharacterSet;
 class SBuf;
 
-/** Forward input iterator for SBufs
+/** Forward input const_iterator for SBufs
  *
  * Please note that any operation on the underlying SBuf may invalidate
  * all iterators over it, resulting in undefined behavior by them.
@@ -95,7 +96,7 @@ public:
     bool operator==(const SBufIterator &s) const;
     bool operator!=(const SBufIterator &s) const;
 
-    char operator*() const { return *iter; }
+    const char &operator*() const { return *iter; }
     SBufIterator& operator++() { ++iter; return *this; }
 
 protected:
@@ -104,7 +105,7 @@ protected:
     const char *iter;
 };
 
-/** Reverse input iterator for SBufs
+/** Reverse input const_iterator for SBufs
  *
  * Please note that any operation on the underlying SBuf may invalidate
  * all iterators over it, resulting in undefined behavior by them.
@@ -114,7 +115,7 @@ class SBufReverseIterator : public SBufIterator
     friend class SBuf;
 public:
     SBufReverseIterator& operator++() { --iter; return *this;}
-    char operator*() const { return *(iter-1); }
+    const char &operator*() const { return *(iter-1); }
 protected:
     SBufReverseIterator(const SBuf &s, size_type sz) : SBufIterator(s,sz) {}
 };
@@ -129,8 +130,8 @@ class SBuf
 {
 public:
     typedef MemBlob::size_type size_type;
-    typedef SBufIterator iterator;
-    typedef SBufReverseIterator reverse_iterator;
+    typedef SBufIterator const_iterator;
+    typedef SBufReverseIterator const_reverse_iterator;
     static const size_type npos = 0xffffffff; // max(uint32_t)
 
     /// Maximum size of a SBuf. By design it MUST be < MAX(size_type)/2. Currently 256Mb.
@@ -647,25 +648,46 @@ public:
     /// std::string export function
     std::string toStdString() const { return std::string(buf(),length()); }
 
-    iterator begin() {
-        return iterator(*this, 0);
+    const_iterator begin() const {
+        return const_iterator(*this, 0);
     }
 
-    iterator end() {
-        return iterator(*this, length());
+    const_iterator end() const {
+        return const_iterator(*this, length());
     }
 
-    reverse_iterator rbegin() {
-        return reverse_iterator(*this, length());
+    const_reverse_iterator rbegin() const {
+        return const_reverse_iterator(*this, length());
     }
 
-    reverse_iterator rend() {
-        return reverse_iterator(*this, 0);
+    const_reverse_iterator rend() const {
+        return const_reverse_iterator(*this, 0);
     }
 
     // TODO: possibly implement erase() similar to std::string's erase
     // TODO: possibly implement a replace() call
 private:
+
+    /**
+     * Keeps SBuf's MemBlob alive in a blob-destroying context where
+     * a seemingly unrelated memory pointer may belong to the same blob.
+     * For [an extreme] example, consider: a.append(a).
+     * Compared to an SBuf temporary, this class is optimized to
+     * preserve blobs only if needed and to reduce debugging noise.
+     */
+    class Locker
+    {
+    public:
+        Locker(SBuf *parent, const char *otherBuffer) {
+            // lock if otherBuffer intersects the parents buffer area
+            const MemBlob *blob = parent->store_.getRaw();
+            if (blob->mem <= otherBuffer && otherBuffer < (blob->mem + blob->capacity))
+                locket = blob;
+        }
+    private:
+        MemBlob::Pointer locket;
+    };
+    friend class Locker;
 
     MemBlob::Pointer store_; ///< memory block, possibly shared with other SBufs
     size_type off_; ///< our content start offset from the beginning of shared store_

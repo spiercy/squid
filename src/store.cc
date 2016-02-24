@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -32,6 +32,9 @@
 #include "StatCounters.h"
 #include "stmem.h"
 #include "Store.h"
+#include "store/Controller.h"
+#include "store/Disk.h"
+#include "store/Disks.h"
 #include "store_digest.h"
 #include "store_key_md5.h"
 #include "store_key_md5.h"
@@ -42,7 +45,6 @@
 #include "StoreMeta.h"
 #include "StrList.h"
 #include "swap_log_op.h"
-#include "SwapDir.h"
 #include "tools.h"
 #if USE_DELAY_POOLS
 #include "DelayPools.h"
@@ -110,20 +112,6 @@ static EVH storeLateRelease;
 static std::stack<StoreEntry*> LateReleaseStack;
 MemAllocator *StoreEntry::pool = NULL;
 
-StorePointer Store::CurrentRoot = NULL;
-
-void
-Store::Root(Store * aRoot)
-{
-    CurrentRoot = aRoot;
-}
-
-void
-Store::Root(StorePointer aRoot)
-{
-    Root(aRoot.getRaw());
-}
-
 void
 Store::Stats(StoreEntry * output)
 {
@@ -131,22 +119,24 @@ Store::Stats(StoreEntry * output)
     Root().stat(*output);
 }
 
-void
-Store::create()
-{}
-
-void
-Store::diskFull()
-{}
-
-void
-Store::sync()
-{}
-
-void
-Store::unlink(StoreEntry &)
+// XXX: new/delete operators need to be replaced with MEMPROXY_CLASS
+// definitions but doing so exposes bug 4370, and maybe 4354 and 4355
+void *
+StoreEntry::operator new (size_t bytecount)
 {
-    fatal("Store::unlink on invalid Store\n");
+    assert(bytecount == sizeof (StoreEntry));
+
+    if (!pool) {
+        pool = memPoolCreate ("StoreEntry", bytecount);
+    }
+
+    return pool->alloc();
+}
+
+void
+StoreEntry::operator delete (void *address)
+{
+    pool->freeOne(address);
 }
 
 void
@@ -413,10 +403,8 @@ destroyStoreEntry(void *data)
         return;
 
     // Store::Root() is FATALly missing during shutdown
-    if (e->swap_filen >= 0 && !shutting_down) {
-        SwapDir &sd = dynamic_cast<SwapDir&>(*e->store());
-        sd.disconnect(*e);
-    }
+    if (e->swap_filen >= 0 && !shutting_down)
+        e->disk().disconnect(*e);
 
     e->destroyMemObject();
 
@@ -475,7 +463,6 @@ void
 StoreEntry::touch()
 {
     lastref = squid_curtime;
-    Store::Root().reference(*this);
 }
 
 void
@@ -1233,34 +1220,6 @@ Store::Maintain(void *)
 #define MAINTAIN_MAX_SCAN       1024
 #define MAINTAIN_MAX_REMOVE     64
 
-/*
- * This routine is to be called by main loop in main.c.
- * It removes expired objects on only one bucket for each time called.
- *
- * This should get called 1/s from main().
- */
-void
-StoreController::maintain()
-{
-    static time_t last_warn_time = 0;
-
-    PROF_start(storeMaintainSwapSpace);
-    swapDir->maintain();
-
-    /* this should be emitted by the oversize dir, not globally */
-
-    if (Store::Root().currentSize() > Store::Root().maxSize()) {
-        if (squid_curtime - last_warn_time > 10) {
-            debugs(20, DBG_CRITICAL, "WARNING: Disk space over limit: "
-                   << Store::Root().currentSize() / 1024.0 << " KB > "
-                   << (Store::Root().maxSize() >> 10) << " KB");
-            last_warn_time = squid_curtime;
-        }
-    }
-
-    PROF_stop(storeMaintainSwapSpace);
-}
-
 /* release an object from a cache */
 void
 StoreEntry::release()
@@ -1278,35 +1237,27 @@ StoreEntry::release()
         return;
     }
 
-    Store::Root().memoryUnlink(*this);
+    if (Store::Controller::store_dirs_rebuilding && swap_filen > -1) {
+        /* TODO: Teach disk stores to handle releases during rebuild instead. */
 
-    if (StoreController::store_dirs_rebuilding && swap_filen > -1) {
+        Store::Root().memoryUnlink(*this);
+
         setPrivateKey();
 
-        if (swap_filen > -1) {
-            // lock the entry until rebuilding is done
-            lock("storeLateRelease");
-            setReleaseFlag();
-            LateReleaseStack.push(this);
-        } else {
-            destroyStoreEntry(static_cast<hash_link *>(this));
-            // "this" is no longer valid
-        }
-
-        PROF_stop(storeRelease);
+        // lock the entry until rebuilding is done
+        lock("storeLateRelease");
+        setReleaseFlag();
+        LateReleaseStack.push(this);
         return;
     }
 
     storeLog(STORE_LOG_RELEASE, this);
-
-    if (swap_filen > -1) {
+    if (swap_filen > -1 && !EBIT_TEST(flags, KEY_PRIVATE)) {
         // log before unlink() below clears swap_filen
-        if (!EBIT_TEST(flags, KEY_PRIVATE))
-            storeDirSwapLog(this, SWAP_LOG_DEL);
-
-        unlink();
+        storeDirSwapLog(this, SWAP_LOG_DEL);
     }
 
+    Store::Root().unlink(*this);
     destroyStoreEntry(static_cast<hash_link *>(this));
     PROF_stop(storeRelease);
 }
@@ -1317,7 +1268,7 @@ storeLateRelease(void *)
     StoreEntry *e;
     static int n = 0;
 
-    if (StoreController::store_dirs_rebuilding) {
+    if (Store::Controller::store_dirs_rebuilding) {
         eventAdd("storeLateRelease", storeLateRelease, NULL, 1.0, 1);
         return;
     }
@@ -1519,14 +1470,10 @@ StoreEntry::negativeCache()
 void
 storeFreeMemory(void)
 {
-    Store::Root(NULL);
+    Store::FreeMemory();
 #if USE_CACHE_DIGESTS
-
-    if (store_digest)
-        cacheDigestDestroy(store_digest);
-
+    delete store_digest;
 #endif
-
     store_digest = NULL;
 }
 
@@ -2095,20 +2042,13 @@ StoreEntry::hasOneOfEtags(const String &reqETags, const bool allowWeakMatch) con
     return matched;
 }
 
-SwapDir::Pointer
-StoreEntry::store() const
+Store::Disk &
+StoreEntry::disk() const
 {
     assert(0 <= swap_dirn && swap_dirn < Config.cacheSwap.n_configured);
-    return INDEXSD(swap_dirn);
-}
-
-void
-StoreEntry::unlink()
-{
-    store()->unlink(*this); // implies disconnect()
-    swap_filen = -1;
-    swap_dirn = -1;
-    swap_status = SWAPOUT_NONE;
+    const RefCount<Store::Disk> &sd = INDEXSD(swap_dirn);
+    assert(sd);
+    return *sd;
 }
 
 /*

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -10,6 +10,9 @@
 #include "base/Packable.h"
 #include "globals.h"
 #include "security/ServerOptions.h"
+#if USE_OPENSSL
+#include "ssl/support.h"
+#endif
 
 #if HAVE_OPENSSL_ERR_H
 #include <openssl/err.h>
@@ -90,6 +93,38 @@ Security::ServerOptions::dumpCfg(Packable *p, const char *pfx) const
         p->appendf(" %sdh=" SQUIDSBUFPH, pfx, SQUIDSBUFPRINT(dh));
 }
 
+Security::ContextPtr
+Security::ServerOptions::createBlankContext() const
+{
+    Security::ContextPtr t = nullptr;
+
+#if USE_OPENSSL
+    Ssl::Initialize();
+
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L)
+    t = SSL_CTX_new(TLS_server_method());
+#else
+    t = SSL_CTX_new(SSLv23_server_method());
+#endif
+    if (!t) {
+        const auto x = ERR_error_string(ERR_get_error(), nullptr);
+        debugs(83, DBG_CRITICAL, "ERROR: Failed to allocate TLS server context: " << x);
+    }
+
+#elif USE_GNUTLS
+    // Initialize for X.509 certificate exchange
+    if (const int x = gnutls_certificate_allocate_credentials(&t)) {
+        debugs(83, DBG_CRITICAL, "ERROR: Failed to allocate TLS server context: error=" << x);
+    }
+
+#else
+    debugs(83, DBG_CRITICAL, "ERROR: Failed to allocate TLS server context: No TLS library");
+
+#endif
+
+    return t;
+}
+
 void
 Security::ServerOptions::loadDhParams()
 {
@@ -122,7 +157,7 @@ Security::ServerOptions::loadDhParams()
 }
 
 void
-Security::ServerOptions::updateContextEecdh(Security::ContextPointer &ctx)
+Security::ServerOptions::updateContextEecdh(Security::ContextPtr &ctx)
 {
     // set Elliptic Curve details into the server context
     if (!eecdhCurve.isEmpty()) {
@@ -142,7 +177,7 @@ Security::ServerOptions::updateContextEecdh(Security::ContextPointer &ctx)
             return;
         }
 
-        if (SSL_CTX_set_tmp_ecdh(ctx, ecdh) != 0) {
+        if (!SSL_CTX_set_tmp_ecdh(ctx, ecdh)) {
             auto ssl_error = ERR_get_error();
             debugs(83, DBG_CRITICAL, "ERROR: Unable to set Ephemeral ECDH: " << ERR_error_string(ssl_error, NULL));
         }

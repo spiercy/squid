@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,10 +13,10 @@
 #include "clients/forward.h"
 #include "comm/Connection.h"
 #include "comm/Write.h"
-#include "disk.h"
 #include "err_detail_type.h"
 #include "errorpage.h"
 #include "fde.h"
+#include "fs_io.h"
 #include "html_quote.h"
 #include "HttpHeaderTools.h"
 #include "HttpReply.h"

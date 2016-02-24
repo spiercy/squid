@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -822,22 +822,18 @@ old_comm_reset_close(int fd)
 void
 commStartSslClose(const FdeCbParams &params)
 {
-    assert(fd_table[params.fd].ssl != NULL);
-    ssl_shutdown_method(fd_table[params.fd].ssl);
+    assert(fd_table[params.fd].ssl);
+    ssl_shutdown_method(fd_table[params.fd].ssl.get());
 }
 #endif
 
 void
 comm_close_complete(const FdeCbParams &params)
 {
-#if USE_OPENSSL
     fde *F = &fd_table[params.fd];
+    F->ssl.reset(nullptr);
 
-    if (F->ssl) {
-        SSL_free(F->ssl);
-        F->ssl = NULL;
-    }
-
+#if USE_OPENSSL
     if (F->dynamicSslContext) {
         SSL_CTX_free(F->dynamicSslContext);
         F->dynamicSslContext = NULL;
