@@ -208,7 +208,7 @@ MemStore::get(const cache_key *key)
 }
 
 /// Appends to shared memory, allocating new slots/pages as needed.
-/// Requires a MemStore anchor locked for updates.
+/// Requires an Ipc::StoreMapAnchor locked for writing.
 class ShmWriter: public Packable {
 public:
     ShmWriter(MemStore &aStore, StoreEntry *anEntry, Ipc::StoreMapAnchor &anAnchor, const sfileno aFileNo, Ipc::StoreMapSliceId aFirstSlice = -1);
@@ -347,7 +347,9 @@ MemStore::updateHeaders(StoreEntry *updatedE)
         return;
 
     Ipc::StoreMapUpdate update(updatedE);
-    if (!map->openForUpdating(update))
+    assert(updatedE);
+    assert(updatedE->mem_obj);
+    if (!map->openForUpdatingAt(updatedE->mem_obj->memCache.index, update))
         return;
 
     try {
@@ -361,11 +363,6 @@ MemStore::updateHeaders(StoreEntry *updatedE)
 void
 MemStore::updateHeadersOrThrow(Ipc::StoreMapUpdate &update)
 {
-    // we are updating the newly locked copy, not necessarily the associated one
-    debugs(10,3, "updating locked entry " << update.stale.fileNo << " ? " <<
-           update.entry->mem_obj->memCache.index << " of " << *update.entry);
-    update.fresh.anchor->set(*update.entry);
-
     // our +/- hdr_sz math below does not work if the chains differ [in size]
     Must(update.stale.anchor->basics.swap_file_sz == update.fresh.anchor->basics.swap_file_sz);
 

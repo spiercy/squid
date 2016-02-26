@@ -160,9 +160,13 @@ public:
         StoreMapSliceId splicingPoint;
     };
 
-    explicit StoreMapUpdate(StoreEntry *anEntry): entry(anEntry) {} 
+    explicit StoreMapUpdate(StoreEntry *anEntry);
+    StoreMapUpdate(const StoreMapUpdate &other);
+    ~StoreMapUpdate();
 
-    StoreEntry *entry; ///< the (presumably locked) store entry being updated
+    StoreMapUpdate &operator =(const StoreMapUpdate &other) = delete;
+
+    StoreEntry *entry; ///< the store entry being updated
     Edition stale; ///< old anchor and chain being updated
     Edition fresh; ///< new anchor and updated chain prefix
 };
@@ -229,7 +233,7 @@ public:
     void forgetWritingEntry(const sfileno fileno);
 
     /// finds and locks the Update entry for an exclusive metadata update
-    bool openForUpdating(Update &update);
+    bool openForUpdatingAt(const sfileno fileno, Update &update);
     /// makes updated info available to others, unlocks, and cleans up
     void closeForUpdating(Update &update);
     /// undoes partial update, unlocks, and cleans up

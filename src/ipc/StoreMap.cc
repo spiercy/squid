@@ -409,20 +409,21 @@ Ipc::StoreMap::closeForReading(const sfileno fileno)
 }
 
 bool
-Ipc::StoreMap::openForUpdating(Update &update)
+Ipc::StoreMap::openForUpdatingAt(const sfileno fileno, Update &update)
 {
     Must(update.entry);
     const StoreEntry &entry = *update.entry;
-    debugs(54, 5, "opening entry of " << entry << " for updating " << path);
+    debugs(54, 5, "opening entry " << fileno << " of " << entry << " for updating " << path);
+
+    Must(validEntry(fileno));
 
     // Unreadable entries cannot (e.g., empty and otherwise problematic entries)
     // or should not (e.g., entries still forming their metadata) be updated.
-    const cache_key *const key = reinterpret_cast<const cache_key*>(entry.key);
-    if (!openForReading(key, update.stale.fileNo)) {
-        debugs(54, 5, "cannot open unreadable entry of " << entry <<
-               " for updating " << path);
+    if (!openForReadingAt(fileno)) {
+        debugs(54, 5, "cannot open unreadable entry " << fileno << " for updating " << path);
         return false;
     }
+    update.stale.fileNo = fileno;
 
     update.stale.anchor = &anchorAt(update.stale.fileNo);
     if (update.stale.anchor->writing()) {
@@ -443,6 +444,7 @@ Ipc::StoreMap::openForUpdating(Update &update)
         return false;
     }
 
+    const cache_key *const key = reinterpret_cast<const cache_key*>(entry.key);
     update.stale.name = nameByKey(key);
 
     /* stale anchor is properly locked; we can now use abortUpdating() if needed */
@@ -454,10 +456,12 @@ Ipc::StoreMap::openForUpdating(Update &update)
         return false;
     }
 
-    debugs(54, 5, "opened entry " << update.stale.fileNo << " for updating " << path <<
-           " using entry " << update.fresh.fileNo);
     Must(update.stale);
     Must(update.fresh);
+    update.fresh.anchor->set(entry);
+    debugs(54, 5, "opened entry " << update.stale.fileNo << " for updating " << path <<
+           " using entry " << update.fresh.fileNo << " of " << entry);
+
     return true;
 }
 
@@ -506,9 +510,13 @@ Ipc::StoreMap::closeForUpdating(Update &update)
 
     /* splice the fresh chain prefix with the stale chain suffix */
     Slice &freshSplicingSlice = sliceAt(update.fresh.splicingPoint);
-    Must(freshSplicingSlice.next < 0); // the fresh chain is properly terminated
     const SliceId suffixStart = sliceAt(update.stale.splicingPoint).next; // may be negative
-    freshSplicingSlice.next = suffixStart; // fresh chain uses the stale chain suffix
+    // the fresh chain is either properly terminated or already spliced
+    if (freshSplicingSlice.next < 0)
+        freshSplicingSlice.next = suffixStart;
+    else
+        Must(freshSplicingSlice.next == suffixStart);
+    // either way, fresh chain uses the stale chain suffix now
 
     // make the fresh anchor/chain readable for everybody
     update.fresh.anchor->lock.switchExclusiveToShared();
@@ -731,6 +739,31 @@ Ipc::StoreMapAnchor::rewind()
     memset(&basics, 0, sizeof(basics));
     // but keep the lock
 }
+
+
+/* Ipc::StoreMapUpdate */
+
+Ipc::StoreMapUpdate::StoreMapUpdate(StoreEntry *anEntry):
+    entry(anEntry)
+{
+    entry->lock("Ipc::StoreMapUpdate1");
+}
+
+Ipc::StoreMapUpdate::StoreMapUpdate(const StoreMapUpdate &other):
+    entry(other.entry),
+    stale(other.stale),
+    fresh(other.fresh)
+{
+    entry->lock("Ipc::StoreMapUpdate2");
+}
+
+Ipc::StoreMapUpdate::~StoreMapUpdate()
+{
+    entry->unlock("Ipc::StoreMapUpdate");
+}
+
+
+/* Ipc::StoreMap::Owner */
 
 Ipc::StoreMap::Owner::Owner():
     fileNos(nullptr),
