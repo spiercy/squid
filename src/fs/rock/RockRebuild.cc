@@ -655,6 +655,8 @@ Rock::Rebuild::addSlotToEntry(const sfileno fileno, const SlotId slotId, const D
         chainSlots(anchor.start, slotId);
     }
 
+    le.size += header.payloadSize; // must precede freeBadEntry() calls 
+
     if (header.firstSlot == slotId) {
         debugs(47,5, "added inode");
 
@@ -684,7 +686,6 @@ Rock::Rebuild::addSlotToEntry(const sfileno fileno, const SlotId slotId, const D
         }
     }
 
-    le.size += header.payloadSize;
 
     const uint64_t totalSize = anchor.basics.swap_file_sz; // may be 0/unknown
 
