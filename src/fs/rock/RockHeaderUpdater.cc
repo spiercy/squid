@@ -36,6 +36,9 @@ Rock::HeaderUpdater::doneAll() const
 void
 Rock::HeaderUpdater::swanSong()
 {
+    if (update.stale || update.fresh)
+        store->map->abortUpdating(update);
+
     if (reader) {
         reader->close(StoreIOState::readerDone);
         reader = nullptr;
@@ -43,13 +46,12 @@ Rock::HeaderUpdater::swanSong()
 
     if (writer) {
         writer->close(StoreIOState::writerGone);
-        // emulate SwapDir::disconnect() that writeCompleted(err) hopes for
+        // Emulate SwapDir::disconnect() that writeCompleted(err) hopes for.
+        // Also required to avoid IoState destructor assertions.
+        // We can do this because we closed update earlier or aborted it above.
         dynamic_cast<IoState&>(*writer).writeableAnchor_ = nullptr;
         writer = nullptr;
     }
-
-    if (update.stale || update.fresh)
-        store->map->abortUpdating(update);
 
     AsyncJob::swanSong();
 }
@@ -216,16 +218,17 @@ void
 Rock::HeaderUpdater::noteDoneWriting(int errflag)
 {
     debugs(47, 5, errflag << " reader=" << reader);
-
-    Must(writer);
-    const IoState &rockWriter = dynamic_cast<IoState&>(*writer);
-    update.fresh.splicingPoint = rockWriter.splicingPoint;
-    debugs(47, 5, "fresh chain ends at " << update.fresh.splicingPoint);
-    writer = nullptr; // we are done writing
-
     Must(!errflag);
     Must(!reader); // if we wrote everything, then we must have read everything
+
+    Must(writer);
+    IoState &rockWriter = dynamic_cast<IoState&>(*writer);
+    update.fresh.splicingPoint = rockWriter.splicingPoint;
+    debugs(47, 5, "fresh chain ends at " << update.fresh.splicingPoint);
     store->map->closeForUpdating(update);
+    rockWriter.writeableAnchor_ = nullptr;
+    writer = nullptr; // we are done writing
+
     Must(doneAll());
 }
 
