@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -588,6 +588,7 @@ bool HttpReply::inheritProperties(const HttpMsg *aMsg)
     if (!aRep)
         return false;
     keep_alive = aRep->keep_alive;
+    sources = aRep->sources;
     return true;
 }
 

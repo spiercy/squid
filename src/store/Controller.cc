@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -76,21 +76,11 @@ Store::Controller::create()
     swapDir->create();
 
 #if !_SQUID_WINDOWS_
-
     pid_t pid;
-
     do {
-        int status;
-#if _SQUID_NEXT_
-
-        pid = wait3(&status, WNOHANG, NULL);
-#else
-
-        pid = waitpid(-1, &status, 0);
-#endif
-
+        PidStatus status;
+        pid = WaitForAnyPid(status, WNOHANG);
     } while (pid > 0 || (pid < 0 && errno == EINTR));
-
 #endif
 }
 

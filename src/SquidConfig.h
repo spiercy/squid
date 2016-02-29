@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,6 +11,7 @@
 
 #include "acl/forward.h"
 #include "base/RefCount.h"
+#include "base/YesNoNone.h"
 #include "ClientDelayConfig.h"
 #include "DelayConfig.h"
 #include "helper/ChildConfig.h"
@@ -19,8 +20,10 @@
 #include "Notes.h"
 #include "security/forward.h"
 #include "SquidTime.h"
+#if USE_OPENSSL
+#include "ssl/support.h"
+#endif
 #include "store/forward.h"
-#include "YesNoNone.h"
 
 #if USE_OPENSSL
 class sslproxy_cert_sign;
@@ -332,6 +335,9 @@ public:
         int hostStrictVerify;
         int client_dst_passthru;
         int dns_mdns;
+#if USE_OPENSSL
+        bool logTlsServerHelloDetails;
+#endif
     } onoff;
 
     int pipeline_max_prefetch;
@@ -494,8 +500,9 @@ public:
     external_acl *externalAclHelperList;
 
     struct {
-        Security::ContextPointer sslContext;
+        Security::ContextPtr sslContext;
 #if USE_OPENSSL
+        char *foreignIntermediateCertsPath;
         acl_access *cert_error;
         sslproxy_cert_sign *cert_sign;
         sslproxy_cert_adapt *cert_adapt;

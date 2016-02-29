@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -9,9 +9,9 @@
 #ifndef SQUID_SRC_SECURITY_PEEROPTIONS_H
 #define SQUID_SRC_SECURITY_PEEROPTIONS_H
 
+#include "base/YesNoNone.h"
 #include "ConfigParser.h"
-#include "SBuf.h"
-#include "security/forward.h"
+#include "security/KeyData.h"
 
 class Packable;
 
@@ -32,17 +32,23 @@ public:
     /// reset the configuration details to default
     virtual void clear() {*this = PeerOptions();}
 
+    /// generate an unset security context object
+    virtual Security::ContextPtr createBlankContext() const;
+
     /// generate a security client-context from these configured options
-    Security::ContextPointer createClientContext(bool setOptions);
+    Security::ContextPtr createClientContext(bool setOptions);
 
     /// sync the context options with tls-min-version=N configuration
     void updateTlsVersionLimits();
 
+    /// setup the NPN extension details for the given context
+    void updateContextNpn(Security::ContextPtr &);
+
     /// setup the CA details for the given context
-    void updateContextCa(Security::ContextPointer &);
+    void updateContextCa(Security::ContextPtr &);
 
     /// setup the CRL details for the given context
-    void updateContextCrl(Security::ContextPointer &);
+    void updateContextCrl(Security::ContextPtr &);
 
     /// output squid.conf syntax with 'pfx' prefix on parameters for the stored settings
     virtual void dumpCfg(Packable *, const char *pfx) const;
@@ -53,8 +59,6 @@ private:
     void loadCrlFile();
 
 public:
-    SBuf certFile;       ///< path of file containing PEM format X509 certificate
-    SBuf privateKeyFile; ///< path of file containing private key in PEM format
     SBuf sslOptions;     ///< library-specific options string
     SBuf caDir;          ///< path of directory containing a set of trusted Certificate Authorities
     SBuf crlFile;        ///< path of file containing Certificate Revoke List
@@ -68,18 +72,22 @@ public:
     long parsedOptions; ///< parsed value of sslOptions
     long parsedFlags;   ///< parsed value of sslFlags
 
+    std::list<Security::KeyData> certs; ///< details from the cert= and file= config parameters
     std::list<SBuf> caFiles;  ///< paths of files containing trusted Certificate Authority
     Security::CertRevokeList parsedCrl; ///< CRL to use when verifying the remote end certificate
 
-private:
+protected:
     int sslVersion;
 
     /// flags governing Squid internal TLS operations
     struct flags_ {
-        flags_() : noDefaultCa(false) {}
+        flags_() : tlsDefaultCa(true), tlsNpn(true) {}
 
-        /// do not use the system default Trusted CA when verifying the remote end certificate
-        bool noDefaultCa;
+        /// whether to use the system default Trusted CA when verifying the remote end certificate
+        YesNoNone tlsDefaultCa;
+
+        /// whether to use the TLS NPN extension on these connections
+        bool tlsNpn;
     } flags;
 
 public:

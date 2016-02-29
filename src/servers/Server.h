@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -15,9 +15,10 @@
 #include "anyp/ProtocolVersion.h"
 #include "base/AsyncJob.h"
 #include "BodyPipe.h"
-#include "comm/forward.h"
+#include "comm/Write.h"
 #include "CommCalls.h"
-#include "SBuf.h"
+#include "Pipeline.h"
+#include "sbuf/SBuf.h"
 
 /**
  * Common base for all Server classes used
@@ -34,14 +35,8 @@ public:
     virtual bool doneAll() const;
     virtual void swanSong();
 
-    /// tell all active contexts on a connection about an error
-    virtual void notifyAllContexts(const int xerrno) = 0;
-
     /// ??
     virtual bool connFinishedWithConn(int size) = 0;
-
-    /// processing to be done after a Comm::Read()
-    virtual void afterClientRead() = 0;
 
     /// maybe grow the inBuf and schedule Comm::Read()
     void readSomeData();
@@ -54,6 +49,9 @@ public:
      */
     virtual bool handleReadData() = 0;
 
+    /// processing to be done after a Comm::Read()
+    virtual void afterClientRead() = 0;
+
     /// whether Comm::Read() is scheduled
     bool reading() const {return reader != NULL;}
 
@@ -63,9 +61,25 @@ public:
     /// Update flags and timeout after the first byte received
     virtual void receivedFirstByte() = 0;
 
-    /// maybe schedule another Comm::Write() and perform any
-    /// processing to be done after previous Comm::Write() completes
+    /// maybe find some data to send and schedule a Comm::Write()
     virtual void writeSomeData() {}
+
+    /// schedule some data for a Comm::Write()
+    void write(MemBuf *mb) {
+        typedef CommCbMemFunT<Server, CommIoCbParams> Dialer;
+        writer = JobCallback(33, 5, Dialer, this, Server::clientWriteDone);
+        Comm::Write(clientConnection, mb, writer);
+    }
+
+    /// schedule some data for a Comm::Write()
+    void write(char *buf, int len) {
+        typedef CommCbMemFunT<Server, CommIoCbParams> Dialer;
+        writer = JobCallback(33, 5, Dialer, this, Server::clientWriteDone);
+        Comm::Write(clientConnection, buf, len, writer, nullptr);
+    }
+
+    /// processing to sync state after a Comm::Write()
+    virtual void afterClientWrite(size_t) {}
 
     /// whether Comm::Write() is scheduled
     bool writing() const {return writer != NULL;}
@@ -95,6 +109,9 @@ public:
     SBuf inBuf;
 
     bool receivedFirstByte_; ///< true if at least one byte received on this connection
+
+    /// set of requests waiting to be serviced
+    Pipeline pipeline;
 
 protected:
     void doClientRead(const CommIoCbParams &io);
