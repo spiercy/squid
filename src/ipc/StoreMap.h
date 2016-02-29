@@ -9,6 +9,7 @@
 #ifndef SQUID_IPC_STORE_MAP_H
 #define SQUID_IPC_STORE_MAP_H
 
+#include "ipc/IdQueue.h"
 #include "ipc/mem/FlexibleArray.h"
 #include "ipc/mem/Pointer.h"
 #include "ipc/ReadWriteLock.h"
@@ -190,6 +191,9 @@ public:
     typedef StoreMapSliceId SliceId;
     typedef StoreMapUpdate Update;
 
+    /// "names" of .waitingToBeFreed entries
+    typedef IdQueue<sfileno> Scraps;
+
 public:
     /// aggregates anchor and slice owners for Init() caller convenience
     class Owner
@@ -200,6 +204,7 @@ public:
         FileNos::Owner *fileNos;
         Anchors::Owner *anchors;
         Slices::Owner *slices;
+        Scraps::Owner *scraps;
     private:
         Owner(const Owner &); // not implemented
         Owner &operator =(const Owner &); // not implemented
@@ -298,12 +303,14 @@ protected:
     Mem::Pointer<StoreMapFileNos> fileNos; ///< entry inodes (starting blocks)
     Mem::Pointer<StoreMapAnchors> anchors; ///< entry inodes (starting blocks)
     Mem::Pointer<StoreMapSlices> slices; ///< chained entry pieces positions
+    Mem::Pointer<Scraps> scraps; ///< names of candidates for purging/eviction
 
 private:
     /// computes entry name (i.e., key hash) for a given entry key
     sfileno nameByKey(const cache_key *const key) const;
     /// computes anchor position for a given entry name
     sfileno fileNoByName(const sfileno name) const;
+    void relocate(const sfileno name, const sfileno fileno);
 
     Anchor &anchorAt(const sfileno fileno);
     const Anchor &anchorAt(const sfileno fileno) const;
@@ -314,6 +321,9 @@ private:
     Anchor *openForReading(Slice &s);
     bool openKeyless(Update::Edition &edition);
     void closeForUpdateFinal(Update &update);
+
+    typedef std::function<bool (const sfileno name)> NameFilter; // a "name"-based test
+    bool visitVictims(const NameFilter filter);
 
     void freeChain(const sfileno fileno, Anchor &inode, const bool keepLock);
     void freeChainAt(SliceId sliceId, const SliceId splicingPoint);

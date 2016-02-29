@@ -33,6 +33,12 @@ StoreMapFileNosId(const SBuf &path)
     return Ipc::Mem::Segment::Name(path, "filenos");
 }
 
+static SBuf
+StoreMapScrapsId(const SBuf &path)
+{
+    return Ipc::Mem::Segment::Name(path, "scraps");
+}
+
 Ipc::StoreMap::Owner *
 Ipc::StoreMap::Init(const SBuf &path, const int sliceLimit)
 {
@@ -42,6 +48,7 @@ Ipc::StoreMap::Init(const SBuf &path, const int sliceLimit)
     owner->fileNos = shm_new(FileNos)(StoreMapFileNosId(path).c_str(), anchorLimit);
     owner->anchors = shm_new(Anchors)(StoreMapAnchorsId(path).c_str(), anchorLimit);
     owner->slices = shm_new(Slices)(StoreMapSlicesId(path).c_str(), sliceLimit);
+    owner->scraps = shm_new(Scraps)(StoreMapScrapsId(path).c_str(), anchorLimit, -1);
     debugs(54, 5, "created " << path << " with " << anchorLimit << '+' << sliceLimit);
     return owner;
 }
@@ -49,11 +56,13 @@ Ipc::StoreMap::Init(const SBuf &path, const int sliceLimit)
 Ipc::StoreMap::StoreMap(const SBuf &aPath): cleaner(NULL), path(aPath),
     fileNos(shm_old(FileNos)(StoreMapFileNosId(path).c_str())),
     anchors(shm_old(Anchors)(StoreMapAnchorsId(path).c_str())),
-    slices(shm_old(Slices)(StoreMapSlicesId(path).c_str()))
+    slices(shm_old(Slices)(StoreMapSlicesId(path).c_str())),
+    scraps(shm_old(Scraps)(StoreMapScrapsId(path).c_str()))
 {
     debugs(54, 5, "attached " << path << " with " <<
            fileNos->capacity << '+' <<
-           anchors->capacity << '+' << slices->capacity);
+           anchors->capacity << '+' << slices->capacity << '+' <<
+           scraps->capacity);
     assert(entryLimit() > 0); // key-to-position mapping requires this
     assert(entryLimit() <= sliceLimit()); // at least one slice per entry
 }
@@ -85,7 +94,6 @@ Ipc::StoreMap::forgetWritingEntry(sfileno fileno)
     // them; the caller is responsible for freeing them (most likely
     // our slice list is incomplete or has holes)
 
-    inode.waitingToBeFreed = false;
     inode.rewind();
 
     inode.lock.unlockExclusive();
@@ -300,7 +308,6 @@ Ipc::StoreMap::freeChain(const sfileno fileno, Anchor &inode, const bool keepLoc
            " in " << path);
     if (!inode.empty())
         freeChainAt(inode.start, inode.splicingPoint);
-    inode.waitingToBeFreed = false;
     inode.rewind();
 
     if (!keepLocked)
@@ -470,14 +477,9 @@ Ipc::StoreMap::openForUpdatingAt(const sfileno fileno, Update &update)
 bool
 Ipc::StoreMap::openKeyless(Update::Edition &edition)
 {
-    // Hopefully, we find a rewritable entry much sooner (TODO: use time?).
-    // The min() will protect us from division by zero inside the loop.
-    // TODO: Refactor this and purgeOne() loops into C++11 range iterator.
-    const int searchLimit = min(10000, entryLimit());
-    int tries = 0;
-    for (; tries < searchLimit; ++tries) {
+    return visitVictims([&](const sfileno name) {
         Update::Edition temp;
-        temp.name = static_cast<sfileno>(++anchors->victim % entryLimit());
+        temp.name = name;
         temp.fileNo = fileNoByName(temp.name);
         if ((temp.anchor = openForWritingAt(temp.fileNo))) {
             debugs(54, 5, "created entry " << temp.fileNo <<
@@ -486,9 +488,8 @@ Ipc::StoreMap::openKeyless(Update::Edition &edition)
             edition = temp;
             return true;
         }
-    }
-    debugs(54, 3, "failed " << path << "; tried: " << tries);
-    return false;
+        return false;
+    });
 }
 
 void
@@ -528,7 +529,7 @@ Ipc::StoreMap::closeForUpdating(Update &update)
         freeEntry(update.fresh.fileNo);
 
     /* any external changes were applied to the stale anchor/chain until now */
-    fileNos->items[update.stale.name] = update.fresh.fileNo;
+    relocate(update.stale.name, update.fresh.fileNo);
     /* any external changes will apply to the fresh anchor/chain from now on */
 
     // Race: If the stale entry was deleted by some kid during the assignment,
@@ -544,7 +545,7 @@ Ipc::StoreMap::closeForUpdating(Update &update)
     freeEntry(update.stale.fileNo);
 
     // make the stale anchor/chain reusable, reachable via its new location
-    fileNos->items[update.fresh.name] = update.stale.fileNo;
+    relocate(update.fresh.name, update.stale.fileNo);
 
     const Update updateSaved = update; // for post-close debugging below
 
@@ -557,21 +558,49 @@ Ipc::StoreMap::closeForUpdating(Update &update)
     closeForReading(update.fresh.fileNo);
     update.fresh = Update::Edition();
 
-    debugs(54, 5, "closed entry " << *updateSaved.entry <<
-           " for updating " << path << " to fresh entry " << updateSaved.fresh.fileNo <<
+    debugs(54, 5, "closed entry " << updateSaved.stale.fileNo << " of " << *updateSaved.entry <<
+           " named " << updateSaved.stale.name << " for updating " << path <<
+           " to fresh entry " << updateSaved.fresh.fileNo << " named " << updateSaved.fresh.name <<
            " with [" << updateSaved.fresh.anchor->start << ',' << updateSaved.fresh.splicingPoint <<
            "] prefix containing at least " << freshSplicingSlice.size << " bytes");
+}
+
+/// Visits entries until either 
+/// * the `visitor` returns true (indicating its satisfaction with the offer);
+/// * we give up finding a suitable entry because it already took "too long"; or
+/// * we have offered all entries.
+bool
+Ipc::StoreMap::visitVictims(const NameFilter visitor)
+{
+    // scraps speed up search and overwrite stale entries before the fresh ones
+    sfileno holeName = -1;
+    if (scraps->pop(holeName)) {
+        if (visitor(holeName))
+            return true;
+        scraps->push(holeName); // it may be suitable next time
+        debugs(54, 3, "strange, unusable hole " << holeName << " in " << path);
+    }
+
+    // No reusable scraps found. Perhaps the visitor can evict/purge somebody?
+    // Hopefully, we find a usable entry much sooner (TODO: use time?).
+    // The min() will protect us from division by zero inside the loop.
+    const int searchLimit = min(10000, entryLimit());
+    int tries = 0;
+    for (; tries < searchLimit; ++tries) {
+        const sfileno name = static_cast<sfileno>(++anchors->victim % entryLimit());
+        if (visitor(name))
+            return true;
+    }
+
+    debugs(54, 5, "no victims found in " << path << "; tried: " << tries);
+    return false;
 }
 
 bool
 Ipc::StoreMap::purgeOne()
 {
-    // Hopefully, we find a removable entry much sooner (TODO: use time?).
-    // The min() will protect us from division by zero inside the loop.
-    const int searchLimit = min(10000, entryLimit());
-    int tries = 0;
-    for (; tries < searchLimit; ++tries) {
-        const sfileno fileno = static_cast<sfileno>(++anchors->victim % entryLimit());
+    return visitVictims([&](const sfileno name) {
+        const sfileno fileno = fileNoByName(name);
         Anchor &s = anchorAt(fileno);
         if (s.lock.lockExclusive()) {
             // the caller wants a free slice; empty anchor is not enough
@@ -583,9 +612,8 @@ Ipc::StoreMap::purgeOne()
             }
             s.lock.unlockExclusive();
         }
-    }
-    debugs(54, 5, "no entries to purge from " << path << "; tried: " << tries);
-    return false;
+        return false;
+    });
 }
 
 void
@@ -661,10 +689,19 @@ Ipc::StoreMap::nameByKey(const cache_key *const key) const
 sfileno
 Ipc::StoreMap::fileNoByName(const sfileno name) const
 {
-    const int fileNo = fileNos->items[name];;
     // fileNos->items are initialized to zero, which we treat as "name is fileno";
-    // a positive fileNo means the entry anchor got moved to that new fileNo
-    return fileNo ? fileNo : name;;
+    // a positive value means the entry anchor got moved to a new fileNo
+    if (const int item = fileNos->items[name])
+        return item-1;
+    return name;
+}
+
+/// map `name` to `fileNo`
+void
+Ipc::StoreMap::relocate(const sfileno name, const sfileno fileno)
+{
+    // preserve special meaning for zero; see fileNoByName
+    fileNos->items[name] = fileno+1;
 }
 
 sfileno
@@ -737,6 +774,7 @@ Ipc::StoreMapAnchor::rewind()
     splicingPoint = -1;
     memset(&key, 0, sizeof(key));
     memset(&basics, 0, sizeof(basics));
+    waitingToBeFreed = false;
     // but keep the lock
 }
 
@@ -768,7 +806,8 @@ Ipc::StoreMapUpdate::~StoreMapUpdate()
 Ipc::StoreMap::Owner::Owner():
     fileNos(nullptr),
     anchors(nullptr),
-    slices(nullptr)
+    slices(nullptr),
+    scraps(nullptr)
 {
 }
 
@@ -777,6 +816,7 @@ Ipc::StoreMap::Owner::~Owner()
     delete fileNos;
     delete anchors;
     delete slices;
+    delete scraps;
 }
 
 /* Ipc::StoreMapAnchors */
