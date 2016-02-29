@@ -13,7 +13,6 @@ noinst_LTLIBRARIES = libipc.la
 libipc_la_SOURCES = \
 	FdNotes.cc \
 	FdNotes.h \
-	IdQueue.h \
 	Kid.cc \
 	Kid.h \
 	Kids.cc \

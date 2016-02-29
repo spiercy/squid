@@ -33,12 +33,6 @@ StoreMapFileNosId(const SBuf &path)
     return Ipc::Mem::Segment::Name(path, "filenos");
 }
 
-static SBuf
-StoreMapScrapsId(const SBuf &path)
-{
-    return Ipc::Mem::Segment::Name(path, "scraps");
-}
-
 Ipc::StoreMap::Owner *
 Ipc::StoreMap::Init(const SBuf &path, const int sliceLimit)
 {
@@ -48,7 +42,6 @@ Ipc::StoreMap::Init(const SBuf &path, const int sliceLimit)
     owner->fileNos = shm_new(FileNos)(StoreMapFileNosId(path).c_str(), anchorLimit);
     owner->anchors = shm_new(Anchors)(StoreMapAnchorsId(path).c_str(), anchorLimit);
     owner->slices = shm_new(Slices)(StoreMapSlicesId(path).c_str(), sliceLimit);
-    owner->scraps = shm_new(Scraps)(StoreMapScrapsId(path).c_str(), anchorLimit, -1);
     debugs(54, 5, "created " << path << " with " << anchorLimit << '+' << sliceLimit);
     return owner;
 }
@@ -56,13 +49,11 @@ Ipc::StoreMap::Init(const SBuf &path, const int sliceLimit)
 Ipc::StoreMap::StoreMap(const SBuf &aPath): cleaner(NULL), path(aPath),
     fileNos(shm_old(FileNos)(StoreMapFileNosId(path).c_str())),
     anchors(shm_old(Anchors)(StoreMapAnchorsId(path).c_str())),
-    slices(shm_old(Slices)(StoreMapSlicesId(path).c_str())),
-    scraps(shm_old(Scraps)(StoreMapScrapsId(path).c_str()))
+    slices(shm_old(Slices)(StoreMapSlicesId(path).c_str()))
 {
     debugs(54, 5, "attached " << path << " with " <<
            fileNos->capacity << '+' <<
-           anchors->capacity << '+' << slices->capacity << '+' <<
-           scraps->capacity);
+           anchors->capacity << '+' << slices->capacity);
     assert(entryLimit() > 0); // key-to-position mapping requires this
     assert(entryLimit() <= sliceLimit()); // at least one slice per entry
 }
@@ -572,16 +563,6 @@ Ipc::StoreMap::closeForUpdating(Update &update)
 bool
 Ipc::StoreMap::visitVictims(const NameFilter visitor)
 {
-    // scraps speed up search and overwrite stale entries before the fresh ones
-    sfileno holeName = -1;
-    if (scraps->pop(holeName)) {
-        if (visitor(holeName))
-            return true;
-        scraps->push(holeName); // it may be suitable next time
-        debugs(54, 3, "strange, unusable hole " << holeName << " in " << path);
-    }
-
-    // No reusable scraps found. Perhaps the visitor can evict/purge somebody?
     // Hopefully, we find a usable entry much sooner (TODO: use time?).
     // The min() will protect us from division by zero inside the loop.
     const int searchLimit = min(10000, entryLimit());
@@ -806,8 +787,7 @@ Ipc::StoreMapUpdate::~StoreMapUpdate()
 Ipc::StoreMap::Owner::Owner():
     fileNos(nullptr),
     anchors(nullptr),
-    slices(nullptr),
-    scraps(nullptr)
+    slices(nullptr)
 {
 }
 
@@ -816,7 +796,6 @@ Ipc::StoreMap::Owner::~Owner()
     delete fileNos;
     delete anchors;
     delete slices;
-    delete scraps;
 }
 
 /* Ipc::StoreMapAnchors */
