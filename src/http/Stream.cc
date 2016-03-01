@@ -300,7 +300,7 @@ Http::Stream::sendStartOfMessage(HttpReply *rep, StoreIOBuffer bodyData)
                 break;
             } else {
                 debugs(83, 4, "Response delay pool " << pool->poolName <<
-                        " skipped because ACL " << answer);
+                       " skipped because ACL " << answer);
             }
         }
     }

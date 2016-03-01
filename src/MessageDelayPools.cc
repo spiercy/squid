@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,14 +11,14 @@
 #if USE_DELAY_POOLS
 #include <algorithm>
 #include <map>
-#include "event.h"
-#include "SquidTime.h"
-#include "DelaySpec.h"
-#include "ConfigParser.h"
-#include "Parsing.h"
-#include "cache_cf.h"
 #include "acl/Gadgets.h"
+#include "cache_cf.h"
+#include "ConfigParser.h"
+#include "DelaySpec.h"
+#include "event.h"
 #include "MessageDelayPools.h"
+#include "Parsing.h"
+#include "SquidTime.h"
 
 MessageDelayPools::MessageDelayPools(): LastUpdate(squid_curtime)
 {
@@ -88,7 +88,7 @@ MessageDelayPool *
 MessageDelayPools::pool(const SBuf &name)
 {
     auto it = std::find_if(pools.begin(), pools.end(),
-            [&name](const MessageDelayPool *p) { return p->poolName == name; });
+    [&name](const MessageDelayPool *p) { return p->poolName == name; });
     return it == pools.end() ? 0 : *it;
 }
 
@@ -96,7 +96,7 @@ void
 MessageDelayPools::add(MessageDelayPool *p)
 {
     const auto it = std::find_if(pools.begin(), pools.end(),
-            [&p](const MessageDelayPool *mp) { return mp->poolName == p->poolName; });
+    [&p](const MessageDelayPool *mp) { return mp->poolName == p->poolName; });
     if (it != pools.end()) {
         debugs(3, DBG_CRITICAL, "Ignoring duplicate " << p->poolName << " response delay pool");
         return;
@@ -106,14 +106,14 @@ MessageDelayPools::add(MessageDelayPool *p)
 }
 
 MessageDelayPool::MessageDelayPool(const SBuf &name, uint64_t bucketSpeed, uint64_t bucketSize,
-        uint64_t aggregateSpeed, uint64_t aggregateSize, uint16_t initial):
+                                   uint64_t aggregateSpeed, uint64_t aggregateSize, uint16_t initial):
     access(0),
     poolName(name),
     bucketSpeedLimit(bucketSpeed),
     maxBucketSize(bucketSize),
     aggregateSpeedLimit(aggregateSpeed),
     maxAggregateSize(aggregateSize),
-    initialFillLevel(initial){}
+    initialFillLevel(initial) {}
 
 void
 MessageDelayPool::update(int incr)
@@ -173,7 +173,7 @@ MessageDelayConfig::parseResponseDelayPool()
             static_cast<uint64_t>(params[SBuf("aggregate_speed_limit=")]),
             static_cast<uint64_t>(params[SBuf("max_aggregate_size=")]),
             static_cast<uint16_t>(params[SBuf("initial_fill_level=")])
-            );
+                                                 );
     MessageDelayPools::Instance()->add(pool);
 }
 
@@ -190,3 +190,4 @@ MessageDelayConfig::parseResponseDelayPoolAccess(ConfigParser &parser) {
 }
 
 #endif
+

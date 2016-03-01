@@ -7,11 +7,11 @@
  */
 
 #include "squid.h"
+#include "cbdata.h"
 #include "comm/Connection.h"
 #include "comm/IoCallback.h"
-#include "comm/Write.h"
 #include "comm/Loops.h"
-#include "cbdata.h"
+#include "comm/Write.h"
 #include "fd.h"
 #include "fde.h"
 #include "globals.h"
@@ -85,7 +85,7 @@ Comm::HandleWrite(int fd, void *data)
             const int nleft_corrected = min(nleft, quota);
             if (nleft != nleft_corrected) {
                 debugs(5, 5, HERE << state->conn << " MessageBucket limits to " <<
-                        nleft_corrected << " out of " << nleft);
+                       nleft_corrected << " out of " << nleft);
                 nleft = nleft_corrected;
             }
         }
