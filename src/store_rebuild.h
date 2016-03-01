@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,10 +11,17 @@
 #ifndef SQUID_STORE_REBUILD_H_
 #define SQUID_STORE_REBUILD_H_
 
-// currently a POD
+#include "store_key_md5.h"
+
 class StoreRebuildData
 {
 public:
+    StoreRebuildData() :
+        objcount(0), expcount(0), scancount(0), clashcount(0),
+        dupcount(0), cancelcount(0), invalid(0), badflags(0),
+        bad_log_op(0), zero_object_sz(0)
+    {}
+
     int objcount;       /* # objects successfully reloaded */
     int expcount;       /* # objects expired */
     int scancount;      /* # entries scanned or read from state file */

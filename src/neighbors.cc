@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,6 +11,7 @@
 #include "squid.h"
 #include "acl/FilledChecklist.h"
 #include "anyp/PortCfg.h"
+#include "base/EnumIterator.h"
 #include "CacheDigest.h"
 #include "CachePeer.h"
 #include "comm/Connection.h"
@@ -159,7 +160,7 @@ peerAllowedToUse(const CachePeer * p, HttpRequest * request)
 
     // CONNECT requests are proxy requests. Not to be forwarded to origin servers.
     // Unless the destination port matches, in which case we MAY perform a 'DIRECT' to this CachePeer.
-    if (p->options.originserver && request->method == Http::METHOD_CONNECT && request->url.port() != p->in_addr.port())
+    if (p->options.originserver && request->method == Http::METHOD_CONNECT && request->url.port() != p->http_port)
         return false;
 
     if (p->access == NULL)
@@ -761,7 +762,7 @@ peerDigestLookup(CachePeer * p, HttpRequest * request)
     assert(p->digest->cd);
     /* does digest predict a hit? */
 
-    if (!cacheDigestTest(p->digest->cd, key))
+    if (!p->digest->cd->contains(key))
         return LOOKUP_MISS;
 
     debugs(15, 5, "peerDigestLookup: peer " << p->host << " says HIT!");
@@ -1492,15 +1493,23 @@ dump_peer_options(StoreEntry * sentry, CachePeer * p)
     if (p->options.htcp) {
         storeAppendPrintf(sentry, " htcp");
         if (p->options.htcp_oldsquid || p->options.htcp_no_clr || p->options.htcp_no_purge_clr || p->options.htcp_only_clr) {
-            int doneopts=0;
-            if (p->options.htcp_oldsquid)
-                storeAppendPrintf(sentry, "%soldsquid",(doneopts++>0?",":"="));
-            if (p->options.htcp_no_clr)
-                storeAppendPrintf(sentry, "%sno-clr",(doneopts++>0?",":"="));
-            if (p->options.htcp_no_purge_clr)
-                storeAppendPrintf(sentry, "%sno-purge-clr",(doneopts++>0?",":"="));
-            if (p->options.htcp_only_clr)
-                storeAppendPrintf(sentry, "%sonly-clr",(doneopts++>0?",":"="));
+            bool doneopts = false;
+            if (p->options.htcp_oldsquid) {
+                storeAppendPrintf(sentry, "oldsquid");
+                doneopts = true;
+            }
+            if (p->options.htcp_no_clr) {
+                storeAppendPrintf(sentry, "%sno-clr",(doneopts?",":"="));
+                doneopts = true;
+            }
+            if (p->options.htcp_no_purge_clr) {
+                storeAppendPrintf(sentry, "%sno-purge-clr",(doneopts?",":"="));
+                doneopts = true;
+            }
+            if (p->options.htcp_only_clr) {
+                storeAppendPrintf(sentry, "%sonly-clr",(doneopts?",":"="));
+                //doneopts = true; // uncomment if more opts are added
+            }
         }
     }
 #endif
@@ -1556,6 +1565,7 @@ dump_peer_options(StoreEntry * sentry, CachePeer * p)
     else if (p->connection_auth == 2)
         storeAppendPrintf(sentry, " connection-auth=auto");
 
+    p->secure.dumpCfg(sentry,"tls-");
     storeAppendPrintf(sentry, "\n");
 }
 
@@ -1563,7 +1573,6 @@ static void
 dump_peers(StoreEntry * sentry, CachePeer * peers)
 {
     char ntoabuf[MAX_IPSTRLEN];
-    icp_opcode op;
     int i;
 
     if (peers == NULL)
@@ -1625,7 +1634,7 @@ dump_peers(StoreEntry * sentry, CachePeer * peers)
             } else {
 #endif
 
-                for (op = ICP_INVALID; op < ICP_END; ++op) {
+                for (auto op : WholeEnum<icp_opcode>()) {
                     if (e->icp.counts[op] == 0)
                         continue;
 

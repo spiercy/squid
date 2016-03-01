@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -9,7 +9,11 @@
 #ifndef _SQUID_AUTH_DIGEST_USER_H
 #define _SQUID_AUTH_DIGEST_USER_H
 
+#if HAVE_AUTH_MODULE_DIGEST
+
+#include "auth/digest/Config.h"
 #include "auth/User.h"
+#include "rfc2617.h"
 
 namespace Auth
 {
@@ -23,10 +27,13 @@ class User : public Auth::User
 
 public:
     User(Auth::Config *, const char *requestRealm);
-    ~User();
+    virtual ~User();
     int authenticated() const;
+    virtual int32_t ttl() const override;
 
-    virtual int32_t ttl() const;
+    /* Auth::User API */
+    static CbcPointer<Auth::CredentialsCache> Cache();
+    virtual void addToNameCache() override;
 
     HASH HA1;
     int HA1created;
@@ -40,5 +47,6 @@ public:
 } // namespace Digest
 } // namespace Auth
 
+#endif /* HAVE_AUTH_MODULE_DIGEST */
 #endif /* _SQUID_AUTH_DIGEST_USER_H */
 

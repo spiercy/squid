@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -30,6 +30,7 @@
 #include "esi/Segment.h"
 #include "esi/VarState.h"
 #include "fatal.h"
+#include "http/Stream.h"
 #include "HttpHdrSc.h"
 #include "HttpHdrScTarget.h"
 #include "HttpReply.h"
@@ -839,10 +840,10 @@ ESIContextNew (HttpReply *rep, clientStreamNode *thisNode, ClientHttpRequest *ht
         /* remove specific headers for ESI to prevent
          * downstream cache confusion */
         HttpHeader *hdr = &rep->header;
-        hdr->delById(HDR_ACCEPT_RANGES);
-        hdr->delById(HDR_ETAG);
-        hdr->delById(HDR_CONTENT_LENGTH);
-        hdr->delById(HDR_CONTENT_MD5);
+        hdr->delById(Http::HdrType::ACCEPT_RANGES);
+        hdr->delById(Http::HdrType::ETAG);
+        hdr->delById(Http::HdrType::CONTENT_LENGTH);
+        hdr->delById(Http::HdrType::CONTENT_MD5);
         rv->tree = new esiSequence (rv, true);
         rv->thisNode = thisNode;
         rv->http = http;
@@ -1484,11 +1485,10 @@ esiLiteral::~esiLiteral()
     cbdataReferenceDone (varState);
 }
 
-esiLiteral::esiLiteral(ESISegment::Pointer aSegment)
+esiLiteral::esiLiteral(ESISegment::Pointer aSegment) :
+    buffer(aSegment),
+    varState(nullptr)
 {
-    buffer = aSegment;
-    /* we've been handed a complete, processed string */
-    varState = NULL;
     /* Nothing to do */
     flags.donevars = 1;
 }
@@ -1881,7 +1881,10 @@ esiChoose::~esiChoose()
     debugs(86, 5, "esiChoose::~esiChoose " << this);
 }
 
-esiChoose::esiChoose(esiTreeParentPtr aParent) : elements (), chosenelement (-1),parent (aParent)
+esiChoose::esiChoose(esiTreeParentPtr aParent) :
+    elements(),
+    chosenelement(-1),
+    parent(aParent)
 {}
 
 void
@@ -2281,14 +2284,12 @@ esiEnableProcessing (HttpReply *rep)
         HttpHdrScTarget *sctusable =
             rep->surrogate_control->getMergedTarget(Config.Accel.surrogate_id);
 
-        if (!sctusable || !sctusable->hasContent())
-            /* Nothing generic or targeted at us, or no
-             * content processing requested
-             */
-            return 0;
-
-        if (sctusable->content().pos("ESI/1.0") != NULL)
+        // found something targeted at us
+        if (sctusable &&
+                sctusable->hasContent() &&
+                sctusable->content().pos("ESI/1.0")) {
             rv = 1;
+        }
 
         delete sctusable;
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -20,6 +20,7 @@
 #include "globals.h"
 #include "hier_code.h"
 #include "htcp.h"
+#include "http/Stream.h"
 #include "HttpRequest.h"
 #include "icmp/net_db.h"
 #include "ICP.h"
@@ -748,11 +749,12 @@ peerPingTimeout(void *data)
     StoreEntry *entry = psstate->entry;
 
     if (entry)
-        debugs(44, 3, "peerPingTimeout: '" << psstate->url() << "'" );
+        debugs(44, 3, psstate->url());
 
     if (!cbdataReferenceValid(psstate->callback_data)) {
         /* request aborted */
-        entry->ping_status = PING_DONE;
+        if (entry)
+            entry->ping_status = PING_DONE;
         cbdataReferenceDone(psstate->callback_data);
         delete psstate;
         return;
@@ -961,16 +963,17 @@ ps_state::ps_state() : request (NULL),
     ; // no local defaults.
 }
 
-const char *
+const SBuf
 ps_state::url() const
 {
     if (entry)
-        return entry->url();
+        return SBuf(entry->url());
 
     if (request)
-        return urlCanonical(request);
+        return request->effectiveRequestUri();
 
-    return "[no URL]";
+    static const SBuf noUrl("[no URL]");
+    return noUrl;
 }
 
 ping_data::ping_data() :

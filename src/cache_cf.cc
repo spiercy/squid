@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -52,13 +52,14 @@
 #include "redirect.h"
 #include "RefreshPattern.h"
 #include "rfc1738.h"
-#include "SBufList.h"
+#include "sbuf/SBufList.h"
 #include "SquidConfig.h"
 #include "SquidString.h"
 #include "ssl/ProxyCerts.h"
 #include "Store.h"
+#include "store/Disk.h"
+#include "store/Disks.h"
 #include "StoreFileSystem.h"
-#include "SwapDir.h"
 #include "tools.h"
 #include "util.h"
 #include "wordlist.h"
@@ -866,10 +867,24 @@ configDoConfigure(void)
     }
 
 #if USE_OPENSSL
+    if (Config.ssl_client.foreignIntermediateCertsPath)
+        Ssl::loadSquidUntrusted(Config.ssl_client.foreignIntermediateCertsPath);
+#endif
 
-    debugs(3, DBG_IMPORTANT, "Initializing https proxy context");
-
-    Config.ssl_client.sslContext = Security::ProxyOutgoingConfig.createContext(false);
+    if (Security::ProxyOutgoingConfig.encryptTransport) {
+        debugs(3, DBG_IMPORTANT, "Initializing https:// proxy context");
+        Config.ssl_client.sslContext = Security::ProxyOutgoingConfig.createClientContext(false);
+        if (!Config.ssl_client.sslContext) {
+#if USE_OPENSSL
+            fatal("ERROR: Could not initialize https:// proxy context");
+#else
+            debugs(3, DBG_IMPORTANT, "ERROR: proxying https:// currently still requires --with-openssl");
+#endif
+        }
+#if USE_OPENSSL
+        Ssl::useSquidUntrusted(Config.ssl_client.sslContext);
+#endif
+    }
 
     for (CachePeer *p = Config.peers; p != NULL; p = p->next) {
 
@@ -878,24 +893,22 @@ configDoConfigure(void)
             p->secure.sslDomain = p->host;
 
         if (p->secure.encryptTransport) {
-            debugs(3, DBG_IMPORTANT, "Initializing cache_peer " << p->name << " SSL context");
-            p->sslContext = p->secure.createContext(true);
+            debugs(3, DBG_IMPORTANT, "Initializing cache_peer " << p->name << " TLS context");
+            p->sslContext = p->secure.createClientContext(true);
+            if (!p->sslContext) {
+                debugs(3, DBG_CRITICAL, "ERROR: Could not initialize cache_peer " << p->name << " TLS context");
+                self_destruct();
+            }
         }
     }
 
+#if USE_OPENSSL
     for (AnyP::PortCfgPointer s = HttpPortList; s != NULL; s = s->next) {
-        if (!s->flags.tunnelSslBumping)
+        if (!s->secure.encryptTransport)
             continue;
-
-        debugs(3, DBG_IMPORTANT, "Initializing http_port " << s->s << " SSL context");
+        debugs(3, DBG_IMPORTANT, "Initializing " << AnyP::UriScheme(s->transport.protocol) << "_port " << s->s << " TLS context");
         s->configureSslServerContext();
     }
-
-    for (AnyP::PortCfgPointer s = HttpsPortList; s != NULL; s = s->next) {
-        debugs(3, DBG_IMPORTANT, "Initializing https_port " << s->s << " SSL context");
-        s->configureSslServerContext();
-    }
-
 #endif
 
     // prevent infinite fetch loops in the request parser
@@ -1723,7 +1736,7 @@ parse_http_header_replace(HeaderManglers **pm)
 #endif
 
 static void
-dump_cachedir(StoreEntry * entry, const char *name, SquidConfig::_cacheSwap swap)
+dump_cachedir(StoreEntry * entry, const char *name, const Store::DiskConfig &swap)
 {
     SwapDir *s;
     int i;
@@ -1812,7 +1825,7 @@ find_fstype(char *type)
 }
 
 static void
-parse_cachedir(SquidConfig::_cacheSwap * swap)
+parse_cachedir(Store::DiskConfig *swap)
 {
     char *type_str;
     char *path_str;
@@ -2154,6 +2167,8 @@ parse_peer(CachePeer ** head)
         } else if (!strncmp(token, "login=", 6)) {
             p->login = xstrdup(token + 6);
             rfc1738_unescape(p->login);
+        } else if (!strcmp(token, "auth-no-keytab")) {
+            p->options.auth_no_keytab = 1;
         } else if (!strncmp(token, "connect-timeout=", 16)) {
             p->connect_timeout = xatoi(token + 16);
         } else if (!strncmp(token, "connect-fail-limit=", 19)) {
@@ -2185,16 +2200,10 @@ parse_peer(CachePeer ** head)
 #if !USE_OPENSSL
             debugs(0, DBG_CRITICAL, "WARNING: cache_peer option '" << token << "' requires --with-openssl");
 #else
-            p->secure.encryptTransport = true;
             p->secure.parse(token+3);
 #endif
         } else if (strncmp(token, "tls-", 4) == 0) {
-#if !USE_OPENSSL
-            debugs(0, DBG_CRITICAL, "WARNING: cache_peer option '" << token << "' requires --with-openssl");
-#else
-            p->secure.encryptTransport = true;
             p->secure.parse(token+4);
-#endif
         } else if (strcmp(token, "front-end-https") == 0) {
             p->front_end_https = 1;
         } else if (strcmp(token, "front-end-https=on") == 0) {
@@ -2553,8 +2562,8 @@ dump_refreshpattern(StoreEntry * entry, const char *name, RefreshPattern * head)
     while (head != NULL) {
         storeAppendPrintf(entry, "%s%s %s %d %d%% %d",
                           name,
-                          head->flags.icase ? " -i" : null_string,
-                          head->pattern,
+                          head->pattern.flags&REG_ICASE ? " -i" : null_string,
+                          head->pattern.c_str(),
                           (int) head->min / 60,
                           (int) (100.0 * head->pct + 0.5),
                           (int) head->max / 60);
@@ -2657,9 +2666,7 @@ parse_refreshpattern(RefreshPattern ** head)
 
     min = (time_t) (i * 60);    /* convert minutes to seconds */
 
-    i = GetPercentage();    /* token: pct */
-
-    pct = (double) i / 100.0;
+    pct = GetPercentage(false);    /* token: pct . with no limit on size */
 
     i = GetInteger();       /* token: max */
 
@@ -2724,15 +2731,11 @@ parse_refreshpattern(RefreshPattern ** head)
 
     pct = pct < 0.0 ? 0.0 : pct;
     max = max < 0 ? 0 : max;
-    t = static_cast<RefreshPattern *>(xcalloc(1, sizeof(RefreshPattern)));
-    t->pattern = (char *) xstrdup(pattern);
-    t->compiled_pattern = comp;
+    t = new RefreshPattern(pattern, flags);
+    t->pattern.regex = comp;
     t->min = min;
     t->pct = pct;
     t->max = max;
-
-    if (flags & REG_ICASE)
-        t->flags.icase = true;
 
     if (refresh_ims)
         t->flags.refresh_ims = true;
@@ -2770,20 +2773,14 @@ parse_refreshpattern(RefreshPattern ** head)
 
     *head = t;
 
-    safe_free(pattern);
+    xfree(pattern);
 }
 
 static void
 free_refreshpattern(RefreshPattern ** head)
 {
-    RefreshPattern *t;
-
-    while ((t = *head) != NULL) {
-        *head = t->next;
-        safe_free(t->pattern);
-        regfree(&t->compiled_pattern);
-        safe_free(t);
-    }
+    delete *head;
+    *head = nullptr;
 
 #if USE_HTTP_VIOLATIONS
     refresh_nocache_hack = 0;
@@ -3562,52 +3559,41 @@ parse_port_option(AnyP::PortCfgPointer &s, char *token)
         }
 #if USE_OPENSSL
     } else if (strcmp(token, "sslBump") == 0) {
-        debugs(3, DBG_CRITICAL, "WARNING: '" << token << "' is deprecated " <<
+        debugs(3, DBG_PARSE_NOTE(1), "WARNING: '" << token << "' is deprecated " <<
                "in " << cfg_directive << ". Use 'ssl-bump' instead.");
         s->flags.tunnelSslBumping = true;
     } else if (strcmp(token, "ssl-bump") == 0) {
         s->flags.tunnelSslBumping = true;
     } else if (strncmp(token, "cert=", 5) == 0) {
-        safe_free(s->cert);
-        s->cert = xstrdup(token + 5);
+        s->secure.parse(token);
     } else if (strncmp(token, "key=", 4) == 0) {
-        safe_free(s->key);
-        s->key = xstrdup(token + 4);
+        s->secure.parse(token);
     } else if (strncmp(token, "version=", 8) == 0) {
         debugs(3, DBG_PARSE_NOTE(1), "UPGRADE WARNING: '" << token << "' is deprecated " <<
                "in " << cfg_directive << ". Use 'options=' instead.");
-        s->version = xatoi(token + 8);
-        if (s->version < 1 || s->version > 6)
-            self_destruct();
+        s->secure.parse(token);
     } else if (strncmp(token, "options=", 8) == 0) {
-        safe_free(s->options);
-        s->options = xstrdup(token + 8);
+        s->secure.parse(token);
     } else if (strncmp(token, "cipher=", 7) == 0) {
-        safe_free(s->cipher);
-        s->cipher = xstrdup(token + 7);
+        s->secure.parse(token);
     } else if (strncmp(token, "clientca=", 9) == 0) {
         safe_free(s->clientca);
         s->clientca = xstrdup(token + 9);
     } else if (strncmp(token, "cafile=", 7) == 0) {
-        safe_free(s->cafile);
-        s->cafile = xstrdup(token + 7);
+        debugs(3, DBG_PARSE_NOTE(1), "UPGRADE WARNING: '" << token << "' is deprecated " <<
+               "in " << cfg_directive << ". Use 'tls-cafile=' instead.");
+        s->secure.parse(token);
     } else if (strncmp(token, "capath=", 7) == 0) {
-        safe_free(s->capath);
-        s->capath = xstrdup(token + 7);
+        s->secure.parse(token);
     } else if (strncmp(token, "crlfile=", 8) == 0) {
-        safe_free(s->crlfile);
-        s->crlfile = xstrdup(token + 8);
+        s->secure.parse(token);
     } else if (strncmp(token, "dhparams=", 9) == 0) {
         debugs(3, DBG_PARSE_NOTE(DBG_IMPORTANT), "WARNING: '" << token << "' is deprecated " <<
                "in " << cfg_directive << ". Use 'tls-dh=' instead.");
-        safe_free(s->dhfile);
-        s->dhfile = xstrdup(token + 9);
-    } else if (strncmp(token, "tls-dh=", 7) == 0) {
-        safe_free(s->tls_dh);
-        s->tls_dh = xstrdup(token + 7);
+        s->secure.parse(token);
     } else if (strncmp(token, "sslflags=", 9) == 0) {
-        safe_free(s->sslflags);
-        s->sslflags = xstrdup(token + 9);
+        // NP: deprecation warnings output by secure.parse() when relevant
+        s->secure.parse(token+3);
     } else if (strncmp(token, "sslcontext=", 11) == 0) {
         safe_free(s->sslContextSessionId);
         s->sslContextSessionId = xstrdup(token + 11);
@@ -3620,6 +3606,8 @@ parse_port_option(AnyP::PortCfgPointer &s, char *token)
     } else if (strncmp(token, "dynamic_cert_mem_cache_size=", 28) == 0) {
         parseBytesOptionValue(&s->dynamicCertMemCacheSize, B_BYTES_STR, token + 28);
 #endif
+    } else if (strncmp(token, "tls-", 4) == 0) {
+        s->secure.parse(token+4);
     } else if (strcmp(token, "ftp-track-dirs") == 0) {
         s->ftp_track_dirs = true;
     } else {
@@ -3672,7 +3660,15 @@ parsePortCfg(AnyP::PortCfgPointer *head, const char *optionName)
         parse_port_option(s, token);
     }
 
+#if USE_OPENSSL
+    // if clientca has been defined but not cafile, then use it to verify
+    // but if cafile has been defined, only use that to verify
+    if (s->clientca && !s->secure.caFiles.size())
+        s->secure.caFiles.emplace_back(SBuf(s->clientca));
+#endif
+
     if (s->transport.protocol == AnyP::PROTO_HTTPS) {
+        s->secure.encryptTransport = true;
 #if USE_OPENSSL
         /* ssl-bump on https_port configuration requires either tproxy or intercept, and vice versa */
         const bool hijacked = s->flags.isIntercepted();
@@ -3800,37 +3796,11 @@ dump_generic_port(StoreEntry * e, const char *n, const AnyP::PortCfgPointer &s)
 #if USE_OPENSSL
     if (s->flags.tunnelSslBumping)
         storeAppendPrintf(e, " ssl-bump");
+#endif
 
-    if (s->cert)
-        storeAppendPrintf(e, " cert=%s", s->cert);
+    s->secure.dumpCfg(e, "tls-");
 
-    if (s->key)
-        storeAppendPrintf(e, " key=%s", s->key);
-
-    if (s->options)
-        storeAppendPrintf(e, " options=%s", s->options);
-
-    if (s->cipher)
-        storeAppendPrintf(e, " cipher=%s", s->cipher);
-
-    if (s->cafile)
-        storeAppendPrintf(e, " cafile=%s", s->cafile);
-
-    if (s->capath)
-        storeAppendPrintf(e, " capath=%s", s->capath);
-
-    if (s->crlfile)
-        storeAppendPrintf(e, " crlfile=%s", s->crlfile);
-
-    if (s->dhfile)
-        storeAppendPrintf(e, " dhparams=%s", s->dhfile);
-
-    if (s->tls_dh)
-        storeAppendPrintf(e, " tls-dh=%s", s->tls_dh);
-
-    if (s->sslflags)
-        storeAppendPrintf(e, " sslflags=%s", s->sslflags);
-
+#if USE_OPENSSL
     if (s->sslContextSessionId)
         storeAppendPrintf(e, " sslcontext=%s", s->sslContextSessionId);
 
@@ -3857,6 +3827,7 @@ configFreeMemory(void)
     free_all();
 #if USE_OPENSSL
     SSL_CTX_free(Config.ssl_client.sslContext);
+    Ssl::unloadSquidUntrusted();
 #endif
 }
 
@@ -3874,7 +3845,7 @@ requirePathnameExists(const char *name, const char *path)
     }
 
     if (stat(path, &sb) < 0) {
-        debugs(0, DBG_CRITICAL, (opt_parse_cfg_only?"FATAL ":"") << "ERROR: " << name << " " << path << ": " << xstrerror());
+        debugs(0, DBG_CRITICAL, (opt_parse_cfg_only?"FATAL: ":"ERROR: ") << name << " " << path << ": " << xstrerror());
         // keep going to find more issues if we are only checking the config file with "-k parse"
         if (opt_parse_cfg_only)
             return;
@@ -4641,9 +4612,9 @@ static void parse_HeaderWithAclList(HeaderWithAclList **headers)
     }
     HeaderWithAcl hwa;
     hwa.fieldName = fn;
-    hwa.fieldId = httpHeaderIdByNameDef(fn, strlen(fn));
-    if (hwa.fieldId == HDR_BAD_HDR)
-        hwa.fieldId = HDR_OTHER;
+    hwa.fieldId = Http::HeaderLookupTable.lookup(hwa.fieldName).id;
+    if (hwa.fieldId == Http::HdrType::BAD_HDR)
+        hwa.fieldId = Http::HdrType::OTHER;
 
     Format::Format *nlf =  new ::Format::Format("hdrWithAcl");
     ConfigParser::EnableMacros();

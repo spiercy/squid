@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -8,6 +8,8 @@
 
 #ifndef _SQUID_SRC_AUTH_BASIC_USERREQUEST_H
 #define _SQUID_SRC_AUTH_BASIC_USERREQUEST_H
+
+#if HAVE_AUTH_MODULE_BASIC
 
 #include "auth/UserRequest.h"
 
@@ -31,7 +33,7 @@ public:
     virtual ~UserRequest() { assert(LockCount()==0); }
 
     virtual int authenticated() const;
-    virtual void authenticate(HttpRequest * request, ConnStateData *conn, http_hdr_type type);
+    virtual void authenticate(HttpRequest * request, ConnStateData *conn, Http::HdrType type);
     virtual Auth::Direction module_direction();
     virtual void startHelperLookup(HttpRequest * request, AccessLogEntry::Pointer &al, AUTHCB *, void *);
     virtual const char *credentialsStr();
@@ -43,5 +45,6 @@ private:
 } // namespace Basic
 } // namespace Auth
 
+#endif /* HAVE_AUTH_MODULE_BASIC */
 #endif /* _SQUID_SRC_AUTH_BASIC_USERREQUEST_H */
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -24,34 +24,128 @@
 
 #include <vector>
 
+#define abortFlags(CONTENT) \
+   do { \
+    debugs(28, 0, CONTENT); \
+    self_destruct(); \
+   } while (0)
+
 const ACLFlag ACLFlags::NoFlags[1] = {ACL_F_END};
 
 const char *AclMatchedName = NULL;
 
-bool ACLFlags::supported(const ACLFlag f) const
+ACLFlags::FlagsTokenizer::FlagsTokenizer(): tokPos(NULL) { }
+
+ACLFlag
+ACLFlags::FlagsTokenizer::nextFlag()
+{
+    if (needNextToken()) {
+        if (!nextToken())
+            return 0;
+    } else
+        ++tokPos;
+    return *tokPos;
+}
+
+bool
+ACLFlags::FlagsTokenizer::hasParameter() const
+{
+    return tokPos && tokPos[0] && tokPos[1] == '=' && tokPos[2];
+}
+
+SBuf
+ACLFlags::FlagsTokenizer::getParameter() const
+{
+    return hasParameter() ? SBuf(&tokPos[2]) : SBuf();
+}
+
+bool
+ACLFlags::FlagsTokenizer::needNextToken() const
+{
+    return !tokPos || !tokPos[0] || !tokPos[1] || tokPos[1] == '=';
+}
+
+bool
+ACLFlags::FlagsTokenizer::nextToken()
+{
+    char *t = ConfigParser::PeekAtToken();
+    if (t == NULL || t[0] != '-' || !t[1])
+        return false;
+    (void)ConfigParser::NextQuotedToken();
+    if (strcmp(t, "--") == 0)
+        return false;
+    tokPos = t + 1;
+    return true;
+}
+
+ACLFlags::~ACLFlags()
+{
+    delete delimiters_;
+}
+
+ACLFlags::Status
+ACLFlags::flagStatus(const ACLFlag f) const
 {
     if (f == ACL_F_REGEX_CASE)
-        return true;
-    return (supported_.find(f) != std::string::npos);
+        return noParameter;
+    if (f == ACL_F_SUBSTRING)
+        return parameterOptional;
+    if (supported_.find(f) != std::string::npos)
+        return noParameter;
+    return notSupported;
+}
+
+bool
+ACLFlags::parameterSupported(const ACLFlag f, const SBuf &val) const
+{
+    if (f == ACL_F_SUBSTRING)
+        return val.findFirstOf(CharacterSet::ALPHA + CharacterSet::DIGIT) == SBuf::npos;
+    return true;
+}
+
+void
+ACLFlags::makeSet(const ACLFlag f, const SBuf &param)
+{
+    flags_ |= flagToInt(f);
+    if (!param.isEmpty())
+        flagParameters_[f].append(param);
+}
+
+void
+ACLFlags::makeUnSet(const ACLFlag f)
+{
+    flags_ &= ~flagToInt(f);
+    flagParameters_[f].clear();
 }
 
 void
 ACLFlags::parseFlags()
 {
-    char *nextToken;
-    while ((nextToken = ConfigParser::PeekAtToken()) != NULL && nextToken[0] == '-') {
-        (void)ConfigParser::NextToken(); //Get token from cfg line
-        //if token is the "--" break flag
-        if (strcmp(nextToken, "--") == 0)
+    FlagsTokenizer tokenizer;
+    ACLFlag flag('\0');
+    while ((flag = tokenizer.nextFlag())) {
+        switch (flagStatus(flag))
+        {
+        case notSupported:
+            abortFlags("Flag '" << flag << "' not supported");
             break;
-
-        for (const char *flg = nextToken+1; *flg!='\0'; flg++ ) {
-            if (supported(*flg)) {
-                makeSet(*flg);
-            } else {
-                debugs(28, 0, HERE << "Flag '" << *flg << "' not supported");
-                self_destruct();
+        case noParameter:
+            makeSet(flag);
+            break;
+        case parameterRequired:
+            if (!tokenizer.hasParameter()) {
+                abortFlags("Flag '" << flag << "' must have a parameter");
+                break;
             }
+        case parameterOptional:
+            SBuf param;
+            if (tokenizer.hasParameter()) {
+                param = tokenizer.getParameter();
+                if (!parameterSupported(flag, param))
+                    abortFlags("Parameter '" << param << "' for flag '" << flag << "' not supported");
+            }
+            makeSet(flag, param);
+            break;
         }
     }
 
@@ -60,6 +154,27 @@ ACLFlags::parseFlags()
         ConfigParser::TokenPutBack("-i");
         makeUnSet('i');
     }
+}
+
+SBuf
+ACLFlags::parameter(const ACLFlag f) const
+{
+    assert(static_cast<uint32_t>(f - 'A') < FlagIndexMax);
+    auto p = flagParameters_.find(f);
+    return p == flagParameters_.end() ? SBuf() : p->second;
+}
+
+const CharacterSet *
+ACLFlags::delimiters()
+{
+    if (isSet(ACL_F_SUBSTRING) && !delimiters_) {
+        static const SBuf defaultParameter(",");
+        SBuf rawParameter = parameter(ACL_F_SUBSTRING);
+        if (rawParameter.isEmpty())
+            rawParameter = defaultParameter;
+        delimiters_ = new CharacterSet("ACLFlags::delimiters", rawParameter.c_str());
+    }
+    return delimiters_;
 }
 
 const char *
@@ -120,8 +235,17 @@ ACL::Factory (char const *type)
 }
 
 ACL::ACL() :
+    cfgline(nullptr),
+    next(nullptr),
+    registered(false)
+{
+    *name = 0;
+}
+
+ACL::ACL(const ACLFlag flgs[]) :
     cfgline(NULL),
     next(NULL),
+    flags(flgs),
     registered(false)
 {
     *name = 0;
@@ -144,13 +268,20 @@ ACL::matches(ACLChecklist *checklist) const
     AclMatchedName = name;
 
     int result = 0;
-    if (!checklist->hasRequest() && requiresRequest()) {
+    if (!checklist->hasAle() && requiresAle()) {
+        debugs(28, DBG_IMPORTANT, "WARNING: " << name << " ACL is used in " <<
+               "context without an ALE state. Assuming mismatch.");
+    } else if (!checklist->hasRequest() && requiresRequest()) {
         debugs(28, DBG_IMPORTANT, "WARNING: " << name << " ACL is used in " <<
                "context without an HTTP request. Assuming mismatch.");
     } else if (!checklist->hasReply() && requiresReply()) {
         debugs(28, DBG_IMPORTANT, "WARNING: " << name << " ACL is used in " <<
                "context without an HTTP response. Assuming mismatch.");
     } else {
+        // make sure the ALE has as much data as possible
+        if (requiresAle())
+            checklist->syncAle();
+
         // have to cast because old match() API is missing const
         result = const_cast<ACL*>(this)->match(checklist);
     }
@@ -228,6 +359,10 @@ ACL::ParseAclLine(ConfigParser &parser, ACL ** head)
         }
         theType = "localport";
         debugs(28, DBG_IMPORTANT, "UPGRADE: ACL 'myport' type is has been renamed to 'localport' and matches the port the client connected to.");
+    } else if (strcmp(theType, "proto") == 0 && strcmp(aclname, "manager") == 0) {
+        // ACL manager is now a built-in and has a different type.
+        debugs(28, DBG_PARSE_NOTE(DBG_IMPORTANT), "UPGRADE: ACL 'manager' is now a built-in ACL. Remove it from your config file.");
+        return; // ignore the line
     }
 
     if (!Prototype::Registered(theType)) {
@@ -334,9 +469,7 @@ ACL::cacheMatchAcl(dlink_list * cache, ACLChecklist *checklist)
         link = link->next;
     }
 
-    auth_match = new acl_proxy_auth_match_cache();
-    auth_match->matchrv = matchForCache (checklist);
-    auth_match->acl_data = this;
+    auth_match = new acl_proxy_auth_match_cache(matchForCache(checklist), this);
     dlinkAddTail(auth_match, &auth_match->link, cache);
     debugs(28, 4, "ACL::cacheMatchAcl: miss for '" << name << "'. Adding result " << auth_match->matchrv);
     return auth_match->matchrv;
@@ -358,6 +491,12 @@ aclCacheMatchFlush(dlink_list * cache)
         dlinkDelete(tmplink, cache);
         delete auth_match;
     }
+}
+
+bool
+ACL::requiresAle() const
+{
+    return false;
 }
 
 bool

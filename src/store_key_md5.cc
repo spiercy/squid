@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -118,11 +118,11 @@ storeKeyPublicByRequestMethod(HttpRequest * request, const HttpRequestMethod& me
 {
     static cache_key digest[SQUID_MD5_DIGEST_LENGTH];
     unsigned char m = (unsigned char) method.id();
-    const char *url = request->storeId(); /* storeId returns the right storeID\canonical URL for the md5 calc */
+    const SBuf url = request->storeId(); /* returns the right storeID\URL for the MD5 calc */
     SquidMD5_CTX M;
     SquidMD5Init(&M);
     SquidMD5Update(&M, &m, sizeof(m));
-    SquidMD5Update(&M, (unsigned char *) url, strlen(url));
+    SquidMD5Update(&M, (unsigned char *) url.rawContent(), url.length());
 
     if (request->vary_headers) {
         SquidMD5Update(&M, (unsigned char *) request->vary_headers, strlen(request->vary_headers));

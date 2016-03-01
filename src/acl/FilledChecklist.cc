@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,6 +12,7 @@
 #include "comm/Connection.h"
 #include "comm/forward.h"
 #include "ExternalACLEntry.h"
+#include "http/Stream.h"
 #include "HttpReply.h"
 #include "HttpRequest.h"
 #include "SquidConfig.h"
@@ -66,10 +67,66 @@ ACLFilledChecklist::~ACLFilledChecklist()
     debugs(28, 4, HERE << "ACLFilledChecklist destroyed " << this);
 }
 
+static void
+showDebugWarning(const char *msg)
+{
+    static uint16_t count = 0;
+    if (count > 10)
+        return;
+
+    ++count;
+    debugs(28, DBG_IMPORTANT, "ALE missing " << msg);
+}
+
+void
+ACLFilledChecklist::syncAle() const
+{
+    // make sure the ALE fields used by Format::assemble to
+    // fill the old external_acl_type codes are set if any
+    // data on them exists in the Checklist
+
+    if (!al->cache.port && conn()) {
+        showDebugWarning("listening port");
+        al->cache.port = conn()->port;
+    }
+
+    if (request) {
+        if (!al->request) {
+            showDebugWarning("HttpRequest object");
+            al->request = request;
+            HTTPMSGLOCK(al->request);
+        }
+
+        if (!al->adapted_request) {
+            showDebugWarning("adapted HttpRequest object");
+            al->adapted_request = request;
+            HTTPMSGLOCK(al->adapted_request);
+        }
+
+        if (!al->url) {
+            showDebugWarning("URL");
+            al->url = xstrdup(request->url.absolute().c_str());
+        }
+    }
+
+    if (reply && !al->reply) {
+        showDebugWarning("HttpReply object");
+        al->reply = reply;
+        HTTPMSGLOCK(al->reply);
+    }
+
+#if USE_IDENT
+    if (*rfc931 && !al->cache.rfc931) {
+        showDebugWarning("IDENT");
+        al->cache.rfc931 = xstrdup(rfc931);
+    }
+#endif
+}
+
 ConnStateData *
 ACLFilledChecklist::conn() const
 {
-    return  conn_;
+    return cbdataReferenceValid(conn_) ? conn_ : nullptr;
 }
 
 void
@@ -84,13 +141,15 @@ ACLFilledChecklist::conn(ConnStateData *aConn)
 int
 ACLFilledChecklist::fd() const
 {
-    return (conn_ != NULL && conn_->clientConnection != NULL) ? conn_->clientConnection->fd : fd_;
+    const auto c = conn();
+    return (c && c->clientConnection) ? c->clientConnection->fd : fd_;
 }
 
 void
 ACLFilledChecklist::fd(int aDescriptor)
 {
-    assert(!conn() || conn()->clientConnection == NULL || conn()->clientConnection->fd == aDescriptor);
+    const auto c = conn();
+    assert(!c || !c->clientConnection || c->clientConnection->fd == aDescriptor);
     fd_ = aDescriptor;
 }
 
@@ -158,9 +217,7 @@ ACLFilledChecklist::ACLFilledChecklist(const acl_access *A, HttpRequest *http_re
     dst_addr.setEmpty();
     rfc931[0] = '\0';
 
-    // cbdataReferenceDone() is in either fastCheck() or the destructor
-    if (A)
-        accessList = cbdataReference(A);
+    changeAcl(A);
 
     if (http_request != NULL) {
         request = http_request;

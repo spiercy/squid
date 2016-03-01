@@ -1,4 +1,4 @@
-## Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+## Copyright (C) 1996-2016 The Squid Software Foundation and contributors
 ##
 ## Squid software is distributed under GPLv2+ license and includes
 ## contributions from numerous individuals and organizations.
@@ -19,40 +19,24 @@ libbase_la_SOURCES = \
 	AsyncJobCalls.h \
 	AsyncCallQueue.cc \
 	AsyncCallQueue.h \
+	ByteCounter.h \
 	CbcPointer.h \
 	CbDataList.h \
 	CharacterSet.h \
 	CharacterSet.cc \
+	EnumIterator.h \
 	InstanceId.h \
 	Lock.h \
+	LookupTable.h \
 	LruMap.h \
 	Packable.h \
+	PackableStream.h \
+	RegexPattern.cc \
+	RegexPattern.h \
 	RunnersRegistry.cc \
 	RunnersRegistry.h \
 	Subscription.h \
 	TextException.cc \
 	TextException.h \
-	TidyPointer.h
-
-EXTRA_PROGRAMS = \
-	testCharacterSet
-
-check_PROGRAMS += testCharacterSet
-TESTS += testCharacterSet
-
-testCharacterSet_SOURCES = \
-	CharacterSet.h \
-	testCharacterSet.h \
-	testCharacterSet.cc
-nodist_testCharacterSet_SOURCES = \
-	$(top_srcdir)/src/tests/stub_debug.cc \
-	$(top_srcdir)/src/tests/stub_MemBuf.cc \
-	$(top_srcdir)/src/tests/stub_cbdata.cc
-testCharacterSet_LDFLAGS = $(LIBADD_DL)
-testCharacterSet_LDADD=\
-	$(SQUID_CPPUNIT_LIBS) \
-	$(SQUID_CPPUNIT_LA) \
-	libbase.la \
-	$(COMPAT_LIB) \
-	$(XTRA_LIBS)
-testCharacterSet_DEPENDENCIES= $(SQUID_CPPUNIT_LA)
+	TidyPointer.h \
+	YesNoNone.h

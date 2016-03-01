@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -49,6 +49,19 @@ AccessLogEntry::getLogClientIp(char *buf, size_t bufsz) const
     log_ip.toStr(buf, bufsz);
 }
 
+SBuf
+AccessLogEntry::getLogMethod() const
+{
+    SBuf method;
+    if (icp.opcode)
+        method.append(icp_opcode_str[icp.opcode]);
+    else if (htcp.opcode)
+        method.append(htcp.opcode);
+    else
+        method = http.method.image();
+    return method;
+}
+
 AccessLogEntry::~AccessLogEntry()
 {
     safe_free(headers.request);
@@ -61,6 +74,9 @@ AccessLogEntry::~AccessLogEntry()
 
     safe_free(headers.adapted_request);
     HTTPMSGUNLOCK(adapted_request);
+
+    safe_free(lastAclName);
+    safe_free(lastAclData);
 
     HTTPMSGUNLOCK(reply);
     HTTPMSGUNLOCK(request);

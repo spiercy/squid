@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -66,14 +66,6 @@ public:
     /// whether the client is likely to be able to handle a 1xx reply
     bool canHandle1xx() const;
 
-    /* HACK: This method is only inline to get around Makefile dependancies */
-    /*      caused by HttpRequest being used in places it really shouldn't. */
-    /*      ideally URL would be used directly instead.                     */
-    inline void SetHost(const char *src) {
-        url.host(src);
-        safe_free(canonical); // force its re-build
-    };
-
 #if USE_ADAPTATION
     /// Returns possibly nil history, creating it if adapt. logging is enabled
     Adaptation::History::Pointer adaptLogHistory() const;
@@ -116,9 +108,8 @@ public:
     Auth::UserRequest::Pointer auth_user_request;
 #endif
 
-    String urlpath;
-
-    char *canonical;
+    /// RFC 7230 section 5.5 - Effective Request URI
+    const SBuf &effectiveRequestUri() const;
 
     /**
      * If defined, store_id_program mapped the request URL to this ID.
@@ -190,13 +181,11 @@ public:
 
     bool parseFirstLine(const char *start, const char *end);
 
-    bool parseHeader(Http1::RequestParser &hp); // TODO move this function to the parser
-
     virtual bool expectingBody(const HttpRequestMethod& unused, int64_t&) const;
 
     bool bodyNibbled() const; // the request has a [partially] consumed body
 
-    int prefixLen();
+    int prefixLen() const;
 
     void swapOut(StoreEntry * e);
 
@@ -213,10 +202,9 @@ public:
     /**
      * Returns the current StoreID for the request as a nul-terminated char*.
      * Always returns the current id for the request
-     * (either the request canonical url or modified ID by the helper).
-     * Does not return NULL.
+     * (either the effective request URI or modified ID by the helper).
      */
-    const char *storeId();
+    const SBuf storeId();
 
     /**
      * The client connection manager, if known;
@@ -230,8 +218,6 @@ public:
     int64_t getRangeOffsetLimit(); /* the result of this function gets cached in rangeOffsetLimit */
 
 private:
-    const char *packableURI(bool full_uri) const;
-
     mutable int64_t rangeOffsetLimit;  /* caches the result of getRangeOffsetLimit */
 
 protected:

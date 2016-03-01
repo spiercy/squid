@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,7 +12,9 @@
 #include "anyp/UriScheme.h"
 #include "ip/Address.h"
 #include "rfc2181.h"
-#include "SBuf.h"
+#include "sbuf/SBuf.h"
+
+#include <iosfwd>
 
 /**
  * The URL class represents a Uniform Resource Location
@@ -24,8 +26,8 @@ class URL
     MEMPROXY_CLASS(URL);
 
 public:
-    URL() : scheme_(), hostIsNumeric_(false), port_(0) {*host_=0;}
-    URL(AnyP::UriScheme const &aScheme) : scheme_(aScheme), hostIsNumeric_(false), port_(0) {*host_=0;}
+    URL() : hostIsNumeric_(false), port_(0) {*host_=0;}
+    URL(AnyP::UriScheme const &aScheme);
 
     void clear() {
         scheme_=AnyP::PROTO_NONE;
@@ -53,6 +55,13 @@ public:
     void port(unsigned short p) {port_=p; touch();}
     unsigned short port() const {return port_;}
 
+    void path(const char *p) {path_=p; touch();}
+    void path(const SBuf &p) {path_=p; touch();}
+    const SBuf &path() const;
+
+    /// the static '/' default URL-path
+    static const SBuf &SlashPath();
+
     /// the static '*' pseudo-URL
     static const SBuf &Asterisk();
 
@@ -67,6 +76,15 @@ public:
      *                    the current scheme.
      */
     SBuf &authority(bool requirePort = false) const;
+
+    /**
+     * The absolute-form URI for currently stored values.
+     *
+     * As defined by RFC 7230 section 5.3.3 this form omits the
+     * userinfo@ field from RFC 3986 defined authority segments
+     * when the protocol scheme is http: or https:.
+     */
+    SBuf &absolute() const;
 
 private:
     /**
@@ -101,18 +119,29 @@ private:
 
     unsigned short port_;   ///< URL port
 
+    // XXX: for now includes query-string.
+    SBuf path_;     ///< URL path segment
+
     // pre-assembled URL forms
     mutable SBuf authorityHttp_;     ///< RFC 7230 section 5.3.3 authority, maybe without default-port
     mutable SBuf authorityWithPort_; ///< RFC 7230 section 5.3.3 authority with explicit port
+    mutable SBuf absolute_;          ///< RFC 7230 section 5.3.2 absolute-URI
 };
+
+inline std::ostream &
+operator <<(std::ostream &os, const URL &url)
+{
+    if (const char *sc = url.getScheme().c_str())
+        os << sc << ":";
+    os << "//" << url.authority() << url.path();
+    return os;
+}
 
 class HttpRequest;
 class HttpRequestMethod;
 
-AnyP::ProtocolType urlParseProtocol(const char *, const char *e = NULL);
 void urlInitialize(void);
 HttpRequest *urlParse(const HttpRequestMethod&, char *, HttpRequest *request = NULL);
-const char *urlCanonical(HttpRequest *);
 char *urlCanonicalClean(const HttpRequest *);
 const char *urlCanonicalFakeHttps(const HttpRequest * request);
 bool urlIsRelative(const char *);

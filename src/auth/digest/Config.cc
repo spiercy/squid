@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,12 +13,14 @@
  * See acl.c for access control and client_side.c for auditing */
 
 #include "squid.h"
+#include "auth/CredentialsCache.h"
 #include "auth/digest/Config.h"
 #include "auth/digest/Scheme.h"
 #include "auth/digest/User.h"
 #include "auth/digest/UserRequest.h"
 #include "auth/Gadgets.h"
 #include "auth/State.h"
+#include "base/LookupTable.h"
 #include "base64.h"
 #include "cache_cf.h"
 #include "event.h"
@@ -28,7 +30,7 @@
 #include "HttpRequest.h"
 #include "mgr/Registration.h"
 #include "rfc2617.h"
-#include "SBuf.h"
+#include "sbuf/SBuf.h"
 #include "SquidTime.h"
 #include "Store.h"
 #include "StrList.h"
@@ -60,23 +62,25 @@ enum http_digest_attr_type {
     DIGEST_NC,
     DIGEST_CNONCE,
     DIGEST_RESPONSE,
-    DIGEST_ENUM_END
+    DIGEST_INVALID_ATTR
 };
 
-static const HttpHeaderFieldAttrs DigestAttrs[DIGEST_ENUM_END] = {
-    HttpHeaderFieldAttrs("username",  (http_hdr_type)DIGEST_USERNAME),
-    HttpHeaderFieldAttrs("realm", (http_hdr_type)DIGEST_REALM),
-    HttpHeaderFieldAttrs("qop", (http_hdr_type)DIGEST_QOP),
-    HttpHeaderFieldAttrs("algorithm", (http_hdr_type)DIGEST_ALGORITHM),
-    HttpHeaderFieldAttrs("uri", (http_hdr_type)DIGEST_URI),
-    HttpHeaderFieldAttrs("nonce", (http_hdr_type)DIGEST_NONCE),
-    HttpHeaderFieldAttrs("nc", (http_hdr_type)DIGEST_NC),
-    HttpHeaderFieldAttrs("cnonce", (http_hdr_type)DIGEST_CNONCE),
-    HttpHeaderFieldAttrs("response", (http_hdr_type)DIGEST_RESPONSE),
+static const LookupTable<http_digest_attr_type>::Record
+DigestAttrs[] = {
+    {"username", DIGEST_USERNAME},
+    {"realm", DIGEST_REALM},
+    {"qop", DIGEST_QOP},
+    {"algorithm", DIGEST_ALGORITHM},
+    {"uri", DIGEST_URI},
+    {"nonce", DIGEST_NONCE},
+    {"nc", DIGEST_NC},
+    {"cnonce", DIGEST_CNONCE},
+    {"response", DIGEST_RESPONSE},
+    {nullptr, DIGEST_INVALID_ATTR}
 };
 
-class HttpHeaderFieldInfo;
-static HttpHeaderFieldInfo *DigestFieldsInfo = NULL;
+LookupTable<http_digest_attr_type>
+DigestFieldsLookupTable(DIGEST_INVALID_ATTR, DigestAttrs);
 
 /*
  *
@@ -156,7 +160,7 @@ authenticateDigestNonceNew(void)
     // NP: this will likely produce the same randomness sequences for each worker
     // since they should all start within the 1-second resolution of seed value.
     static std::mt19937 mt(static_cast<uint32_t>(getCurrentTime() & 0xFFFFFFFF));
-    static std::uniform_int_distribution<uint32_t> newRandomData;
+    static xuniform_int_distribution<uint32_t> newRandomData;
 
     /* create a new nonce */
     newnonce->nc = 0;
@@ -506,7 +510,7 @@ Auth::Digest::Config::configured() const
 
 /* add the [www-|Proxy-]authenticate header on a 407 or 401 reply */
 void
-Auth::Digest::Config::fixHeader(Auth::UserRequest::Pointer auth_user_request, HttpReply *rep, http_hdr_type hdrType, HttpRequest *)
+Auth::Digest::Config::fixHeader(Auth::UserRequest::Pointer auth_user_request, HttpReply *rep, Http::HdrType hdrType, HttpRequest *)
 {
     if (!authenticateProgram)
         return;
@@ -545,7 +549,6 @@ void
 Auth::Digest::Config::init(Auth::Config *)
 {
     if (authenticateProgram) {
-        DigestFieldsInfo = httpHeaderBuildFieldsInfo(DigestAttrs, DIGEST_ENUM_END);
         authenticateDigestNonceSetup();
         authdigest_initialised = 1;
 
@@ -580,11 +583,6 @@ Auth::Digest::Config::done()
 
     if (digestauthenticators)
         helperShutdown(digestauthenticators);
-
-    if (DigestFieldsInfo) {
-        httpHeaderDestroyFieldsInfo(DigestFieldsInfo, DIGEST_ENUM_END);
-        DigestFieldsInfo = NULL;
-    }
 
     if (!shutting_down)
         return;
@@ -675,7 +673,7 @@ authDigestNonceUserUnlink(digest_nonce_h * nonce)
         if (tmplink->data == nonce) {
             dlinkDelete(tmplink, &digest_user->nonces);
             authDigestNonceUnlink(static_cast < digest_nonce_h * >(tmplink->data));
-            dlinkNodeDelete(tmplink);
+            delete tmplink;
             link = NULL;
         }
     }
@@ -705,7 +703,7 @@ authDigestUserLinkNonce(Auth::Digest::User * user, digest_nonce_h * nonce)
     if (node)
         return;
 
-    node = dlinkNodeNew();
+    node = new dlink_node;
 
     dlinkAddTail(nonce, node, &digest_user->nonces);
 
@@ -815,7 +813,7 @@ Auth::Digest::Config::decode(char const *proxy_auth, const char *aRequestRealm)
         }
 
         /* find type */
-        http_digest_attr_type t = (http_digest_attr_type)httpHeaderIdByName(item, nlen, DigestFieldsInfo, DIGEST_ENUM_END);
+        const http_digest_attr_type t = DigestFieldsLookupTable.lookup(keyName);
 
         switch (t) {
         case DIGEST_USERNAME:
@@ -1045,7 +1043,7 @@ Auth::Digest::Config::decode(char const *proxy_auth, const char *aRequestRealm)
     Auth::User::Pointer auth_user;
 
     SBuf key = Auth::User::BuildUserKey(username, aRequestRealm);
-    if (key.isEmpty() || (auth_user = findUserInCache(key.c_str(), Auth::AUTH_DIGEST)) == NULL) {
+    if (key.isEmpty() || !(auth_user = Auth::Digest::User::Cache()->lookup(key))) {
         /* the user doesn't exist in the username cache yet */
         debugs(29, 9, "Creating new digest user '" << username << "'");
         digest_user = new Auth::Digest::User(this, aRequestRealm);

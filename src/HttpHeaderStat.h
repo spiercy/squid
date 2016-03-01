@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -9,6 +9,8 @@
 #ifndef HTTPHEADERSTAT_H_
 #define HTTPHEADERSTAT_H_
 
+#include "HttpHdrCc.h"
+#include "HttpHdrSc.h"
 #include "StatHist.h"
 
 /// HTTP per header statistics
@@ -25,8 +27,8 @@ public:
         busyDestroyedCount(0)
     {
         hdrUCountDistr.enumInit(32);    /* not a real enum */
-        fieldTypeDistr.enumInit(HDR_ENUM_END);
-        ccTypeDistr.enumInit(CC_ENUM_END);
+        fieldTypeDistr.enumInit(Http::HdrType::enumEnd_);
+        ccTypeDistr.enumInit(HttpHdrCcType::CC_ENUM_END);
         scTypeDistr.enumInit(SC_ENUM_END);
     }
 
@@ -41,8 +43,8 @@ public:
     {
         assert(label);
         hdrUCountDistr.enumInit(32);    /* not a real enum */
-        fieldTypeDistr.enumInit(HDR_ENUM_END);
-        ccTypeDistr.enumInit(CC_ENUM_END);
+        fieldTypeDistr.enumInit(Http::HdrType::enumEnd_);
+        ccTypeDistr.enumInit(HttpHdrCcType::CC_ENUM_END);
         scTypeDistr.enumInit(SC_ENUM_END);
     }
 

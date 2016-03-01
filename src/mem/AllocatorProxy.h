@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -18,11 +18,15 @@ class MemPoolMeter;
  *
  * Pool and account the memory used for the CLASS object.
  * This macro is intended for use within the declaration of a class.
+ *
+ * The memory block allocated by operator new is not zeroed; it is the
+ * responsibility of users to ensure that constructors correctly
+ * initialize all data members.
  */
 #define MEMPROXY_CLASS(CLASS) \
     private: \
     static inline Mem::AllocatorProxy &Pool() { \
-        static Mem::AllocatorProxy thePool(#CLASS, sizeof(CLASS)); \
+        static Mem::AllocatorProxy thePool(#CLASS, sizeof(CLASS), false); \
         return thePool; \
     } \
     public: \
@@ -31,7 +35,11 @@ class MemPoolMeter;
         assert(byteCount == sizeof(CLASS)); \
         return Pool().alloc(); \
     } \
-    void operator delete(void *address) {Pool().freeOne(address);} \
+    void operator delete(void *address) { \
+        if (address) \
+            Pool().freeOne(address); \
+    } \
+    static int UseCount() { return Pool().inUseCount(); } \
     private:
 
 namespace Mem
@@ -43,10 +51,11 @@ namespace Mem
 class AllocatorProxy
 {
 public:
-    AllocatorProxy(char const *aLabel, size_t const &aSize):
+    AllocatorProxy(char const *aLabel, size_t const &aSize, bool doZeroBlocks = true):
         label(aLabel),
         size(aSize),
-        theAllocator(NULL)
+        theAllocator(nullptr),
+        doZero(doZeroBlocks)
     {}
 
     /// Allocate one element from the pool
@@ -67,12 +76,15 @@ public:
      */
     int getStats(MemPoolStats * stats);
 
+    void zeroBlocks(bool doIt);
+
 private:
     MemAllocator *getAllocator() const;
 
     const char *label;
     size_t size;
     mutable MemAllocator *theAllocator;
+    bool doZero;
 };
 
 } // namespace Mem

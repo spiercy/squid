@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,8 +12,6 @@
 #define _SQUID_SRC_MEM_FORWARD_H
 
 #include "mem/AllocatorProxy.h"
-/* for FREE */
-#include "typedefs.h"
 
 #include <iosfwd>
 
@@ -21,6 +19,7 @@ class StoreEntry;
 class MemPoolStats;
 class MemPoolMeter;
 
+/// Memory Management
 namespace Mem
 {
 void Init();
@@ -33,6 +32,9 @@ void PoolReport(const MemPoolStats * mp_st, const MemPoolMeter * AllMeter, std::
 
 extern const size_t squidSystemPageSize;
 
+/// \deprecated use MEMPROXY_CLASS instead.
+typedef void FREE(void *);
+
 /// Types of memory pool which do not yet use MEMPROXY_CLASS() API
 typedef enum {
     MEM_NONE,
@@ -44,9 +46,6 @@ typedef enum {
     MEM_64K_BUF,
     MEM_ACL_DENY_INFO_LIST,
     MEM_ACL_NAME_LIST,
-#if USE_CACHE_DIGESTS
-    MEM_CACHE_DIGEST,
-#endif
     MEM_CLIENT_INFO,
     MEM_LINK_LIST,
     MEM_DLINK_NODE,
@@ -56,7 +55,6 @@ typedef enum {
     MEM_MD5_DIGEST,
     MEM_NETDBENTRY,
     MEM_NET_DB_NAME,
-    MEM_RELIST,
     // IMPORTANT: leave this here. pools above are initialized early with memInit()
     MEM_DONTFREE,
     // following pools are initialized late by their component if needed (or never)

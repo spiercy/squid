@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -23,6 +23,9 @@
 #if USE_OPENSSL
 #include "ssl/ErrorDetail.h"
 #endif
+
+/// error page callback
+typedef void ERCB(int fd, void *, size_t);
 
 /**
  \defgroup ErrorPageAPI Error Pages API
@@ -69,6 +72,8 @@
 class HttpReply;
 class HttpRequest;
 class MemBuf;
+class StoreEntry;
+class wordlist;
 
 /// \ingroup ErrorPageAPI
 class ErrorState

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -241,6 +241,9 @@ Comm::SetSelect(int fd, unsigned int type, PF * handler, void *client_data, time
 
     if ( type & COMM_SELECT_READ ) {
         if ( handler != NULL ) {
+            // Hack to keep the events flowing if there is data immediately ready
+            if (F->flags.read_pending)
+                state_new |= POLLOUT;
             /* we want to POLLIN */
             state_new |= POLLIN;
         } else {

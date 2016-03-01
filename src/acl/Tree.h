@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -10,7 +10,7 @@
 #define SQUID_ACL_TREE_H
 
 #include "acl/BoolOps.h"
-#include "SBufList.h"
+#include "sbuf/SBufList.h"
 
 namespace Acl
 {
@@ -40,6 +40,8 @@ public:
     void add(ACL *rule); ///< same as InnerNode::add()
 
 protected:
+    /// Acl::OrNode API
+    virtual bool bannedAction(ACLChecklist *, Nodes::const_iterator) const override;
     allow_t actionAt(const Nodes::size_type pos) const;
 
     /// if not empty, contains actions corresponding to InnerNode::nodes

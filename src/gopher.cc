@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -21,6 +21,7 @@
 #include "HttpRequest.h"
 #include "MemBuf.h"
 #include "mime.h"
+#include "parser/Tokenizer.h"
 #include "rfc1738.h"
 #include "SquidConfig.h"
 #include "SquidTime.h"
@@ -96,6 +97,7 @@ public:
         entry->lock("gopherState");
         *replybuf = 0;
     }
+    ~GopherStateData() {if(buf) swanSong();}
 
     /* AsyncJob API emulated */
     void deleteThis(const char *aReason);
@@ -120,6 +122,7 @@ public:
     char *buf;          /* pts to a 4k page */
     Comm::ConnectionPointer serverConn;
     FwdState::Pointer fwd;
+    HttpReply::Pointer reply_;
     char replybuf[BUFSIZ];
 };
 
@@ -165,8 +168,10 @@ GopherStateData::swanSong()
     if (entry)
         entry->unlock("gopherState");
 
-    if (buf)
+    if (buf) {
         memFree(buf, MEM_4K_BUF);
+        buf = nullptr;
+    }
 }
 
 /**
@@ -242,9 +247,10 @@ gopherMimeCreate(GopherStateData * gopherState)
     entry->buffer();
     reply->setHeaders(Http::scOkay, "Gatewaying", mime_type, -1, -1, -2);
     if (mime_enc)
-        reply->header.putStr(HDR_CONTENT_ENCODING, mime_enc);
+        reply->header.putStr(Http::HdrType::CONTENT_ENCODING, mime_enc);
 
     entry->replaceHttpReply(reply);
+    gopherState->reply_ = reply;
 }
 
 /**
@@ -253,23 +259,26 @@ gopherMimeCreate(GopherStateData * gopherState)
 static void
 gopher_request_parse(const HttpRequest * req, char *type_id, char *request)
 {
-    const char *path = req->urlpath.termedBuf();
+    ::Parser::Tokenizer tok(req->url.path());
 
     if (request)
-        request[0] = '\0';
+        *request = 0;
 
-    if (path && (*path == '/'))
-        ++path;
+    tok.skip('/'); // ignore failures? path could be ab-empty
 
-    if (!path || !*path) {
+    if (tok.atEnd()) {
         *type_id = GOPHER_DIRECTORY;
         return;
     }
 
-    *type_id = path[0];
+    static const CharacterSet anyByte("UTF-8",0x00, 0xFF);
+
+    SBuf typeId;
+    (void)tok.prefix(typeId, anyByte, 1); // never fails since !atEnd()
+    *type_id = typeId[0];
 
     if (request) {
-        xstrncpy(request, path + 1, MAX_URL);
+        SBufToCstring(request, tok.remaining().substr(0, MAX_URL-1));
         /* convert %xx to char */
         rfc1738_unescape(request);
     }
@@ -748,8 +757,8 @@ gopherReadReply(const Comm::ConnectionPointer &conn, char *buf, size_t len, Comm
         delayId.bytesIn(len);
 #endif
 
-        kb_incr(&(statCounter.server.all.kbytes_in), len);
-        kb_incr(&(statCounter.server.other.kbytes_in), len);
+        statCounter.server.all.kbytes_in += len;
+        statCounter.server.other.kbytes_in += len;
     }
 
     debugs(10, 5, HERE << conn << " read len=" << len);
@@ -765,8 +774,11 @@ gopherReadReply(const Comm::ConnectionPointer &conn, char *buf, size_t len, Comm
         ++IOStats.Gopher.read_hist[bin];
 
         HttpRequest *req = gopherState->fwd->request;
-        if (req->hier.bodyBytesRead < 0)
+        if (req->hier.bodyBytesRead < 0) {
             req->hier.bodyBytesRead = 0;
+            // first bytes read, update Reply flags:
+            gopherState->reply_->sources |= HttpMsg::srcGopher;
+        }
 
         req->hier.bodyBytesRead += len;
     }
@@ -822,8 +834,8 @@ gopherSendComplete(const Comm::ConnectionPointer &conn, char *buf, size_t size, 
 
     if (size > 0) {
         fd_bytes(conn->fd, size, FD_WRITE);
-        kb_incr(&(statCounter.server.all.kbytes_out), size);
-        kb_incr(&(statCounter.server.other.kbytes_out), size);
+        statCounter.server.all.kbytes_out += size;
+        statCounter.server.other.kbytes_out += size;
     }
 
     if (errflag) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -39,14 +39,23 @@ class AccessLogEntry: public RefCountable
 public:
     typedef RefCount<AccessLogEntry> Pointer;
 
-    AccessLogEntry() : url(NULL), tcpClient(), reply(NULL), request(NULL),
-        adapted_request(NULL) {}
+    AccessLogEntry() :
+        url(nullptr),
+        lastAclName(nullptr),
+        lastAclData(nullptr),
+        reply(nullptr),
+        request(nullptr),
+        adapted_request(nullptr)
+    {}
     ~AccessLogEntry();
 
     /// Fetch the client IP log string into the given buffer.
     /// Knows about several alternate locations of the IP
     /// including indirect forwarded-for IP if configured to log that
     void getLogClientIp(char *buf, size_t bufsz) const;
+
+    /// Fetch the transaction method string (ICP opcode, HTCP opcode or HTTP method)
+    SBuf getLogMethod() const;
 
     const char *url;
 
@@ -63,9 +72,10 @@ public:
     {
 
     public:
-        HttpDetails() : method(Http::METHOD_NONE), code(0), content_type(NULL),
-            timedout(false),
-            aborted(false),
+        HttpDetails() :
+            method(Http::METHOD_NONE),
+            code(0),
+            content_type(NULL),
             clientRequestSz(),
             clientReplySz() {}
 
@@ -73,13 +83,6 @@ public:
         int code;
         const char *content_type;
         AnyP::ProtocolVersion version;
-        bool timedout; ///< terminated due to a lifetime or I/O timeout
-        bool aborted; ///< other abnormal termination (e.g., I/O error)
-
-        /// compute suffix for the status access.log field
-        const char *statusSfx() const {
-            return timedout ? "_TIMEDOUT" : (aborted ? "_ABORTED" : "");
-        }
 
         /// counters for the original request received from client
         // TODO calculate header and payload better (by parser)
@@ -140,7 +143,7 @@ public:
         CacheDetails() : caddr(),
             highOffset(0),
             objectSize(0),
-            code (LOG_TAG_NONE),
+            code(LOG_TAG_NONE),
             rfc931 (NULL),
             extuser(NULL),
 #if USE_OPENSSL
@@ -164,7 +167,7 @@ public:
 #if USE_OPENSSL
 
         const char *ssluser;
-        Ssl::X509_Pointer sslClientCert; ///< cert received from the client
+        Security::CertPointer sslClientCert; ///< cert received from the client
 #endif
         AnyP::PortCfgPointer port;
 
@@ -203,16 +206,9 @@ public:
     } adapt;
 #endif
 
-    // Why is this a sub-class and not a set of real "private:" fields?
-    // TODO: shuffle this to the relevant ICP/HTCP protocol section
-    class Private
-    {
+    const char *lastAclName; ///< string for external_acl_type %ACL format code
+    const char *lastAclData; ///< string for external_acl_type %DATA format code
 
-    public:
-        Private() : method_str(NULL) {}
-
-        const char *method_str;
-    } _private;
     HierarchyLogEntry hier;
     HttpReply *reply;
     HttpRequest *request; //< virgin HTTP request

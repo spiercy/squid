@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -84,8 +84,11 @@ Adaptation::Icap::ServiceRep::finalize()
 
     if (cfg().secure.encryptTransport) {
         debugs(3, DBG_IMPORTANT, "Initializing service " << cfg().resource << " SSL context");
-        sslContext = writeableCfg().secure.createContext(true);
+        sslContext = writeableCfg().secure.createClientContext(true);
     }
+
+    if (!cfg().connectionEncryption.configured())
+        writeableCfg().connectionEncryption.defaultTo(cfg().secure.encryptTransport);
 
     theSessionFailures.configure(TheConfig.oldest_service_failure > 0 ?
                                  TheConfig.oldest_service_failure : -1);
@@ -321,13 +324,13 @@ bool Adaptation::Icap::ServiceRep::availableForOld() const
     return (available != 0); // it is -1 (no limit) or has available slots
 }
 
-bool Adaptation::Icap::ServiceRep::wantsUrl(const String &urlPath) const
+bool Adaptation::Icap::ServiceRep::wantsUrl(const SBuf &urlPath) const
 {
     Must(hasOptions());
     return theOptions->transferKind(urlPath) != Adaptation::Icap::Options::xferIgnore;
 }
 
-bool Adaptation::Icap::ServiceRep::wantsPreview(const String &urlPath, size_t &wantedSize) const
+bool Adaptation::Icap::ServiceRep::wantsPreview(const SBuf &urlPath, size_t &wantedSize) const
 {
     Must(hasOptions());
 

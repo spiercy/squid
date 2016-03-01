@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -49,6 +49,8 @@
 class Packable
 {
 public:
+    virtual ~Packable() {}
+
     /// Appends a c-string to existing packed data.
     virtual void append(const char *buf, int size) = 0;
 
@@ -67,6 +69,21 @@ public:
      *       of side-effects
      */
     virtual void vappendf(const char *fmt, va_list ap) = 0;
+
+    /** start buffering appends (if relevant)
+     *
+     * Indicates that a number of small appends are about to
+     * follow so would be detrimental to trigger expensive
+     * activity on each.
+     */
+    virtual void buffer() {}
+
+    /** perform a buffer flush (if relevant)
+     *
+     * Used by code such as PackableStream, that assumes the
+     * Packable leads to some form of output buffer.
+     */
+    virtual void flush() {}
 };
 
 #endif /* SQUID_SRC_BASE_PACKABLE_H */

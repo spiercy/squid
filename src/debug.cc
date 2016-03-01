@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -468,7 +468,11 @@ _db_rotate_log(void)
         remove
         (to);
 #endif
-        rename(from, to);
+        errno = 0;
+        if (rename(from, to) == -1) {
+            const auto saved_errno = errno;
+            debugs(0, DBG_IMPORTANT, "log rotation failed: " << xstrerr(saved_errno));
+        }
     }
 
     /*
@@ -483,10 +487,18 @@ _db_rotate_log(void)
     if (Debug::rotateNumber > 0) {
         snprintf(to, MAXPATHLEN, "%s.%d", debug_log_file, 0);
 #if _SQUID_WINDOWS_
-        remove
-        (to);
+        errno = 0;
+        if (remove(to) == -1) {
+            const auto saved_errno = errno;
+            debugs(0, DBG_IMPORTANT, "removal of log file " << to << " failed: " << xstrerr(saved_errno));
+        }
 #endif
-        rename(debug_log_file, to);
+        errno = 0;
+        if (rename(debug_log_file, to) == -1) {
+            const auto saved_errno = errno;
+            debugs(0, DBG_IMPORTANT, "renaming file " << debug_log_file << " to "
+                   << to << "failed: " << xstrerr(saved_errno));
+        }
     }
 
     /* Close and reopen the log.  It may have been renamed "manually"

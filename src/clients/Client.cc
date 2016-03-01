@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -49,6 +49,7 @@ Client::Client(FwdState *theFwdState): AsyncJob("Client"),
     startedAdaptation(false),
 #endif
     receivedWholeRequestBody(false),
+    doneWithFwd(nullptr),
     theVirginReply(NULL),
     theFinalReply(NULL)
 {
@@ -74,8 +75,6 @@ Client::~Client()
     HTTPMSGUNLOCK(theVirginReply);
     HTTPMSGUNLOCK(theFinalReply);
 
-    fwd = NULL; // refcounted
-
     if (responseBodyBuffer != NULL) {
         delete responseBodyBuffer;
         responseBodyBuffer = NULL;
@@ -92,6 +91,14 @@ Client::swanSong()
 #if USE_ADAPTATION
     cleanAdaptation();
 #endif
+
+    if (!doneWithServer())
+        closeServer();
+
+    if (!doneWithFwd) {
+        doneWithFwd = "swanSong()";
+        fwd->handleUnregisteredServerEnd();
+    }
 
     BodyConsumer::swanSong();
 #if USE_ADAPTATION
@@ -218,6 +225,7 @@ Client::completeForwarding()
 {
     debugs(11,5, HERE << "completing forwarding for "  << fwd);
     assert(fwd != NULL);
+    doneWithFwd = "completeForwarding()";
     fwd->complete();
 }
 
@@ -247,7 +255,7 @@ Client::abortOnBadEntry(const char *abortReason)
         return false;
 
     debugs(11,5, HERE << "entry is not Accepting!");
-    abortTransaction(abortReason);
+    abortOnData(abortReason);
     return true;
 }
 
@@ -291,6 +299,13 @@ Client::noteBodyProducerAborted(BodyPipe::Pointer bp)
 #endif
     if (requestBodySource == bp)
         handleRequestBodyProducerAborted();
+}
+
+bool
+Client::abortOnData(const char *reason)
+{
+    abortAll(reason);
+    return true;
 }
 
 // more origin request body data is available
@@ -349,7 +364,7 @@ Client::sentRequestBody(const CommIoCbParams &io)
 
     if (io.size > 0) {
         fd_bytes(io.fd, io.size, FD_WRITE);
-        kb_incr(&(statCounter.server.all.kbytes_out), io.size);
+        statCounter.server.all.kbytes_out += io.size;
         // kids should increment their counters
     }
 
@@ -367,12 +382,12 @@ Client::sentRequestBody(const CommIoCbParams &io)
         err = new ErrorState(ERR_WRITE_ERROR, Http::scBadGateway, fwd->request);
         err->xerrno = io.xerrno;
         fwd->fail(err);
-        abortTransaction("I/O error while sending request body");
+        abortOnData("I/O error while sending request body");
         return;
     }
 
     if (EBIT_TEST(entry->flags, ENTRY_ABORTED)) {
-        abortTransaction("store entry aborted while sending request body");
+        abortOnData("store entry aborted while sending request body");
         return;
     }
 
@@ -449,7 +464,7 @@ sameUrlHosts(const char *url1, const char *url2)
 
 // purges entries that match the value of a given HTTP [response] header
 static void
-purgeEntriesByHeader(HttpRequest *req, const char *reqUrl, HttpMsg *rep, http_hdr_type hdr)
+purgeEntriesByHeader(HttpRequest *req, const char *reqUrl, HttpMsg *rep, Http::HdrType hdr)
 {
     const char *hdrUrl, *absUrl;
 
@@ -493,11 +508,12 @@ Client::maybePurgeOthers()
         return;
 
     // XXX: should we use originalRequest() here?
-    const char *reqUrl = urlCanonical(request);
-    debugs(88, 5, "maybe purging due to " << request->method << ' ' << reqUrl);
+    SBuf tmp(request->effectiveRequestUri());
+    const char *reqUrl = tmp.c_str();
+    debugs(88, 5, "maybe purging due to " << request->method << ' ' << tmp);
     purgeEntriesByUrl(request, reqUrl);
-    purgeEntriesByHeader(request, reqUrl, theFinalReply, HDR_LOCATION);
-    purgeEntriesByHeader(request, reqUrl, theFinalReply, HDR_CONTENT_LOCATION);
+    purgeEntriesByHeader(request, reqUrl, theFinalReply, Http::HdrType::LOCATION);
+    purgeEntriesByHeader(request, reqUrl, theFinalReply, Http::HdrType::CONTENT_LOCATION);
 }
 
 /// called when we have final (possibly adapted) reply headers; kids extend
@@ -797,8 +813,22 @@ Client::endAdaptedBodyConsumption()
 // premature end of the adapted response body
 void Client::handleAdaptedBodyProducerAborted()
 {
+    if (abortOnBadEntry("entry went bad while waiting for the now-aborted adapted body"))
+        return;
+
+    Must(adaptedBodySource != nullptr);
+    if (!adaptedBodySource->exhausted()) {
+        debugs(11,5, "waiting to consume the remainder of the aborted adapted body");
+        return; // resumeBodyStorage() should eventually consume the rest
+    }
+
     stopConsumingFrom(adaptedBodySource);
-    handleAdaptationAborted();
+
+    if (handledEarlyAdaptationAbort())
+        return;
+
+    entry->lengthWentBad("body adaptation aborted");
+    handleAdaptationCompleted(); // the user should get a truncated response
 }
 
 // common part of noteAdaptationAnswer and handleAdaptedBodyProductionEnded
@@ -831,18 +861,29 @@ Client::handleAdaptationAborted(bool bypassable)
         return;
 
     // TODO: bypass if possible
+    if (!handledEarlyAdaptationAbort())
+        abortAll("adaptation failure with a filled entry");
+}
 
+/// If the store entry is still empty, fully handles adaptation abort, returning
+/// true. Otherwise just updates the request error detail and returns false.
+bool
+Client::handledEarlyAdaptationAbort()
+{
     if (entry->isEmpty()) {
-        debugs(11,9, HERE << "creating ICAP error entry after ICAP failure");
+        debugs(11,8, "adaptation failure with an empty entry: " << *entry);
         ErrorState *err = new ErrorState(ERR_ICAP_FAILURE, Http::scInternalServerError, request);
         err->detailError(ERR_DETAIL_ICAP_RESPMOD_EARLY);
         fwd->fail(err);
         fwd->dontRetry(true);
-    } else if (request) { // update logged info directly
-        request->detailError(ERR_ICAP_FAILURE, ERR_DETAIL_ICAP_RESPMOD_LATE);
+        abortAll("adaptation failure with an empty entry");
+        return true; // handled
     }
 
-    abortTransaction("ICAP failure");
+    if (request) // update logged info directly
+        request->detailError(ERR_ICAP_FAILURE, ERR_DETAIL_ICAP_RESPMOD_LATE);
+
+    return false; // the caller must handle
 }
 
 // adaptation service wants us to deny HTTP client access to this response
@@ -857,7 +898,7 @@ Client::handleAdaptationBlocked(const Adaptation::Answer &answer)
     if (!entry->isEmpty()) { // too late to block (should not really happen)
         if (request)
             request->detailError(ERR_ICAP_FAILURE, ERR_DETAIL_RESPMOD_BLOCK_LATE);
-        abortTransaction("late adaptation block");
+        abortAll("late adaptation block");
         return;
     }
 
@@ -873,7 +914,7 @@ Client::handleAdaptationBlocked(const Adaptation::Answer &answer)
     fwd->fail(err);
     fwd->dontRetry(true);
 
-    abortTransaction("timely adaptation block");
+    abortOnData("timely adaptation block");
 }
 
 void
@@ -910,7 +951,7 @@ Client::sendBodyIsTooLargeError()
     ErrorState *err = new ErrorState(ERR_TOO_BIG, Http::scForbidden, request);
     fwd->fail(err);
     fwd->dontRetry(true);
-    abortTransaction("Virgin body too large.");
+    abortOnData("Virgin body too large.");
 }
 
 // TODO: when HttpStateData sends all errors to ICAP,

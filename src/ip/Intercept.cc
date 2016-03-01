@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -200,6 +200,19 @@ Ip::Intercept::IpfInterception(const Comm::ConnectionPointer &newConn, int silen
     // all fields must be set to 0
     memset(&natLookup, 0, sizeof(natLookup));
     // for NAT lookup set local and remote IP:port's
+    if (newConn->remote.isIPv6()) {
+#if IPFILTER_VERSION < 5000003
+        // warn once every 10 at critical level, then push down a level each repeated event
+        static int warningLevel = DBG_CRITICAL;
+        debugs(89, warningLevel, "IPF (IPFilter v4) NAT does not support IPv6. Please upgrade to IPFilter v5.1");
+        warningLevel = ++warningLevel % 10;
+        return false;
+#else
+        natLookup.nl_v = 6;
+    } else {
+        natLookup.nl_v = 4;
+#endif
+    }
     natLookup.nl_inport = htons(newConn->local.port());
     newConn->local.getInAddr(natLookup.nl_inip);
     natLookup.nl_outport = htons(newConn->remote.port());

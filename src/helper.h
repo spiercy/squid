@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -19,12 +19,13 @@
 #include "helper/ChildConfig.h"
 #include "helper/forward.h"
 #include "ip/Address.h"
-#include "SBuf.h"
+#include "sbuf/SBuf.h"
 
 #include <list>
 #include <map>
 
 class Packable;
+class wordlist;
 
 /**
  * Managers a set of individual helper processes with a common queue of requests.
@@ -110,13 +111,11 @@ class statefulhelper : public helper
     CBDATA_CLASS(statefulhelper);
 
 public:
-    inline statefulhelper(const char *name) : helper(name), datapool(NULL), IsAvailable(NULL), OnEmptyQueue(NULL) {}
+    inline statefulhelper(const char *name) : helper(name), datapool(NULL) {}
     inline ~statefulhelper() {}
 
 public:
     MemAllocator *datapool;
-    HLPSAVAIL *IsAvailable;
-    HLPSONEQ *OnEmptyQueue;
 
 private:
     friend void helperStatefulSubmit(statefulhelper * hlp, const char *buf, HLPCB * callback, void *data, helper_stateful_server * lastserver);

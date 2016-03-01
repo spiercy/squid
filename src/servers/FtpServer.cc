@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -26,6 +26,7 @@
 #include "ftp/Parsing.h"
 #include "globals.h"
 #include "http/one/RequestParser.h"
+#include "http/Stream.h"
 #include "HttpHdrCc.h"
 #include "ip/tools.h"
 #include "ipc/FdNotes.h"
@@ -124,9 +125,9 @@ void
 Ftp::Server::doProcessRequest()
 {
     // zero pipelinePrefetchMax() ensures that there is only parsed request
-    ClientSocketContext::Pointer context = getCurrentContext();
-    Must(context != NULL);
-    Must(getConcurrentRequestCount() == 1);
+    Must(pipeline.count() == 1);
+    Http::StreamPointer context = pipeline.front();
+    Must(context != nullptr);
 
     ClientHttpRequest *const http = context->http;
     assert(http != NULL);
@@ -149,9 +150,9 @@ Ftp::Server::doProcessRequest()
 }
 
 void
-Ftp::Server::processParsedRequest(ClientSocketContext *)
+Ftp::Server::processParsedRequest(Http::Stream *)
 {
-    Must(getConcurrentRequestCount() == 1);
+    Must(pipeline.count() == 1);
 
     // Process FTP request asynchronously to make sure FTP
     // data connection accept callback is fired first.
@@ -172,7 +173,7 @@ Ftp::Server::readUploadData(const CommIoCbParams &io)
 
     if (io.flag == Comm::OK && bodyPipe != NULL) {
         if (io.size > 0) {
-            kb_incr(&(statCounter.client_http.kbytes_in), io.size);
+            statCounter.client_http.kbytes_in += io.size;
 
             char *const current_buf = uploadBuf + uploadAvailSize;
             if (io.buf != current_buf)
@@ -288,8 +289,8 @@ void
 Ftp::Server::notePeerConnection(Comm::ConnectionPointer conn)
 {
     // find request
-    ClientSocketContext::Pointer context = getCurrentContext();
-    Must(context != NULL);
+    Http::StreamPointer context = pipeline.front();
+    Must(context != nullptr);
     ClientHttpRequest *const http = context->http;
     Must(http != NULL);
     HttpRequest *const request = http->request;
@@ -307,11 +308,18 @@ Ftp::Server::clientPinnedConnectionClosed(const CommCloseCbParams &io)
 {
     ConnStateData::clientPinnedConnectionClosed(io);
 
-    // if the server control connection is gone, reset state to login again
-    resetLogin("control connection closure");
+    // TODO: Keep the control connection open after fixing the reset
+    // problem below
+    if (Comm::IsConnOpen(clientConnection))
+        clientConnection->close();
 
-    // XXX: Reseting is not enough. FtpRelay::sendCommand() will not re-login
-    // because FtpRelay::serverState() is not going to be fssConnected.
+    // TODO: If the server control connection is gone, reset state to login
+    // again. Reseting login alone is not enough: FtpRelay::sendCommand() will
+    // not re-login because FtpRelay::serverState() is not going to be
+    // fssConnected. Calling resetLogin() alone is also harmful because
+    // it does not reset correctly the client-to-squid control connection (eg
+    // respond if required with an error code, in all cases)
+    // resetLogin("control connection closure");
 }
 
 /// clear client and server login-related state after the old login is gone
@@ -492,7 +500,7 @@ Ftp::Server::writeCustomReply(const int code, const char *msg, const HttpReply *
     assert(99 < code && code < 1000);
 
     const bool sendDetails = reply != NULL &&
-                             reply->header.has(HDR_FTP_STATUS) && reply->header.has(HDR_FTP_REASON);
+                             reply->header.has(Http::HdrType::FTP_STATUS) && reply->header.has(Http::HdrType::FTP_REASON);
 
     MemBuf mb;
     mb.init();
@@ -548,7 +556,7 @@ Ftp::CommandHasPathParameter(const SBuf &cmd)
 }
 
 /// creates a context filled with an error message for a given early error
-ClientSocketContext *
+Http::Stream *
 Ftp::Server::earlyError(const EarlyErrorKind eek)
 {
     /* Default values, to be updated by the switch statement below */
@@ -557,43 +565,43 @@ Ftp::Server::earlyError(const EarlyErrorKind eek)
     const char *errUri = "error:ftp-internal-early-error";
 
     switch (eek) {
-    case eekHugeRequest:
+    case EarlyErrorKind::HugeRequest:
         scode = 421;
         reason = "Huge request";
         errUri = "error:ftp-huge-request";
         break;
 
-    case eekMissingLogin:
+    case EarlyErrorKind::MissingLogin:
         scode = 530;
         reason = "Must login first";
         errUri = "error:ftp-must-login-first";
         break;
 
-    case eekMissingUsername:
+    case EarlyErrorKind::MissingUsername:
         scode = 501;
         reason = "Missing username";
         errUri = "error:ftp-missing-username";
         break;
 
-    case eekMissingHost:
+    case EarlyErrorKind::MissingHost:
         scode = 501;
         reason = "Missing host";
         errUri = "error:ftp-missing-host";
         break;
 
-    case eekUnsupportedCommand:
+    case EarlyErrorKind::UnsupportedCommand:
         scode = 502;
         reason = "Unknown or unsupported command";
         errUri = "error:ftp-unsupported-command";
         break;
 
-    case eekInvalidUri:
+    case EarlyErrorKind::InvalidUri:
         scode = 501;
         reason = "Invalid URI";
         errUri = "error:ftp-invalid-uri";
         break;
 
-    case eekMalformedCommand:
+    case EarlyErrorKind::MalformedCommand:
         scode = 421;
         reason = "Malformed command";
         errUri = "error:ftp-malformed-command";
@@ -602,7 +610,7 @@ Ftp::Server::earlyError(const EarlyErrorKind eek)
         // no default so that a compiler can check that we have covered all cases
     }
 
-    ClientSocketContext *context = abortRequestParsing(errUri);
+    Http::Stream *context = abortRequestParsing(errUri);
     clientStreamNode *node = context->getClientReplyContext();
     Must(node);
     clientReplyContext *repContext = dynamic_cast<clientReplyContext *>(node->data.getRaw());
@@ -616,9 +624,9 @@ Ftp::Server::earlyError(const EarlyErrorKind eek)
 }
 
 /// Parses a single FTP request on the control connection.
-/// Returns a new ClientSocketContext on valid requests and all errors.
+/// Returns a new Http::Stream on valid requests and all errors.
 /// Returns NULL on incomplete requests that may still succeed given more data.
-ClientSocketContext *
+Http::Stream *
 Ftp::Server::parseOneRequest()
 {
     flags.readMore = false; // common for all but one case below
@@ -640,7 +648,7 @@ Ftp::Server::parseOneRequest()
     SBuf cmd;
     SBuf params;
 
-    Parser::Tokenizer tok(in.buf);
+    Parser::Tokenizer tok(inBuf);
 
     (void)tok.skipAll(LeadingSpace); // leading OWS and empty commands
     const bool parsed = tok.prefix(cmd, CommandChars); // required command
@@ -661,20 +669,20 @@ Ftp::Server::parseOneRequest()
     if (cmd.length() > tokenMax || params.length() > tokenMax) {
         changeState(fssError, "huge req token");
         quitAfterError(NULL);
-        return earlyError(eekHugeRequest);
+        return earlyError(EarlyErrorKind::HugeRequest);
     }
 
     // technically, we may skip multiple NLs below, but that is OK
     if (!parsed || !tok.skipAll(CharacterSet::LF)) { // did not find terminating LF yet
         // we need more data, but can we buffer more?
-        if (in.buf.length() >= Config.maxRequestHeaderSize) {
+        if (inBuf.length() >= Config.maxRequestHeaderSize) {
             changeState(fssError, "huge req");
             quitAfterError(NULL);
-            return earlyError(eekHugeRequest);
+            return earlyError(EarlyErrorKind::HugeRequest);
         } else {
             flags.readMore = true;
             debugs(33, 5, "Waiting for more, up to " <<
-                   (Config.maxRequestHeaderSize - in.buf.length()));
+                   (Config.maxRequestHeaderSize - inBuf.length()));
             return NULL;
         }
     }
@@ -691,18 +699,18 @@ Ftp::Server::parseOneRequest()
         if (!master->clientReadGreeting) {
             // the first command must be USER
             if (!pinning.pinned && cmd != cmdUser())
-                return earlyError(eekMissingLogin);
+                return earlyError(EarlyErrorKind::MissingLogin);
         }
 
         // process USER request now because it sets FTP peer host name
         if (cmd == cmdUser()) {
-            if (ClientSocketContext *errCtx = handleUserRequest(cmd, params))
+            if (Http::Stream *errCtx = handleUserRequest(cmd, params))
                 return errCtx;
         }
     }
 
     if (!Ftp::SupportedCommand(cmd))
-        return earlyError(eekUnsupportedCommand);
+        return earlyError(EarlyErrorKind::UnsupportedCommand);
 
     const HttpRequestMethod method =
         cmd == cmdAppe() || cmd == cmdStor() || cmd == cmdStou() ?
@@ -717,7 +725,7 @@ Ftp::Server::parseOneRequest()
         debugs(33, 5, "Invalid FTP URL: " << uri);
         uri.clear();
         safe_free(newUri);
-        return earlyError(eekInvalidUri);
+        return earlyError(EarlyErrorKind::InvalidUri);
     }
 
     request->flags.ftpNative = true;
@@ -727,11 +735,11 @@ Ftp::Server::parseOneRequest()
     request->flags.cachable = false; // XXX: reset later by maybeCacheable()
     request->flags.noCache = true;
 
-    request->header.putStr(HDR_FTP_COMMAND, cmd.c_str());
-    request->header.putStr(HDR_FTP_ARGUMENTS, params.c_str()); // may be ""
+    request->header.putStr(Http::HdrType::FTP_COMMAND, cmd.c_str());
+    request->header.putStr(Http::HdrType::FTP_ARGUMENTS, params.c_str()); // may be ""
     if (method == Http::METHOD_PUT) {
-        request->header.putStr(HDR_EXPECT, "100-continue");
-        request->header.putStr(HDR_TRANSFER_ENCODING, "chunked");
+        request->header.putStr(Http::HdrType::EXPECT, "100-continue");
+        request->header.putStr(Http::HdrType::TRANSFER_ENCODING, "chunked");
     }
 
     ClientHttpRequest *const http = new ClientHttpRequest(this);
@@ -740,8 +748,8 @@ Ftp::Server::parseOneRequest()
     http->req_sz = tok.parsedSize();
     http->uri = newUri;
 
-    ClientSocketContext *const result =
-        new ClientSocketContext(clientConnection, http);
+    Http::Stream *const result =
+        new Http::Stream(clientConnection, http);
 
     StoreIOBuffer tempBuffer;
     tempBuffer.data = result->reqbuf;
@@ -761,8 +769,8 @@ void
 Ftp::Server::handleReply(HttpReply *reply, StoreIOBuffer data)
 {
     // the caller guarantees that we are dealing with the current context only
-    ClientSocketContext::Pointer context = getCurrentContext();
-    assert(context != NULL);
+    Http::StreamPointer context = pipeline.front();
+    assert(context != nullptr);
 
     if (context->http && context->http->al != NULL &&
             !context->http->al->reply && reply) {
@@ -785,21 +793,27 @@ Ftp::Server::handleReply(HttpReply *reply, StoreIOBuffer data)
         NULL, // fssHandleCdup
         &Ftp::Server::handleErrorReply // fssError
     };
-    const Server &server = dynamic_cast<const Ftp::Server&>(*context->getConn());
-    if (const ReplyHandler handler = handlers[server.master->serverState])
-        (this->*handler)(reply, data);
-    else
-        writeForwardedReply(reply);
+    try {
+        const Server &server = dynamic_cast<const Ftp::Server&>(*context->getConn());
+        if (const ReplyHandler handler = handlers[server.master->serverState])
+            (this->*handler)(reply, data);
+        else
+            writeForwardedReply(reply);
+    } catch (const std::exception &e) {
+        callException(e);
+        throw TexcHere(e.what());
+    }
 }
 
 void
 Ftp::Server::handleFeatReply(const HttpReply *reply, StoreIOBuffer)
 {
-    if (getCurrentContext()->http->request->errType != ERR_NONE) {
+    if (pipeline.front()->http->request->errType != ERR_NONE) {
         writeCustomReply(502, "Server does not support FEAT", reply);
         return;
     }
 
+    Must(reply);
     HttpReply::Pointer featReply = Ftp::HttpReplyWrapper(211, "End", Http::scNoContent, 0);
     HttpHeader const &serverReplyHeader = reply->header;
 
@@ -808,11 +822,11 @@ Ftp::Server::handleFeatReply(const HttpReply *reply, StoreIOBuffer)
     bool hasEPSV = false;
     int prependSpaces = 1;
 
-    featReply->header.putStr(HDR_FTP_PRE, "\"211-Features:\"");
-    const int scode = serverReplyHeader.getInt(HDR_FTP_STATUS);
+    featReply->header.putStr(Http::HdrType::FTP_PRE, "\"211-Features:\"");
+    const int scode = serverReplyHeader.getInt(Http::HdrType::FTP_STATUS);
     if (scode == 211) {
         while (const HttpHeaderEntry *e = serverReplyHeader.getEntry(&pos)) {
-            if (e->id == HDR_FTP_PRE) {
+            if (e->id == Http::HdrType::FTP_PRE) {
                 // assume RFC 2389 FEAT response format, quoted by Squid:
                 // <"> SP NAME [SP PARAMS] <">
                 // but accommodate MS servers sending four SPs before NAME
@@ -848,11 +862,11 @@ Ftp::Server::handleFeatReply(const HttpReply *reply, StoreIOBuffer)
     char buf[256];
     if (!hasEPRT) {
         snprintf(buf, sizeof(buf), "\"%*s\"", prependSpaces + 4, "EPRT");
-        featReply->header.putStr(HDR_FTP_PRE, buf);
+        featReply->header.putStr(Http::HdrType::FTP_PRE, buf);
     }
     if (!hasEPSV) {
         snprintf(buf, sizeof(buf), "\"%*s\"", prependSpaces + 4, "EPSV");
-        featReply->header.putStr(HDR_FTP_PRE, buf);
+        featReply->header.putStr(Http::HdrType::FTP_PRE, buf);
     }
 
     featReply->header.refreshMask();
@@ -863,8 +877,8 @@ Ftp::Server::handleFeatReply(const HttpReply *reply, StoreIOBuffer)
 void
 Ftp::Server::handlePasvReply(const HttpReply *reply, StoreIOBuffer)
 {
-    ClientSocketContext::Pointer context = getCurrentContext();
-    assert(context != NULL);
+    const Http::StreamPointer context(pipeline.front());
+    assert(context != nullptr);
 
     if (context->http->request->errType != ERR_NONE) {
         writeCustomReply(502, "Server does not support PASV", reply);
@@ -903,7 +917,7 @@ Ftp::Server::handlePasvReply(const HttpReply *reply, StoreIOBuffer)
 void
 Ftp::Server::handlePortReply(const HttpReply *reply, StoreIOBuffer)
 {
-    if (getCurrentContext()->http->request->errType != ERR_NONE) {
+    if (pipeline.front()->http->request->errType != ERR_NONE) {
         writeCustomReply(502, "Server does not support PASV (converted from PORT)", reply);
         return;
     }
@@ -961,7 +975,7 @@ Ftp::Server::handleDataReply(const HttpReply *reply, StoreIOBuffer data)
     AsyncCall::Pointer call = JobCallback(33, 5, Dialer, this, Ftp::Server::wroteReplyData);
     Comm::Write(dataConn, &mb, call);
 
-    getCurrentContext()->noteSentBodyBytes(data.length);
+    pipeline.front()->noteSentBodyBytes(data.length);
 }
 
 /// called when we are done writing a chunk of the response data
@@ -973,13 +987,12 @@ Ftp::Server::wroteReplyData(const CommIoCbParams &io)
 
     if (io.flag != Comm::OK) {
         debugs(33, 3, "FTP reply data writing failed: " << xstrerr(io.xerrno));
-        closeDataConnection();
-        writeCustomReply(426, "Data connection error; transfer aborted");
+        userDataCompletionCheckpoint(426);
         return;
     }
 
-    assert(getCurrentContext()->http);
-    getCurrentContext()->http->out.size += io.size;
+    assert(pipeline.front()->http);
+    pipeline.front()->http->out.size += io.size;
     replyDataWritingCheckpoint();
 }
 
@@ -987,28 +1000,26 @@ Ftp::Server::wroteReplyData(const CommIoCbParams &io)
 void
 Ftp::Server::replyDataWritingCheckpoint()
 {
-    switch (getCurrentContext()->socketState()) {
+    switch (pipeline.front()->socketState()) {
     case STREAM_NONE:
         debugs(33, 3, "Keep going");
-        getCurrentContext()->pullData();
+        pipeline.front()->pullData();
         return;
     case STREAM_COMPLETE:
         debugs(33, 3, "FTP reply data transfer successfully complete");
-        writeCustomReply(226, "Transfer complete");
+        userDataCompletionCheckpoint(226);
         break;
     case STREAM_UNPLANNED_COMPLETE:
         debugs(33, 3, "FTP reply data transfer failed: STREAM_UNPLANNED_COMPLETE");
-        writeCustomReply(451, "Server error; transfer aborted");
+        userDataCompletionCheckpoint(451);
         break;
     case STREAM_FAILED:
+        userDataCompletionCheckpoint(451);
         debugs(33, 3, "FTP reply data transfer failed: STREAM_FAILED");
-        writeCustomReply(451, "Server error; transfer aborted");
         break;
     default:
         fatal("unreachable code");
     }
-
-    closeDataConnection();
 }
 
 void
@@ -1021,10 +1032,11 @@ Ftp::Server::handleUploadReply(const HttpReply *reply, StoreIOBuffer)
 void
 Ftp::Server::writeForwardedReply(const HttpReply *reply)
 {
-    assert(reply != NULL);
+    Must(reply);
+
     const HttpHeader &header = reply->header;
-    // adaptation and forwarding errors lack HDR_FTP_STATUS
-    if (!header.has(HDR_FTP_STATUS)) {
+    // adaptation and forwarding errors lack Http::HdrType::FTP_STATUS
+    if (!header.has(Http::HdrType::FTP_STATUS)) {
         writeForwardedForeign(reply); // will get to Ftp::Server::wroteReply
         return;
     }
@@ -1037,7 +1049,7 @@ Ftp::Server::writeForwardedReply(const HttpReply *reply)
 void
 Ftp::Server::handleEprtReply(const HttpReply *reply, StoreIOBuffer)
 {
-    if (getCurrentContext()->http->request->errType != ERR_NONE) {
+    if (pipeline.front()->http->request->errType != ERR_NONE) {
         writeCustomReply(502, "Server does not support PASV (converted from EPRT)", reply);
         return;
     }
@@ -1050,7 +1062,7 @@ Ftp::Server::handleEprtReply(const HttpReply *reply, StoreIOBuffer)
 void
 Ftp::Server::handleEpsvReply(const HttpReply *reply, StoreIOBuffer)
 {
-    if (getCurrentContext()->http->request->errType != ERR_NONE) {
+    if (pipeline.front()->http->request->errType != ERR_NONE) {
         writeCustomReply(502, "Cannot connect to server", reply);
         return;
     }
@@ -1073,7 +1085,7 @@ Ftp::Server::handleEpsvReply(const HttpReply *reply, StoreIOBuffer)
 void
 Ftp::Server::writeErrorReply(const HttpReply *reply, const int scode)
 {
-    const HttpRequest *request = getCurrentContext()->http->request;
+    const HttpRequest *request = pipeline.front()->http->request;
     assert(request);
 
     MemBuf mb;
@@ -1102,9 +1114,9 @@ Ftp::Server::writeErrorReply(const HttpReply *reply, const int scode)
     }
 #endif
 
-    assert(reply != NULL);
-    const char *reason = reply->header.has(HDR_FTP_REASON) ?
-                         reply->header.getStr(HDR_FTP_REASON):
+    Must(reply);
+    const char *reason = reply->header.has(Http::HdrType::FTP_REASON) ?
+                         reply->header.getStr(Http::HdrType::FTP_REASON):
                          reply->sline.reason();
 
     mb.appendf("%i %s\r\n", scode, reason); // error terminating line
@@ -1128,10 +1140,10 @@ Ftp::Server::writeForwardedForeign(const HttpReply *reply)
 }
 
 void
-Ftp::Server::writeControlMsgAndCall(ClientSocketContext *, HttpReply *reply, AsyncCall::Pointer &call)
+Ftp::Server::writeControlMsgAndCall(HttpReply *reply, AsyncCall::Pointer &call)
 {
     // the caller guarantees that we are dealing with the current context only
-    // the caller should also make sure reply->header.has(HDR_FTP_STATUS)
+    // the caller should also make sure reply->header.has(Http::HdrType::FTP_STATUS)
     writeForwardedReplyAndCall(reply, call);
 }
 
@@ -1142,9 +1154,9 @@ Ftp::Server::writeForwardedReplyAndCall(const HttpReply *reply, AsyncCall::Point
     const HttpHeader &header = reply->header;
 
     // without status, the caller must use the writeForwardedForeign() path
-    Must(header.has(HDR_FTP_STATUS));
-    Must(header.has(HDR_FTP_REASON));
-    const int scode = header.getInt(HDR_FTP_STATUS);
+    Must(header.has(Http::HdrType::FTP_STATUS));
+    Must(header.has(Http::HdrType::FTP_REASON));
+    const int scode = header.getInt(Http::HdrType::FTP_STATUS);
     debugs(33, 7, "scode: " << scode);
 
     // Status 125 or 150 implies upload or data request, but we still check
@@ -1194,16 +1206,16 @@ Ftp::PrintReply(MemBuf &mb, const HttpReply *reply, const char *const)
 
     HttpHeaderPos pos = HttpHeaderInitPos;
     while (const HttpHeaderEntry *e = header.getEntry(&pos)) {
-        if (e->id == HDR_FTP_PRE) {
+        if (e->id == Http::HdrType::FTP_PRE) {
             String raw;
             if (httpHeaderParseQuotedString(e->value.rawBuf(), e->value.size(), &raw))
                 mb.appendf("%s\r\n", raw.termedBuf());
         }
     }
 
-    if (header.has(HDR_FTP_STATUS)) {
-        const char *reason = header.getStr(HDR_FTP_REASON);
-        mb.appendf("%i %s\r\n", header.getInt(HDR_FTP_STATUS),
+    if (header.has(Http::HdrType::FTP_STATUS)) {
+        const char *reason = header.getStr(Http::HdrType::FTP_REASON);
+        mb.appendf("%i %s\r\n", header.getInt(Http::HdrType::FTP_STATUS),
                    (reason ? reason : 0));
     }
 }
@@ -1220,8 +1232,8 @@ Ftp::Server::wroteEarlyReply(const CommIoCbParams &io)
         return;
     }
 
-    ClientSocketContext::Pointer context = getCurrentContext();
-    if (context != NULL && context->http) {
+    Http::StreamPointer context = pipeline.front();
+    if (context != nullptr && context->http) {
         context->http->out.size += io.size;
         context->http->out.headers_sz += io.size;
     }
@@ -1242,7 +1254,7 @@ Ftp::Server::wroteReply(const CommIoCbParams &io)
         return;
     }
 
-    ClientSocketContext::Pointer context = getCurrentContext();
+    Http::StreamPointer context = pipeline.front();
     assert(context->http);
     context->http->out.size += io.size;
     context->http->out.headers_sz += io.size;
@@ -1265,9 +1277,10 @@ Ftp::Server::wroteReply(const CommIoCbParams &io)
     case STREAM_COMPLETE:
         flags.readMore = true;
         changeState(fssConnected, "Ftp::Server::wroteReply");
-        if (in.bodyParser)
+        if (bodyParser)
             finishDechunkingRequest(false);
-        context->keepaliveNextRequest();
+        context->finished();
+        kick();
         return;
     }
 }
@@ -1279,10 +1292,10 @@ Ftp::Server::handleRequest(HttpRequest *request)
     Must(request);
 
     HttpHeader &header = request->header;
-    Must(header.has(HDR_FTP_COMMAND));
-    String &cmd = header.findEntry(HDR_FTP_COMMAND)->value;
-    Must(header.has(HDR_FTP_ARGUMENTS));
-    String &params = header.findEntry(HDR_FTP_ARGUMENTS)->value;
+    Must(header.has(Http::HdrType::FTP_COMMAND));
+    String &cmd = header.findEntry(Http::HdrType::FTP_COMMAND)->value;
+    Must(header.has(Http::HdrType::FTP_ARGUMENTS));
+    String &params = header.findEntry(Http::HdrType::FTP_ARGUMENTS)->value;
 
     if (do_debug(9, 2)) {
         MemBuf mb;
@@ -1331,16 +1344,16 @@ Ftp::Server::handleRequest(HttpRequest *request)
 
 /// Called to parse USER command, which is required to create an HTTP request
 /// wrapper. W/o request, the errors are handled by returning earlyError().
-ClientSocketContext *
+Http::Stream *
 Ftp::Server::handleUserRequest(const SBuf &, SBuf &params)
 {
     if (params.isEmpty())
-        return earlyError(eekMissingUsername);
+        return earlyError(EarlyErrorKind::MissingUsername);
 
     // find the [end of] user name
     const SBuf::size_type eou = params.rfind('@');
     if (eou == SBuf::npos || eou + 1 >= params.length())
-        return earlyError(eekMissingHost);
+        return earlyError(EarlyErrorKind::MissingHost);
 
     // Determine the intended destination.
     host = params.substr(eou + 1, params.length());
@@ -1475,6 +1488,9 @@ Ftp::Server::handleDataRequest(String &, String &)
     if (!checkDataConnPre())
         return false;
 
+    master->waitForOriginData = true;
+    master->userDataDone = 0;
+
     changeState(fssHandleDataRequest, "handleDataRequest");
 
     return true;
@@ -1486,8 +1502,11 @@ Ftp::Server::handleUploadRequest(String &, String &)
     if (!checkDataConnPre())
         return false;
 
+    master->waitForOriginData = true;
+    master->userDataDone = 0;
+
     if (Config.accessList.forceRequestBodyContinuation) {
-        ClientHttpRequest *http = getCurrentContext()->http;
+        ClientHttpRequest *http = pipeline.front()->http;
         HttpRequest *request = http->request;
         ACLFilledChecklist bodyContinuationCheck(Config.accessList.forceRequestBodyContinuation, request, NULL);
         if (bodyContinuationCheck.fastCheck() == ACCESS_ALLOWED) {
@@ -1591,15 +1610,15 @@ Ftp::Server::handleCdupRequest(String &, String &)
 void
 Ftp::Server::setDataCommand()
 {
-    ClientHttpRequest *const http = getCurrentContext()->http;
+    ClientHttpRequest *const http = pipeline.front()->http;
     assert(http != NULL);
     HttpRequest *const request = http->request;
     assert(request != NULL);
     HttpHeader &header = request->header;
-    header.delById(HDR_FTP_COMMAND);
-    header.putStr(HDR_FTP_COMMAND, "PASV");
-    header.delById(HDR_FTP_ARGUMENTS);
-    header.putStr(HDR_FTP_ARGUMENTS, "");
+    header.delById(Http::HdrType::FTP_COMMAND);
+    header.putStr(Http::HdrType::FTP_COMMAND, "PASV");
+    header.delById(Http::HdrType::FTP_ARGUMENTS);
+    header.putStr(Http::HdrType::FTP_ARGUMENTS, "");
     debugs(9, 5, "client data command converted to fake PASV");
 }
 
@@ -1657,7 +1676,7 @@ Ftp::Server::connectedForData(const CommConnectCbParams &params)
         if (params.conn != NULL)
             params.conn->close();
         setReply(425, "Cannot open data connection.");
-        ClientSocketContext::Pointer context = getCurrentContext();
+        Http::StreamPointer context = pipeline.front();
         Must(context->http);
         Must(context->http->storeEntry() != NULL);
     } else {
@@ -1672,7 +1691,7 @@ Ftp::Server::connectedForData(const CommConnectCbParams &params)
 void
 Ftp::Server::setReply(const int code, const char *msg)
 {
-    ClientSocketContext::Pointer context = getCurrentContext();
+    Http::StreamPointer context = pipeline.front();
     ClientHttpRequest *const http = context->http;
     assert(http != NULL);
     assert(http->storeEntry() == NULL);
@@ -1691,6 +1710,58 @@ Ftp::Server::setReply(const int code, const char *msg)
     reqFlags.noCache = true;
     repContext->createStoreEntry(http->request->method, reqFlags);
     http->storeEntry()->replaceHttpReply(reply);
+}
+
+void
+Ftp::Server::callException(const std::exception &e)
+{
+    debugs(33, 2, "FTP::Server job caught: " << e.what());
+    closeDataConnection();
+    unpinConnection(true);
+    if (Comm::IsConnOpen(clientConnection))
+        clientConnection->close();
+    AsyncJob::callException(e);
+}
+
+void
+Ftp::Server::originDataCompletionCheckpoint()
+{
+    if (!master->userDataDone) {
+        debugs(33, 5, "Transfering from/to client not finished yet");
+        return;
+    }
+
+    completeDataExchange();
+}
+
+void Ftp::Server::userDataCompletionCheckpoint(int finalStatusCode)
+{
+    Must(!master->userDataDone);
+    master->userDataDone = finalStatusCode;
+
+    if (bodyParser)
+        finishDechunkingRequest(false);
+
+    // The origin control connection is gone, nothing to wait for
+    if (!Comm::IsConnOpen(pinning.serverConnection))
+        master->waitForOriginData = false;
+
+    if (master->waitForOriginData) {
+        // The completeDataExchange() is not called here unconditionally
+        // because we want to signal the FTP user that we are not fully
+        // done processing its data stream, even though all data bytes
+        // have been sent or received already.
+        debugs(33, 5, "Transfering from/to FTP server is not complete");
+        return;
+    }
+
+    completeDataExchange();
+}
+
+void Ftp::Server::completeDataExchange()
+{
+    writeCustomReply(master->userDataDone, master->userDataDone == 226 ? "Transfer complete" : "Server error; transfer aborted");
+    closeDataConnection();
 }
 
 /// Whether Squid FTP Relay supports a named feature (e.g., a command).

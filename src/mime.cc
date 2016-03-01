@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -9,8 +9,8 @@
 /* DEBUG: section 25    MIME Parsing and Internal Icons */
 
 #include "squid.h"
-#include "disk.h"
 #include "fde.h"
+#include "fs_io.h"
 #include "globals.h"
 #include "HttpHdrCc.h"
 #include "HttpReply.h"
@@ -116,9 +116,9 @@ mimeGetEntry(const char *fn, int skip_encodings)
 }
 
 MimeIcon::MimeIcon(const char *aName) :
-    icon_(aName)
+    url_(nullptr)
 {
-    url_ = xstrdup(internalLocalUri("/squid-internal-static/icons/", icon_.c_str()));
+    setName(aName);
 }
 
 MimeIcon::~MimeIcon()
@@ -131,7 +131,7 @@ MimeIcon::setName(char const *aString)
 {
     xfree(url_);
     icon_ = aString;
-    url_ = xstrdup(internalLocalUri("/squid-internal-static/icons/", icon_.c_str()));
+    url_ = xstrdup(internalLocalUri("/squid-internal-static/icons/", icon_));
 }
 
 SBuf
@@ -166,7 +166,7 @@ mimeGetIconURL(const char *fn)
         mb.append(icon);
         return mb.c_str();
     } else {
-        return internalLocalUri("/squid-internal-static/icons/", icon.c_str());
+        return internalLocalUri("/squid-internal-static/icons/", icon);
     }
 }
 

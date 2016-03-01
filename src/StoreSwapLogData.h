@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -37,7 +37,7 @@
 
 #include "md5.h"
 #include "mem/forward.h"
-#include "typedefs.h"
+#include "store/forward.h"
 
 /// maintains a 24-bit checksum over integer fields
 class SwapChecksum24

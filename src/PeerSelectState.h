@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -53,7 +53,7 @@ public:
 
     // Produce a URL for display identifying the transaction we are
     // trying to locate a peer for.
-    const char * url() const;
+    const SBuf url() const;
 
     HttpRequest *request;
     AccessLogEntry::Pointer al; ///< info for the future access.log entry

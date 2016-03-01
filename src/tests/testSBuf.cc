@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -8,15 +8,16 @@
 
 #include "squid.h"
 #include "base/CharacterSet.h"
-#include "SBuf.h"
-#include "SBufFindTest.h"
-#include "SBufStream.h"
-#include "SquidString.h"
-#include "testSBuf.h"
+#include "sbuf/SBuf.h"
+#include "sbuf/SBufAlgos.h"
+#include "sbuf/SBufStream.h"
+#include "tests/SBufFindTest.h"
+#include "tests/testSBuf.h"
 #include "unitTestMain.h"
 
 #include <iostream>
 #include <stdexcept>
+#include <unordered_map>
 
 CPPUNIT_TEST_SUITE_REGISTRATION( testSBuf );
 
@@ -112,13 +113,6 @@ testSBuf::testSBufConstructDestruct()
         SBuf s4=SBuf(fox,4);
         s3=s2.substr(0,4);
         CPPUNIT_ASSERT_EQUAL(s4,s3);
-    }
-
-    // TEST: go via SquidString adapters.
-    {
-        String str(fox);
-        SBuf s1(str);
-        CPPUNIT_ASSERT_EQUAL(literal,s1);
     }
 
     // TEST: go via std::string adapter.
@@ -949,6 +943,34 @@ testSBuf::testIterators()
         CPPUNIT_ASSERT(i != e);
         ++i;
         CPPUNIT_ASSERT(i == e);
+    }
+}
+
+void
+testSBuf::testSBufHash()
+{
+    // same SBuf must have same hash
+    auto hasher=std::hash<SBuf>();
+    CPPUNIT_ASSERT_EQUAL(hasher(literal),hasher(literal));
+
+    // same content must have same hash
+    CPPUNIT_ASSERT_EQUAL(hasher(literal),hasher(SBuf(fox)));
+    CPPUNIT_ASSERT_EQUAL(hasher(SBuf(fox)),hasher(SBuf(fox)));
+
+    //differen content should have different hash
+    CPPUNIT_ASSERT(hasher(SBuf(fox)) != hasher(SBuf(fox1)));
+
+    {
+        std::unordered_map<SBuf, int> um;
+        um[SBuf("one")] = 1;
+        um[SBuf("two")] = 2;
+
+        auto i = um.find(SBuf("one"));
+        CPPUNIT_ASSERT(i != um.end());
+        CPPUNIT_ASSERT(i->second == 1);
+
+        i = um.find(SBuf("eleventy"));
+        CPPUNIT_ASSERT(i == um.end());
     }
 }
 

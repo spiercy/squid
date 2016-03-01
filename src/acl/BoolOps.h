@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -62,6 +62,10 @@ class OrNode: public InnerNode
     MEMPROXY_CLASS(OrNode);
 
 public:
+    /// whether the given rule should be excluded from matching tests based
+    /// on its action
+    virtual bool bannedAction(ACLChecklist *, Nodes::const_iterator) const;
+
     /* ACL API */
     virtual char const *typeString() const;
     virtual ACL *clone() const;

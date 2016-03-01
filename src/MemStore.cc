@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -168,23 +168,10 @@ MemStore::reference(StoreEntry &)
 }
 
 bool
-MemStore::dereference(StoreEntry &, bool)
+MemStore::dereference(StoreEntry &)
 {
     // no need to keep e in the global store_table for us; we have our own map
     return false;
-}
-
-int
-MemStore::callback()
-{
-    return 0;
-}
-
-StoreSearch *
-MemStore::search(String const, HttpRequest *)
-{
-    fatal("not implemented");
-    return NULL;
 }
 
 StoreEntry *
@@ -218,13 +205,6 @@ MemStore::get(const cache_key *key)
     debugs(20, 3, HERE << "mem-loading failed; freeing " << index);
     map->freeEntry(index); // do not let others into the same trap
     return NULL;
-}
-
-void
-MemStore::get(String const, STOREGETCLIENT, void *)
-{
-    // XXX: not needed but Store parent forces us to implement this
-    fatal("MemStore::get(key,callback,data) should not be called");
 }
 
 bool
@@ -725,7 +705,7 @@ MemStore::unlink(StoreEntry &e)
     if (e.mem_obj && e.mem_obj->memCache.index >= 0) {
         map->freeEntry(e.mem_obj->memCache.index);
         disconnect(e);
-    } else {
+    } else if (map) {
         // the entry may have been loaded and then disconnected from the cache
         map->freeEntryByKey(reinterpret_cast<cache_key*>(e.key));
     }

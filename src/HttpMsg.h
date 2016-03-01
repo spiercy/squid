@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,6 +11,7 @@
 
 #include "base/Lock.h"
 #include "BodyPipe.h"
+#include "enums.h"
 #include "http/forward.h"
 #include "http/ProtocolVersion.h"
 #include "http/StatusCode.h"
@@ -22,6 +23,26 @@ class HttpMsg : public RefCountable
 
 public:
     typedef RefCount<HttpMsg> Pointer;
+    /// Who may have created or modified this message?
+    enum Sources {
+        srcUnknown = 0,
+
+        /* flags in 0xFFFF zone are for "secure" or "encrypted" sources */
+        srcHttps = 1 << 0, ///< https_port or bumped http_port tunnel; HTTPS server
+        srcFtps = 1 << 1, ///< ftps_port or SFTP server; currently unused
+        srcIcaps = 1 << 2, ///< Secure ICAP service
+        srcEcaps = 1 << 3, ///< eCAP service that is considered secure; currently unused
+
+        /* these flags "taint" the message: it may have been observed or mangled outside Squid */
+        srcHttp = 1 << (16 + 0), ///< http_port or HTTP server
+        srcFtp = 1 << (16 + 1), ///< ftp_port or FTP server
+        srcIcap = 1 << (16 + 2), ///< traditional ICAP service without encryption
+        srcEcap = 1 << (16 + 3), ///< eCAP service that uses insecure libraries/daemons
+        srcGopher = 1 << (16 + 14), ///< Gopher server
+        srcWhois = 1 << (16 + 15), ///< Whois server
+        srcUnsafe = 0xFFFF0000,  ///< Unsafe sources mask
+        srcSafe = 0x0000FFFF ///< Safe sources mask
+    };
 
     HttpMsg(http_hdr_owner_type owner);
     virtual ~HttpMsg();
@@ -64,6 +85,8 @@ public:
 
     BodyPipe::Pointer body_pipe; // optional pipeline to receive message body
 
+    uint32_t sources; ///< The message sources
+
     // returns true and sets hdr_sz on success
     // returns false and sets *error to zero when needs more data
     // returns false and sets *error to a positive Http::StatusCode on error
@@ -74,6 +97,9 @@ public:
     int httpMsgParseStep(const char *buf, int len, int atEnd);
 
     virtual int httpMsgParseError();
+
+    // Parser-NG transitional parsing of mime headers
+    bool parseHeader(Http1::Parser &); // TODO move this function to the parser
 
     virtual bool expectingBody(const HttpRequestMethod&, int64_t&) const = 0;
 

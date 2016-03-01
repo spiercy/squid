@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -50,7 +50,7 @@ Auth::Basic::UserRequest::credentialsStr()
 /* log a basic user in
  */
 void
-Auth::Basic::UserRequest::authenticate(HttpRequest *, ConnStateData *, http_hdr_type)
+Auth::Basic::UserRequest::authenticate(HttpRequest *, ConnStateData *, Http::HdrType)
 {
     assert(user() != NULL);
 

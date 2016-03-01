@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -55,14 +55,16 @@ public:
     IcapPeerConnector(
         Adaptation::Icap::ServiceRep::Pointer &service,
         const Comm::ConnectionPointer &aServerConn,
-        AsyncCall::Pointer &aCallback, const time_t timeout = 0):
+        AsyncCall::Pointer &aCallback,
+        AccessLogEntry::Pointer const &alp,
+        const time_t timeout = 0):
         AsyncJob("Ssl::IcapPeerConnector"),
-        PeerConnector(aServerConn, aCallback, timeout), icapService(service) {}
+        PeerConnector(aServerConn, aCallback, alp, timeout), icapService(service) {}
 
     /* PeerConnector API */
-    virtual SSL *initializeSsl();
+    virtual Security::SessionPtr initializeSsl();
     virtual void noteNegotiationDone(ErrorState *error);
-    virtual SSL_CTX *getSslContext() {return icapService->sslContext; }
+    virtual Security::ContextPtr getSslContext() {return icapService->sslContext;}
 
 private:
     Adaptation::Icap::ServiceRep::Pointer icapService;
@@ -108,6 +110,13 @@ Adaptation::Icap::Xaction::~Xaction()
     debugs(93,3, typeName << " destructed, this=" << this <<
            " [icapx" << id << ']'); // we should not call virtual status() here
     HTTPMSGUNLOCK(icapRequest);
+}
+
+AccessLogEntry::Pointer
+Adaptation::Icap::Xaction::masterLogEntry()
+{
+    AccessLogEntry::Pointer nil;
+    return nil;
 }
 
 Adaptation::Icap::ServiceRep &
@@ -296,7 +305,7 @@ void Adaptation::Icap::Xaction::noteCommConnected(const CommConnectCbParams &io)
 #if USE_OPENSSL
     // If it is a reused connection and the SSL object is build
     // we should not negotiate new SSL session
-    SSL *ssl = fd_table[io.conn->fd].ssl;
+    const auto &ssl = fd_table[io.conn->fd].ssl;
     if (!ssl && service().cfg().secure.encryptTransport) {
         CbcPointer<Adaptation::Icap::Xaction> me(this);
         securer = asyncCall(93, 4, "Adaptation::Icap::Xaction::handleSecuredPeer",
@@ -304,7 +313,7 @@ void Adaptation::Icap::Xaction::noteCommConnected(const CommConnectCbParams &io)
 
         Ssl::PeerConnector::HttpRequestPointer tmpReq(NULL);
         Ssl::IcapPeerConnector *sslConnector =
-            new Ssl::IcapPeerConnector(theService, io.conn, securer, TheConfig.connect_timeout(service().cfg().bypass));
+            new Ssl::IcapPeerConnector(theService, io.conn, securer, masterLogEntry(), TheConfig.connect_timeout(service().cfg().bypass));
         AsyncJob::Start(sslConnector); // will call our callback
         return;
     }
@@ -456,6 +465,11 @@ void Adaptation::Icap::Xaction::noteCommRead(const CommIoCbParams &io)
 
     // TODO: tune this better to expected message sizes
     readBuf.reserveCapacity(SQUID_TCP_SO_RCVBUF);
+    // we are not asked to grow beyond the allowed maximum
+    Must(readBuf.length() < SQUID_TCP_SO_RCVBUF);
+    // now we can ensure that there is space to read new data,
+    // even if readBuf.spaceSize() currently returns zero.
+    readBuf.rawSpace(1);
 
     CommIoCbParams rd(this); // will be expanded with ReadNow results
     rd.conn = io.conn;
@@ -534,7 +548,7 @@ bool Adaptation::Icap::Xaction::parseHttpMsg(HttpMsg *msg)
 bool Adaptation::Icap::Xaction::mayReadMore() const
 {
     return !doneReading() && // will read more data
-           readBuf.spaceSize();  // have space for more data
+           readBuf.length() < SQUID_TCP_SO_RCVBUF;  // have space for more data
 }
 
 bool Adaptation::Icap::Xaction::doneReading() const
@@ -696,12 +710,12 @@ bool Adaptation::Icap::Xaction::fillVirginHttpHeader(MemBuf &) const
 }
 
 #if USE_OPENSSL
-SSL *
+Security::SessionPtr
 Ssl::IcapPeerConnector::initializeSsl()
 {
-    SSL *ssl = Ssl::PeerConnector::initializeSsl();
+    auto ssl = Ssl::PeerConnector::initializeSsl();
     if (!ssl)
-        return NULL;
+        return nullptr;
 
     assert(!icapService->cfg().secure.sslDomain.isEmpty());
     SBuf *host = new SBuf(icapService->cfg().secure.sslDomain);
@@ -724,7 +738,7 @@ Ssl::IcapPeerConnector::noteNegotiationDone(ErrorState *error)
         return;
 
     const int fd = serverConnection()->fd;
-    SSL *ssl = fd_table[fd].ssl;
+    auto ssl = fd_table[fd].ssl.get();
     assert(ssl);
     if (!SSL_session_reused(ssl)) {
         if (icapService->sslSession)

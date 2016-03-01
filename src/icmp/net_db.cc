@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -19,9 +19,9 @@
 #include "squid.h"
 #include "CachePeer.h"
 #include "cbdata.h"
-#include "disk.h"
 #include "event.h"
 #include "fde.h"
+#include "fs_io.h"
 #include "FwdState.h"
 #include "HttpReply.h"
 #include "HttpRequest.h"
@@ -33,10 +33,10 @@
 #include "mgr/Registration.h"
 #include "mime_header.h"
 #include "neighbors.h"
+#include "SquidConfig.h"
 #include "SquidTime.h"
 #include "Store.h"
 #include "StoreClient.h"
-#include "SwapDir.h"
 #include "tools.h"
 #include "URL.h"
 #include "wordlist.h"
@@ -118,9 +118,6 @@ static net_db_peer *netdbPeerByName(const netdbEntry * n, const char *);
 static net_db_peer *netdbPeerAdd(netdbEntry * n, CachePeer * e);
 static const char *netdbPeerName(const char *name);
 static IPH netdbSendPing;
-static QS sortPeerByRtt;
-static QS sortByRtt;
-static QS netdbLRU;
 static FREE netdbFreeNameEntry;
 static FREE netdbFreeNetdbEntry;
 static STCB netdbExchangeHandleReply;
@@ -1289,7 +1286,8 @@ netdbExchangeStart(void *data)
 {
 #if USE_ICMP
     CachePeer *p = (CachePeer *)data;
-    char *uri = internalRemoteUri(p->host, p->http_port, "/squid-internal-dynamic/", "netdb");
+    static const SBuf netDB("netdb");
+    char *uri = internalRemoteUri(p->host, p->http_port, "/squid-internal-dynamic/", netDB);
     debugs(38, 3, "netdbExchangeStart: Requesting '" << uri << "'");
     assert(NULL != uri);
     HttpRequest *req = HttpRequest::CreateFromUrl(uri);
@@ -1316,8 +1314,6 @@ netdbExchangeStart(void *data)
     // XXX: send as Proxy-Authenticate instead
     if (p->login)
         ex->r->url.userInfo(SBuf(p->login));
-
-    urlCanonical(ex->r);
 
     FwdState::fwdStart(Comm::ConnectionPointer(), ex->e, ex->r);
 

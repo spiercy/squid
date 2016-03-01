@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -49,19 +49,6 @@ Rock::SwapDir::~SwapDir()
     delete io;
     delete map;
     safe_free(filePath);
-}
-
-StoreSearch *
-Rock::SwapDir::search(String const, HttpRequest *)
-{
-    assert(false);
-    return NULL; // XXX: implement
-}
-
-void
-Rock::SwapDir::get(String const key, STOREGETCLIENT cb, void *data)
-{
-    ::SwapDir::get(key, cb, data);
 }
 
 // called when Squid core needs a StoreEntry with a given key
@@ -405,12 +392,20 @@ Rock::SwapDir::parseSize(const bool reconfig)
 ConfigOption *
 Rock::SwapDir::getOptionTree() const
 {
-    ConfigOptionVector *vector = dynamic_cast<ConfigOptionVector*>(::SwapDir::getOptionTree());
-    assert(vector);
-    vector->options.push_back(new ConfigOptionAdapter<SwapDir>(*const_cast<SwapDir *>(this), &SwapDir::parseSizeOption, &SwapDir::dumpSizeOption));
-    vector->options.push_back(new ConfigOptionAdapter<SwapDir>(*const_cast<SwapDir *>(this), &SwapDir::parseTimeOption, &SwapDir::dumpTimeOption));
-    vector->options.push_back(new ConfigOptionAdapter<SwapDir>(*const_cast<SwapDir *>(this), &SwapDir::parseRateOption, &SwapDir::dumpRateOption));
-    return vector;
+    ConfigOption *copt = ::SwapDir::getOptionTree();
+    ConfigOptionVector *vector = dynamic_cast<ConfigOptionVector*>(copt);
+    if (vector) {
+        // if copt is actually a ConfigOptionVector
+        vector->options.push_back(new ConfigOptionAdapter<SwapDir>(*const_cast<SwapDir *>(this), &SwapDir::parseSizeOption, &SwapDir::dumpSizeOption));
+        vector->options.push_back(new ConfigOptionAdapter<SwapDir>(*const_cast<SwapDir *>(this), &SwapDir::parseTimeOption, &SwapDir::dumpTimeOption));
+        vector->options.push_back(new ConfigOptionAdapter<SwapDir>(*const_cast<SwapDir *>(this), &SwapDir::parseRateOption, &SwapDir::dumpRateOption));
+    } else {
+        // we don't know how to handle copt, as it's not a ConfigOptionVector.
+        // free it (and return nullptr)
+        delete copt;
+        copt = nullptr;
+    }
+    return copt;
 }
 
 bool
@@ -916,7 +911,7 @@ Rock::SwapDir::reference(StoreEntry &e)
 }
 
 bool
-Rock::SwapDir::dereference(StoreEntry &e, bool)
+Rock::SwapDir::dereference(StoreEntry &e)
 {
     debugs(47, 5, HERE << &e << ' ' << e.swap_dirn << ' ' << e.swap_filen);
     if (repl && repl->Dereferenced)

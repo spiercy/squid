@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,10 +13,10 @@
 #include "clients/forward.h"
 #include "comm/Connection.h"
 #include "comm/Write.h"
-#include "disk.h"
 #include "err_detail_type.h"
 #include "errorpage.h"
 #include "fde.h"
+#include "fs_io.h"
 #include "html_quote.h"
 #include "HttpHeaderTools.h"
 #include "HttpReply.h"
@@ -418,7 +418,7 @@ TemplateFile::loadFor(const HttpRequest *request)
     if (loaded()) // already loaded?
         return true;
 
-    if (!request || !request->header.getList(HDR_ACCEPT_LANGUAGE, &hdr) )
+    if (!request || !request->header.getList(Http::HdrType::ACCEPT_LANGUAGE, &hdr) )
         return false;
 
     char lang[256];
@@ -735,18 +735,10 @@ ErrorState::Dump(MemBuf * mb)
     str.append("\r\n", 2);
     /* - HTTP stuff */
     str.append("HTTP Request:\r\n", 15);
-
-    if (NULL != request) {
-        String urlpath_or_slash;
-
-        if (request->urlpath.size() != 0)
-            urlpath_or_slash = request->urlpath;
-        else
-            urlpath_or_slash = "/";
-
-        str.appendf(SQUIDSBUFPH " " SQUIDSTRINGPH " %s/%d.%d\n",
+    if (request) {
+        str.appendf(SQUIDSBUFPH " " SQUIDSBUFPH " %s/%d.%d\n",
                     SQUIDSBUFPRINT(request->method.image()),
-                    SQUIDSTRINGPRINT(urlpath_or_slash),
+                    SQUIDSBUFPRINT(request->url.path()),
                     AnyP::ProtocolType_str[request->http_ver.protocol],
                     request->http_ver.major, request->http_ver.minor);
         request->header.packInto(&str);
@@ -800,7 +792,11 @@ ErrorState::Convert(char token, bool building_deny_info_url, bool allowRecursion
 
     case 'B':
         if (building_deny_info_url) break;
-        p = request ? Ftp::UrlWith2f(request) : "[no URL]";
+        if (request) {
+            const SBuf &tmp = Ftp::UrlWith2f(request);
+            mb.append(tmp.rawContent(), tmp.length());
+        } else
+            p = "[no URL]";
         break;
 
     case 'c':
@@ -953,23 +949,17 @@ ErrorState::Convert(char token, bool building_deny_info_url, bool allowRecursion
     case 'R':
         if (building_deny_info_url) {
             if (request != NULL) {
-                p = (request->urlpath.size() != 0 ? request->urlpath.termedBuf() : "/");
+                SBuf tmp = request->url.path();
+                p = tmp.c_str();
                 no_urlescape = 1;
             } else
                 p = "[no request]";
             break;
         }
-        if (NULL != request) {
-            String urlpath_or_slash;
-
-            if (request->urlpath.size() != 0)
-                urlpath_or_slash = request->urlpath;
-            else
-                urlpath_or_slash = "/";
-
-            mb.appendf(SQUIDSBUFPH " " SQUIDSTRINGPH " %s/%d.%d\n",
+        if (request != NULL) {
+            mb.appendf(SQUIDSBUFPH " " SQUIDSBUFPH " %s/%d.%d\n",
                        SQUIDSBUFPRINT(request->method.image()),
-                       SQUIDSTRINGPRINT(urlpath_or_slash),
+                       SQUIDSBUFPRINT(request->url.path()),
                        AnyP::ProtocolType_str[request->http_ver.protocol],
                        request->http_ver.major, request->http_ver.minor);
             request->header.packInto(&mb, true); //hide authorization data
@@ -983,7 +973,11 @@ ErrorState::Convert(char token, bool building_deny_info_url, bool allowRecursion
     case 's':
         /* for backward compat we make %s show the full URL. Drop this in some future release. */
         if (building_deny_info_url) {
-            p = request ? urlCanonical(request) : url;
+            if (request) {
+                const SBuf &tmp = request->effectiveRequestUri();
+                mb.append(tmp.rawContent(), tmp.length());
+            } else
+                p = url;
             debugs(0, DBG_CRITICAL, "WARNING: deny_info now accepts coded tags. Use %u to get the full URL instead of %s");
         } else
             p = visible_appname_string;
@@ -1019,7 +1013,7 @@ ErrorState::Convert(char token, bool building_deny_info_url, bool allowRecursion
         break;
 
     case 'U':
-        /* Using the fake-https version of canonical so error pages see https:// */
+        /* Using the fake-https version of absolute-URI so error pages see https:// */
         /* even when the url-path cannot be shown as more than '*' */
         if (request)
             p = urlCanonicalFakeHttps(request);
@@ -1030,9 +1024,10 @@ ErrorState::Convert(char token, bool building_deny_info_url, bool allowRecursion
         break;
 
     case 'u':
-        if (request)
-            p = urlCanonical(request);
-        else if (url)
+        if (request) {
+            const SBuf &tmp = request->effectiveRequestUri();
+            mb.append(tmp.rawContent(), tmp.length());
+        } else if (url)
             p = url;
         else if (!building_deny_info_url)
             p = "[no URL]";
@@ -1154,10 +1149,10 @@ ErrorState::BuildHttpReply()
             MemBuf redirect_location;
             redirect_location.init();
             DenyInfoLocation(name, request, redirect_location);
-            httpHeaderPutStrf(&rep->header, HDR_LOCATION, "%s", redirect_location.content() );
+            httpHeaderPutStrf(&rep->header, Http::HdrType::LOCATION, "%s", redirect_location.content() );
         }
 
-        httpHeaderPutStrf(&rep->header, HDR_X_SQUID_ERROR, "%d %s", httpStatus, "Access Denied");
+        httpHeaderPutStrf(&rep->header, Http::HdrType::X_SQUID_ERROR, "%d %s", httpStatus, "Access Denied");
     } else {
         MemBuf *content = BuildContent();
         rep->setHeaders(httpStatus, NULL, "text/html;charset=utf-8", content->contentSize(), 0, -1);
@@ -1169,7 +1164,7 @@ ErrorState::BuildHttpReply()
          * might want to know. Someone _will_ want to know OTOH, the first
          * X-CACHE-MISS entry should tell us who.
          */
-        httpHeaderPutStrf(&rep->header, HDR_X_SQUID_ERROR, "%s %d", name, xerrno);
+        httpHeaderPutStrf(&rep->header, Http::HdrType::X_SQUID_ERROR, "%s %d", name, xerrno);
 
 #if USE_ERR_LOCALES
         /*
@@ -1180,20 +1175,20 @@ ErrorState::BuildHttpReply()
          */
         if (!Config.errorDirectory) {
             /* We 'negotiated' this ONLY from the Accept-Language. */
-            rep->header.delById(HDR_VARY);
-            rep->header.putStr(HDR_VARY, "Accept-Language");
+            rep->header.delById(Http::HdrType::VARY);
+            rep->header.putStr(Http::HdrType::VARY, "Accept-Language");
         }
 
         /* add the Content-Language header according to RFC section 14.12 */
         if (err_language) {
-            rep->header.putStr(HDR_CONTENT_LANGUAGE, err_language);
+            rep->header.putStr(Http::HdrType::CONTENT_LANGUAGE, err_language);
         } else
 #endif /* USE_ERROR_LOCALES */
         {
             /* default templates are in English */
             /* language is known unless error_directory override used */
             if (!Config.errorDirectory)
-                rep->header.putStr(HDR_CONTENT_LANGUAGE, "en");
+                rep->header.putStr(Http::HdrType::CONTENT_LANGUAGE, "en");
         }
 
         rep->body.setMb(content);

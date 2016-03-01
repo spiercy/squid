@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -19,11 +19,13 @@
 #include "gopher.h"
 #include "http.h"
 #include "http/one/RequestParser.h"
+#include "http/Stream.h"
 #include "HttpHdrCc.h"
 #include "HttpHeaderRange.h"
 #include "HttpRequest.h"
 #include "log/Config.h"
 #include "MemBuf.h"
+#include "sbuf/SBufStringConvert.h"
 #include "SquidConfig.h"
 #include "Store.h"
 #include "URL.h"
@@ -61,7 +63,7 @@ HttpRequest::initHTTP(const HttpRequestMethod& aMethod, AnyP::ProtocolType aProt
 {
     method = aMethod;
     url.setScheme(aProtocol);
-    urlpath = aUrlpath;
+    url.path(aUrlpath);
 }
 
 void
@@ -69,11 +71,9 @@ HttpRequest::init()
 {
     method = Http::METHOD_NONE;
     url.clear();
-    urlpath = NULL;
 #if USE_AUTH
     auth_user_request = NULL;
 #endif
-    canonical = NULL;
     memset(&flags, '\0', sizeof(flags));
     range = NULL;
     ims = -1;
@@ -121,12 +121,9 @@ HttpRequest::clean()
 #if USE_AUTH
     auth_user_request = NULL;
 #endif
-    safe_free(canonical);
-
     safe_free(vary_headers);
 
     url.clear();
-    urlpath.clean();
 
     header.clean();
 
@@ -173,7 +170,8 @@ HttpRequest::reset()
 HttpRequest *
 HttpRequest::clone() const
 {
-    HttpRequest *copy = new HttpRequest(method, url.getScheme(), urlpath.termedBuf());
+    HttpRequest *copy = new HttpRequest();
+    copy->method = method;
     // TODO: move common cloning clone to Msg::copyTo() or copy ctor
     copy->header.append(&header);
     copy->hdrCacheInit();
@@ -182,12 +180,11 @@ HttpRequest::clone() const
     copy->pstate = pstate; // TODO: should we assert a specific state here?
     copy->body_pipe = body_pipe;
 
+    copy->url.setScheme(url.getScheme());
     copy->url.userInfo(url.userInfo());
     copy->url.host(url.host());
     copy->url.port(url.port());
-
-    // urlPath handled in ctor
-    copy->canonical = canonical ? xstrdup(canonical) : NULL;
+    copy->url.path(url.path());
 
     // range handled in hdrCacheInit()
     copy->ims = ims;
@@ -255,6 +252,8 @@ HttpRequest::inheritProperties(const HttpMsg *aMsg)
     clientConnectionManager = aReq->clientConnectionManager;
 
     notes = aReq->notes;
+
+    sources = aReq->sources;
     return true;
 }
 
@@ -340,23 +339,6 @@ HttpRequest::parseFirstLine(const char *start, const char *end)
     return true;
 }
 
-bool
-HttpRequest::parseHeader(Http1::RequestParser &hp)
-{
-    // HTTP/1 message contains "zero or more header fields"
-    // zero does not need parsing
-    if (!hp.headerBlockSize())
-        return true;
-
-    // XXX: c_str() reallocates. performance regression.
-    const bool result = header.parse(hp.mimeHeader().c_str(), hp.headerBlockSize());
-
-    if (result)
-        hdrCacheInit();
-
-    return result;
-}
-
 /* swaps out request using httpRequestPack */
 void
 HttpRequest::swapOut(StoreEntry * e)
@@ -364,6 +346,7 @@ HttpRequest::swapOut(StoreEntry * e)
     assert(e);
     e->buffer();
     pack(e);
+    e->flush();
 }
 
 /* packs request-line and headers, appends <crlf> terminator */
@@ -372,8 +355,8 @@ HttpRequest::pack(Packable * p)
 {
     assert(p);
     /* pack request-line */
-    p->appendf(SQUIDSBUFPH " " SQUIDSTRINGPH " HTTP/%d.%d\r\n",
-               SQUIDSBUFPRINT(method.image()), SQUIDSTRINGPRINT(urlpath),
+    p->appendf(SQUIDSBUFPH " " SQUIDSBUFPH " HTTP/%d.%d\r\n",
+               SQUIDSBUFPRINT(method.image()), SQUIDSBUFPRINT(url.path()),
                http_ver.major, http_ver.minor);
     /* headers */
     header.packInto(p);
@@ -393,10 +376,10 @@ httpRequestPack(void *obj, Packable *p)
 
 /* returns the length of request line + headers + crlf */
 int
-HttpRequest::prefixLen()
+HttpRequest::prefixLen() const
 {
     return method.image().length() + 1 +
-           urlpath.size() + 1 +
+           url.path().length() + 1 +
            4 + 1 + 3 + 2 +
            header.len + 2;
 }
@@ -491,23 +474,15 @@ HttpRequest::clearError()
     errDetail = ERR_DETAIL_NONE;
 }
 
-const char *HttpRequest::packableURI(bool full_uri) const
+void
+HttpRequest::packFirstLineInto(Packable * p, bool full_uri) const
 {
-    if (full_uri)
-        return urlCanonical((HttpRequest*)this);
+    const SBuf tmp(full_uri ? effectiveRequestUri() : url.path());
 
-    if (urlpath.size())
-        return urlpath.termedBuf();
-
-    return "/";
-}
-
-void HttpRequest::packFirstLineInto(Packable * p, bool full_uri) const
-{
     // form HTTP request-line
-    p->appendf(SQUIDSBUFPH " %s HTTP/%d.%d\r\n",
+    p->appendf(SQUIDSBUFPH " " SQUIDSBUFPH " HTTP/%d.%d\r\n",
                SQUIDSBUFPRINT(method.image()),
-               packableURI(full_uri),
+               SQUIDSBUFPRINT(tmp),
                http_ver.major, http_ver.minor);
 }
 
@@ -605,8 +580,8 @@ bool
 HttpRequest::conditional() const
 {
     return flags.ims ||
-           header.has(HDR_IF_MATCH) ||
-           header.has(HDR_IF_NONE_MATCH);
+           header.has(Http::HdrType::IF_MATCH) ||
+           header.has(Http::HdrType::IF_NONE_MATCH);
 }
 
 void
@@ -665,8 +640,8 @@ bool
 HttpRequest::canHandle1xx() const
 {
     // old clients do not support 1xx unless they sent Expect: 100-continue
-    // (we reject all other HDR_EXPECT values so just check for HDR_EXPECT)
-    if (http_ver <= Http::ProtocolVersion(1,0) && !header.has(HDR_EXPECT))
+    // (we reject all other Http::HdrType::EXPECT values so just check for Http::HdrType::EXPECT)
+    if (http_ver <= Http::ProtocolVersion(1,0) && !header.has(Http::HdrType::EXPECT))
         return false;
 
     // others must support 1xx control messages
@@ -681,16 +656,22 @@ HttpRequest::pinnedConnection()
     return NULL;
 }
 
-const char *
+const SBuf
 HttpRequest::storeId()
 {
     if (store_id.size() != 0) {
-        debugs(73, 3, "sent back store_id:" << store_id);
-
-        return store_id.termedBuf();
+        debugs(73, 3, "sent back store_id: " << store_id);
+        return StringToSBuf(store_id);
     }
-    debugs(73, 3, "sent back canonicalUrl:" << urlCanonical(this) );
+    debugs(73, 3, "sent back effectiveRequestUrl: " << effectiveRequestUri());
+    return effectiveRequestUri();
+}
 
-    return urlCanonical(this);
+const SBuf &
+HttpRequest::effectiveRequestUri() const
+{
+    if (method.id() == Http::METHOD_CONNECT)
+        return url.authority(true); // host:port
+    return url.absolute();
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -81,8 +81,8 @@ public:
     void callWhenReady(AsyncCall::Pointer &cb);
 
     // the methods below can only be called on an up() service
-    bool wantsUrl(const String &urlPath) const;
-    bool wantsPreview(const String &urlPath, size_t &wantedSize) const;
+    bool wantsUrl(const SBuf &urlPath) const;
+    bool wantsPreview(const SBuf &urlPath, size_t &wantedSize) const;
     bool allows204() const;
     bool allows206() const;
     Comm::ConnectionPointer getConnection(bool isRetriable, bool &isReused);
@@ -110,7 +110,7 @@ public: // treat these as private, they are for callbacks only
     // receive either an ICAP OPTIONS response header or an abort message
     virtual void noteAdaptationAnswer(const Answer &answer);
 
-    Security::ContextPointer sslContext;
+    Security::ContextPtr sslContext;
 #if USE_OPENSSL
     SSL_SESSION *sslSession;
 #endif

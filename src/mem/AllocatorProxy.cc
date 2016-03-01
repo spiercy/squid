@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -28,8 +28,10 @@ Mem::AllocatorProxy::freeOne(void *address)
 MemAllocator *
 Mem::AllocatorProxy::getAllocator() const
 {
-    if (!theAllocator)
+    if (!theAllocator) {
         theAllocator = MemPools::GetInstance().create(objectType(), size);
+        theAllocator->zeroBlocks(doZero);
+    }
     return theAllocator;
 }
 
@@ -40,6 +42,12 @@ Mem::AllocatorProxy::inUseCount() const
         return 0;
     else
         return memPoolInUseCount(theAllocator);
+}
+
+void
+Mem::AllocatorProxy::zeroBlocks(bool doIt)
+{
+    getAllocator()->zeroBlocks(doIt);
 }
 
 MemPoolMeter const &

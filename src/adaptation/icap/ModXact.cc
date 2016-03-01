@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -557,10 +557,10 @@ void Adaptation::Icap::ModXact::readMore()
         return;
     }
 
-    if (readBuf.spaceSize())
+    if (readBuf.length() < SQUID_TCP_SO_RCVBUF)
         scheduleRead();
     else
-        debugs(93,3,HERE << "nothing to do because !readBuf.spaceSize()");
+        debugs(93,3,HERE << "cannot read with a full buffer");
 }
 
 // comm module read a portion of the ICAP response for us
@@ -771,6 +771,16 @@ void Adaptation::Icap::ModXact::startSending()
 
     if (state.sending == State::sendingVirgin)
         echoMore();
+    else {
+        // If we are not using the virgin HTTP object update the
+        // HttpMsg::sources flag.
+        // The state.sending may set to State::sendingVirgin in the case
+        // of 206 responses too, where we do not want to update HttpMsg::sources
+        // flag. However even for 206 responses the state.sending is
+        // not set yet to sendingVirgin. This is done in later step
+        // after the parseBody method called.
+        updateSources();
+    }
 }
 
 void Adaptation::Icap::ModXact::parseIcapHead()
@@ -833,12 +843,12 @@ void Adaptation::Icap::ModXact::parseIcapHead()
     // update the adaptation plan if needed (all status codes!)
     if (service().cfg().routing) {
         String services;
-        if (icapReply->header.getList(HDR_X_NEXT_SERVICES, &services)) {
+        if (icapReply->header.getList(Http::HdrType::X_NEXT_SERVICES, &services)) {
             Adaptation::History::Pointer ah = request->adaptHistory(true);
             if (ah != NULL)
                 ah->updateNextServices(services);
         }
-    } // TODO: else warn (occasionally!) if we got HDR_X_NEXT_SERVICES
+    } // TODO: else warn (occasionally!) if we got Http::HdrType::X_NEXT_SERVICES
 
     // We need to store received ICAP headers for <icapLastHeader logformat option.
     // If we already have stored headers from previous ICAP transaction related to this
@@ -968,10 +978,6 @@ void Adaptation::Icap::ModXact::prepEchoing()
 
     httpBuf.terminate(); // HttpMsg::parse requires nil-terminated buffer
     Must(adapted.header->parse(httpBuf.content(), httpBuf.contentSize(), true, &error));
-
-    if (HttpRequest *r = dynamic_cast<HttpRequest*>(adapted.header))
-        urlCanonical(r); // parse does not set HttpRequest::canonical
-
     Must(adapted.header->hdr_sz == httpBuf.contentSize()); // no leftovers
 
     httpBuf.clean();
@@ -1089,9 +1095,6 @@ bool Adaptation::Icap::ModXact::parseHead(HttpMsg *head)
         head->reset();
         return false;
     }
-
-    if (HttpRequest *r = dynamic_cast<HttpRequest*>(head))
-        urlCanonical(r); // parse does not set HttpRequest::canonical
 
     debugs(93, 5, HERE << "parse success, consume " << head->hdr_sz << " bytes, return true");
     readBuf.consume(head->hdr_sz);
@@ -1348,13 +1351,13 @@ void Adaptation::Icap::ModXact::makeRequestHeaders(MemBuf &buf)
 
     // we must forward "Proxy-Authenticate" and "Proxy-Authorization"
     // as ICAP headers.
-    if (virgin.header->header.has(HDR_PROXY_AUTHENTICATE)) {
-        String vh=virgin.header->header.getByName("Proxy-Authenticate");
+    if (virgin.header->header.has(Http::HdrType::PROXY_AUTHENTICATE)) {
+        String vh=virgin.header->header.getById(Http::HdrType::PROXY_AUTHENTICATE);
         buf.appendf("Proxy-Authenticate: " SQUIDSTRINGPH "\r\n",SQUIDSTRINGPRINT(vh));
     }
 
-    if (virgin.header->header.has(HDR_PROXY_AUTHORIZATION)) {
-        String vh=virgin.header->header.getByName("Proxy-Authorization");
+    if (virgin.header->header.has(Http::HdrType::PROXY_AUTHORIZATION)) {
+        String vh=virgin.header->header.getById(Http::HdrType::PROXY_AUTHORIZATION);
         buf.appendf("Proxy-Authorization: " SQUIDSTRINGPH "\r\n", SQUIDSTRINGPRINT(vh));
     } else if (request->extacl_user.size() > 0 && request->extacl_passwd.size() > 0) {
         struct base64_encode_ctx ctx;
@@ -1389,9 +1392,7 @@ void Adaptation::Icap::ModXact::makeRequestHeaders(MemBuf &buf)
 
     // to simplify, we could assume that request is always available
 
-    String urlPath;
     if (request) {
-        urlPath = request->urlpath;
         if (ICAP::methodRespmod == m)
             encapsulateHead(buf, "req-hdr", httpBuf, request);
         else if (ICAP::methodReqmod == m)
@@ -1541,8 +1542,9 @@ void Adaptation::Icap::ModXact::encapsulateHead(MemBuf &icapBuf, const char *sec
 
     if (const HttpRequest* old_request = dynamic_cast<const HttpRequest*>(head)) {
         HttpRequest::Pointer new_request(new HttpRequest);
-        Must(old_request->canonical);
-        urlParse(old_request->method, old_request->canonical, new_request.getRaw());
+        // copy the requst-line details
+        new_request->method = old_request->method;
+        new_request->url = old_request->url;
         new_request->http_ver = old_request->http_ver;
         headClone = new_request.getRaw();
     } else if (const HttpReply *old_reply = dynamic_cast<const HttpReply*>(head)) {
@@ -1561,7 +1563,7 @@ void Adaptation::Icap::ModXact::encapsulateHead(MemBuf &icapBuf, const char *sec
     // end cloning
 
     // remove all hop-by-hop headers from the clone
-    headClone->header.delById(HDR_PROXY_AUTHENTICATE);
+    headClone->header.delById(Http::HdrType::PROXY_AUTHENTICATE);
     headClone->header.removeHopByHopEntries();
 
     // pack polished HTTP header
@@ -1583,10 +1585,10 @@ void Adaptation::Icap::ModXact::decideOnPreview()
         return;
     }
 
-    const String urlPath = virginRequest().urlpath;
+    const SBuf urlPath(virginRequest().url.path());
     size_t wantedSize;
     if (!service().wantsPreview(urlPath, wantedSize)) {
-        debugs(93, 5, HERE << "should not offer preview for " << urlPath);
+        debugs(93, 5, "should not offer preview for " << urlPath);
         return;
     }
 
@@ -1955,6 +1957,12 @@ void Adaptation::Icap::ModXact::clearError()
 
     if (request)
         request->clearError();
+}
+
+void Adaptation::Icap::ModXact::updateSources()
+{
+    Must(adapted.header);
+    adapted.header->sources |= (service().cfg().connectionEncryption ? HttpMsg::srcIcaps : HttpMsg::srcIcap);
 }
 
 /* Adaptation::Icap::ModXactLauncher */

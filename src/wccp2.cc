@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -21,8 +21,8 @@
 #include "ip/Address.h"
 #include "md5.h"
 #include "Parsing.h"
+#include "SquidConfig.h"
 #include "Store.h"
-#include "SwapDir.h"
 
 #if HAVE_NETDB_H
 #include <netdb.h>
@@ -2234,12 +2234,19 @@ parse_wccp2_service_ports(char *options, int portlist[])
 
     int i = 0;
     char *tmp = options;
+    static char copy[10];
 
     while (size_t len = strcspn(tmp, ",")) {
         if (i >= WCCP2_NUMPORTS) {
             fatalf("parse_wccp2_service_ports: too many ports (maximum: 8) in list '%s'\n", options);
         }
-        int p = xatoi(tmp);
+        if (len > 6) { // 6 because "65535,"
+            fatalf("parse_wccp2_service_ports: port value '%s' isn't valid (1..65535)\n", tmp);
+        }
+
+        memcpy(copy, tmp, len);
+        copy[len] = '\0';
+        int p = xatoi(copy);
 
         if (p < 1 || p > 65535) {
             fatalf("parse_wccp2_service_ports: port value '%s' isn't valid (1..65535)\n", tmp);
@@ -2335,8 +2342,6 @@ parse_wccp2_service_info(void *)
 void
 dump_wccp2_service_info(StoreEntry * e, const char *label, void *)
 {
-    char comma;
-
     struct wccp2_service_list_t *srv;
     int flags;
     srv = wccp2_service_list_head;
@@ -2362,102 +2367,102 @@ dump_wccp2_service_info(StoreEntry * e, const char *label, void *)
         /* flags */
         flags = ntohl(srv->info.service_flags);
 
+        bool comma = false;
         if (flags != 0) {
-            comma = 0;
             storeAppendPrintf(e, " flags=");
 
             if (flags & WCCP2_SERVICE_SRC_IP_HASH) {
-                storeAppendPrintf(e, "%ssrc_ip_hash", comma ? "," : "");
-                comma = 1;
+                storeAppendPrintf(e, "src_ip_hash");
+                comma = true;
             }
 
             if (flags & WCCP2_SERVICE_DST_IP_HASH) {
                 storeAppendPrintf(e, "%sdst_ip_hash", comma ? "," : "");
-                comma = 1;
+                comma = true;
             }
 
             if (flags & WCCP2_SERVICE_SRC_PORT_HASH) {
                 storeAppendPrintf(e, "%ssource_port_hash", comma ? "," : "");
-                comma = 1;
+                comma = true;
             }
 
             if (flags & WCCP2_SERVICE_DST_PORT_HASH) {
                 storeAppendPrintf(e, "%sdst_port_hash", comma ? "," : "");
-                comma = 1;
+                comma = true;
             }
 
             if (flags & WCCP2_SERVICE_PORTS_DEFINED) {
                 storeAppendPrintf(e, "%sports_defined", comma ? "," : "");
-                comma = 1;
+                comma = true;
             }
 
             if (flags & WCCP2_SERVICE_PORTS_SOURCE) {
                 storeAppendPrintf(e, "%sports_source", comma ? "," : "");
-                comma = 1;
+                comma = true;
             }
 
             if (flags & WCCP2_SERVICE_SRC_IP_ALT_HASH) {
                 storeAppendPrintf(e, "%ssrc_ip_alt_hash", comma ? "," : "");
-                comma = 1;
+                comma = true;
             }
 
             if (flags & WCCP2_SERVICE_DST_IP_ALT_HASH) {
                 storeAppendPrintf(e, "%ssrc_ip_alt_hash", comma ? "," : "");
-                comma = 1;
+                comma = true;
             }
 
             if (flags & WCCP2_SERVICE_SRC_PORT_ALT_HASH) {
                 storeAppendPrintf(e, "%ssrc_port_alt_hash", comma ? "," : "");
-                comma = 1;
+                comma = true;
             }
 
             if (flags & WCCP2_SERVICE_DST_PORT_ALT_HASH) {
                 storeAppendPrintf(e, "%sdst_port_alt_hash", comma ? "," : "");
-                comma = 1;
+                //comma = true; // uncomment if more options added
             }
         }
 
         /* ports */
-        comma = 0;
+        comma = false;
 
         if (srv->info.port0 != 0) {
-            storeAppendPrintf(e, "%s%d", comma ? "," : " ports=", ntohs(srv->info.port0));
-            comma = 1;
+            storeAppendPrintf(e, " ports=%d", ntohs(srv->info.port0));
+            comma = true;
         }
 
         if (srv->info.port1 != 0) {
             storeAppendPrintf(e, "%s%d", comma ? "," : "ports=", ntohs(srv->info.port1));
-            comma = 1;
+            comma = true;
         }
 
         if (srv->info.port2 != 0) {
             storeAppendPrintf(e, "%s%d", comma ? "," : "ports=", ntohs(srv->info.port2));
-            comma = 1;
+            comma = true;
         }
 
         if (srv->info.port3 != 0) {
             storeAppendPrintf(e, "%s%d", comma ? "," : "ports=", ntohs(srv->info.port3));
-            comma = 1;
+            comma = true;
         }
 
         if (srv->info.port4 != 0) {
             storeAppendPrintf(e, "%s%d", comma ? "," : "ports=", ntohs(srv->info.port4));
-            comma = 1;
+            comma = true;
         }
 
         if (srv->info.port5 != 0) {
             storeAppendPrintf(e, "%s%d", comma ? "," : "ports=", ntohs(srv->info.port5));
-            comma = 1;
+            comma = true;
         }
 
         if (srv->info.port6 != 0) {
             storeAppendPrintf(e, "%s%d", comma ? "," : "ports=", ntohs(srv->info.port6));
-            comma = 1;
+            comma = true;
         }
 
         if (srv->info.port7 != 0) {
             storeAppendPrintf(e, "%s%d", comma ? "," : "ports=", ntohs(srv->info.port7));
-            comma = 1;
+            // comma = true; // uncomment if more options are added
         }
 
         /* protocol */

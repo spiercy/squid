@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -29,6 +29,14 @@ RegisterRunner(RegisteredRunner *rr)
 {
     Runners &runners = GetRunners();
     runners.insert(rr);
+    return runners.size();
+}
+
+int
+DeregisterRunner(RegisteredRunner *rr)
+{
+    Runners &runners = GetRunners();
+    runners.erase(rr);
     return runners.size();
 }
 

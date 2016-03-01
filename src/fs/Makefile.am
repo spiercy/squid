@@ -1,4 +1,4 @@
-## Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+## Copyright (C) 1996-2016 The Squid Software Foundation and contributors
 ##
 ## Squid software is distributed under GPLv2+ license and includes
 ## contributions from numerous individuals and organizations.
@@ -6,8 +6,6 @@
 ##
 
 include $(top_srcdir)/src/Common.am
-
-AUTOMAKE_OPTIONS = subdir-objects
 
 EXTRA_LTLIBRARIES = libaufs.la libdiskd.la libufs.la librock.la
 noinst_LTLIBRARIES =  $(STORE_LIBS_TO_BUILD) libfs.la
@@ -37,9 +35,9 @@ libufs_la_SOURCES = \
 	ufs/RebuildState.cc
 
 librock_la_SOURCES = \
+	rock/forward.h \
 	rock/RockDbCell.cc \
 	rock/RockDbCell.h \
-	rock/RockForward.h \
 	rock/RockIoState.cc \
 	rock/RockIoState.h \
 	rock/RockIoRequests.cc \

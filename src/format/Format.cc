@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -17,11 +17,14 @@
 #include "format/Quoting.h"
 #include "format/Token.h"
 #include "fqdncache.h"
+#include "http/Stream.h"
 #include "HttpRequest.h"
 #include "MemBuf.h"
 #include "rfc1738.h"
+#include "security/NegotiationHistory.h"
 #include "SquidTime.h"
 #include "Store.h"
+#include "tools.h"
 #include "URL.h"
 #if USE_OPENSSL
 #include "ssl/ErrorDetail.h"
@@ -88,14 +91,15 @@ Format::Format::parse(const char *def)
 }
 
 void
-Format::Format::dump(StoreEntry * entry, const char *directiveName)
+Format::Format::dump(StoreEntry * entry, const char *directiveName, bool eol) const
 {
     debugs(46, 4, HERE);
 
     // loop rather than recursing to conserve stack space.
-    for (Format *fmt = this; fmt; fmt = fmt->next) {
+    for (const Format *fmt = this; fmt; fmt = fmt->next) {
         debugs(46, 3, HERE << "Dumping format definition for " << fmt->name);
-        storeAppendPrintf(entry, "%s %s ", directiveName, fmt->name);
+        if (directiveName)
+            storeAppendPrintf(entry, "%s %s ", directiveName, fmt->name);
 
         for (Token *t = fmt->format; t; t = t->next) {
             if (t->type == LFT_STRING)
@@ -225,6 +229,10 @@ Format::Format::dump(StoreEntry * entry, const char *directiveName)
                     entry->append("'", 1);
                     break;
 
+                case LOG_QUOTE_SHELL:
+                    entry->append("/", 1);
+                    break;
+
                 case LOG_QUOTE_NONE:
                     break;
                 }
@@ -251,7 +259,8 @@ Format::Format::dump(StoreEntry * entry, const char *directiveName)
             }
         }
 
-        entry->append("\n", 1);
+        if (eol)
+            entry->append("\n", 1);
     }
 
 }
@@ -308,6 +317,15 @@ log_quoted_string(const char *str, char *out)
 
     *p = '\0';
 }
+
+#if USE_OPENSSL
+static char *
+sslErrorName(Ssl::ssl_error_t err, char *buf, size_t size)
+{
+    snprintf(buf, size, "SSL_ERR=%d", err);
+    return buf;
+}
+#endif
 
 void
 Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logSequenceNumber) const
@@ -370,8 +388,28 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
                     al->request->clientConnectionManager->clientConnection->remoteEui64.encode(tmp, 1024);
                 out = tmp;
             }
-#else
-            out = "-";
+#endif
+            break;
+
+        case LFT_EXT_ACL_CLIENT_EUI48:
+#if USE_SQUID_EUI
+            if (al->request && al->request->clientConnectionManager.valid() &&
+                    al->request->clientConnectionManager->clientConnection != NULL &&
+                    al->request->clientConnectionManager->clientConnection->remote.isIPv4()) {
+                al->request->clientConnectionManager->clientConnection->remoteEui48.encode(tmp, 1024);
+                out = tmp;
+            }
+#endif
+            break;
+
+        case LFT_EXT_ACL_CLIENT_EUI64:
+#if USE_SQUID_EUI
+            if (al->request && al->request->clientConnectionManager.valid() &&
+                    al->request->clientConnectionManager->clientConnection != NULL &&
+                    !al->request->clientConnectionManager->clientConnection->remote.isIPv4()) {
+                al->request->clientConnectionManager->clientConnection->remoteEui64.encode(tmp, 1024);
+                out = tmp;
+            }
 #endif
             break;
 
@@ -430,6 +468,9 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
         case LFT_LOCAL_LISTENING_PORT:
             if (al->cache.port != NULL) {
                 outint = al->cache.port->s.port();
+                doint = 1;
+            } else if (al->request) {
+                outint = al->request->my_addr.port();
                 doint = 1;
             }
             break;
@@ -815,8 +856,14 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             if (al->request && al->request->auth_user_request != NULL)
                 out = strOrNull(al->request->auth_user_request->username());
 #endif
+            if (!out && al->request && al->request->extacl_user.size()) {
+                if (const char *t = al->request->extacl_user.termedBuf())
+                    out = t;
+            }
+
             if (!out)
                 out = strOrNull(al->cache.extuser);
+
 #if USE_OPENSSL
             if (!out)
                 out = strOrNull(al->cache.ssluser);
@@ -837,7 +884,13 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             break;
 
         case LFT_USER_EXTERNAL:
-            out = strOrNull(al->cache.extuser);
+            if (al->request && al->request->extacl_user.size()) {
+                if (const char *t = al->request->extacl_user.termedBuf())
+                    out = t;
+            }
+
+            if (!out)
+                out = strOrNull(al->cache.extuser);
             break;
 
         /* case LFT_USER_REALM: */
@@ -877,14 +930,7 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             break;
 
         case LFT_SQUID_STATUS:
-            if (al->http.timedout || al->http.aborted) {
-                snprintf(tmp, sizeof(tmp), "%s%s", LogTags_str[al->cache.code],
-                         al->http.statusSfx());
-                out = tmp;
-            } else {
-                out = LogTags_str[al->cache.code];
-            }
-
+            out = al->cache.code.c_str();
             break;
 
         case LFT_SQUID_ERROR:
@@ -895,15 +941,12 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
         case LFT_SQUID_ERROR_DETAIL:
 #if USE_OPENSSL
             if (al->request && al->request->errType == ERR_SECURE_CONNECT_FAIL) {
-                if (! (out = Ssl::GetErrorName(al->request->errDetail))) {
-                    snprintf(tmp, sizeof(tmp), "SSL_ERR=%d", al->request->errDetail);
-                    out = tmp;
-                }
+                if (! (out = Ssl::GetErrorName(al->request->errDetail)))
+                    out = sslErrorName(al->request->errDetail, tmp, sizeof(tmp));
             } else
 #endif
                 if (al->request && al->request->errDetail != ERR_DETAIL_NONE) {
-                    if (al->request->errDetail > ERR_DETAIL_START  &&
-                            al->request->errDetail < ERR_DETAIL_MAX)
+                    if (al->request->errDetail > ERR_DETAIL_START && al->request->errDetail < ERR_DETAIL_MAX)
                         out = errorDetailName(al->request->errDetail);
                     else {
                         if (al->request->errDetail >= ERR_DETAIL_EXCEPTION_START)
@@ -942,7 +985,9 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
         case LFT_CLIENT_REQ_URI:
             // original client URI
             if (al->request) {
-                out = urlCanonical(al->request);
+                const SBuf &s = al->request->effectiveRequestUri();
+                sb.append(s.rawContent(), s.length());
+                out = sb.termedBuf();
                 quote = 1;
             }
             break;
@@ -971,7 +1016,8 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
         case LFT_REQUEST_URLPATH_OLD_31:
         case LFT_CLIENT_REQ_URLPATH:
             if (al->request) {
-                out = al->request->urlpath.termedBuf();
+                SBuf s = al->request->url.path();
+                out = s.c_str();
                 quote = 1;
             }
             break;
@@ -984,15 +1030,13 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             break;
 
         case LFT_REQUEST_METHOD:
-            if (al->_private.method_str) // ICP, HTCP method code
-                out = al->_private.method_str;
-            else {
-                const SBuf &s = al->http.method.image();
-                sb.append(s.rawContent(), s.length());
-                out = sb.termedBuf();
-                quote = 1;
-            }
-            break;
+        {
+            const SBuf s(al->getLogMethod());
+            sb.append(s.rawContent(), s.length());
+            out = sb.termedBuf();
+            quote = 1;
+        }
+        break;
 
         case LFT_REQUEST_URI:
             out = al->url;
@@ -1016,7 +1060,9 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
         case LFT_SERVER_REQ_URI:
             // adapted request URI sent to server/peer
             if (al->adapted_request) {
-                out = urlCanonical(al->adapted_request);
+                const SBuf &s = al->adapted_request->effectiveRequestUri();
+                sb.append(s.rawContent(), s.length());
+                out = sb.termedBuf();
                 quote = 1;
             }
             break;
@@ -1044,7 +1090,8 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
 
         case LFT_SERVER_REQ_URLPATH:
             if (al->adapted_request) {
-                out = al->adapted_request->urlpath.termedBuf();
+                SBuf s = al->adapted_request->url.path();
+                out = s.c_str();
                 quote = 1;
             }
             break;
@@ -1130,8 +1177,48 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             const Ssl::BumpMode mode = static_cast<Ssl::BumpMode>(al->ssl.bumpMode);
             // for Ssl::bumpEnd, Ssl::bumpMode() returns NULL and we log '-'
             out = Ssl::bumpMode(mode);
-            break;
         }
+        break;
+
+        case LFT_EXT_ACL_USER_CERT_RAW:
+            if (al->request) {
+                ConnStateData *conn = al->request->clientConnectionManager.get();
+                if (conn && Comm::IsConnOpen(conn->clientConnection)) {
+                    if (auto ssl = fd_table[conn->clientConnection->fd].ssl.get())
+                        out = sslGetUserCertificatePEM(ssl);
+                }
+            }
+            break;
+
+        case LFT_EXT_ACL_USER_CERTCHAIN_RAW:
+            if (al->request) {
+                ConnStateData *conn = al->request->clientConnectionManager.get();
+                if (conn && Comm::IsConnOpen(conn->clientConnection)) {
+                    if (auto ssl = fd_table[conn->clientConnection->fd].ssl.get())
+                        out = sslGetUserCertificatePEM(ssl);
+                }
+            }
+            break;
+
+        case LFT_EXT_ACL_USER_CERT:
+            if (al->request) {
+                ConnStateData *conn = al->request->clientConnectionManager.get();
+                if (conn && Comm::IsConnOpen(conn->clientConnection)) {
+                    if (auto ssl = fd_table[conn->clientConnection->fd].ssl.get())
+                        out = sslGetUserAttribute(ssl, format->data.header.header);
+                }
+            }
+            break;
+
+        case LFT_EXT_ACL_USER_CA_CERT:
+            if (al->request) {
+                ConnStateData *conn = al->request->clientConnectionManager.get();
+                if (conn && Comm::IsConnOpen(conn->clientConnection)) {
+                    if (auto ssl = fd_table[conn->clientConnection->fd].ssl.get())
+                        out = sslGetCAAttribute(ssl, format->data.header.header);
+                }
+            }
+            break;
 
         case LFT_SSL_USER_CERT_SUBJECT:
             if (X509 *cert = al->cache.sslClientCert.get()) {
@@ -1150,6 +1237,7 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
                 }
             }
             break;
+
         case LFT_SSL_CLIENT_SNI:
             if (al->request && al->request->clientConnectionManager.valid()) {
                 if (Ssl::ServerBump * srvBump = al->request->clientConnectionManager->serverBump()) {
@@ -1159,9 +1247,80 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             }
             break;
 
+        case LFT_SSL_SERVER_CERT_ERRORS:
+            if (al->request && al->request->clientConnectionManager.valid()) {
+                if (Ssl::ServerBump * srvBump = al->request->clientConnectionManager->serverBump()) {
+                    const char *separator = fmt->data.string ? fmt->data.string : ":";
+                    for (Ssl::CertErrors const *sslError = srvBump->sslErrors(); sslError != NULL;  sslError = sslError->next) {
+                        if (sb.size())
+                            sb.append(separator);
+                        if (const char *errorName = Ssl::GetErrorName(sslError->element.code))
+                            sb.append(errorName);
+                        else
+                            sb.append(sslErrorName(sslError->element.code, tmp, sizeof(tmp)));
+                        if (sslError->element.depth >= 0) {
+                            snprintf(tmp, sizeof(tmp), "@depth=%d", sslError->element.depth);
+                            sb.append(tmp);
+                        }
+                    }
+                    if (sb.size())
+                        out = sb.termedBuf();
+                }
+            }
+            break;
+
         case LFT_SSL_SERVER_CERT_ISSUER:
         case LFT_SSL_SERVER_CERT_SUBJECT:
-            // Not implemented
+            if (al->request && al->request->clientConnectionManager.valid()) {
+                if (Ssl::ServerBump * srvBump = al->request->clientConnectionManager->serverBump()) {
+                    if (X509 *serverCert = srvBump->serverCert.get()) {
+                        if (fmt->type == LFT_SSL_SERVER_CERT_SUBJECT)
+                            out = Ssl::GetX509UserAttribute(serverCert, "DN");
+                        else
+                            out = Ssl::GetX509CAAttribute(serverCert, "DN");
+                    }
+                }
+            }
+            break;
+
+        case LFT_TLS_CLIENT_NEGOTIATED_VERSION:
+            if (al->tcpClient != nullptr && al->tcpClient->hasTlsNegotiations())
+                out = al->tcpClient->hasTlsNegotiations()->negotiatedVersion();
+            break;
+
+        case LFT_TLS_SERVER_NEGOTIATED_VERSION:
+            if (al->hier.tcpServer != nullptr && al->hier.tcpServer->hasTlsNegotiations())
+                out = al->hier.tcpServer->hasTlsNegotiations()->negotiatedVersion();
+            break;
+
+        case LFT_TLS_CLIENT_RECEIVED_HELLO_VERSION:
+            if (al->tcpClient != nullptr && al->tcpClient->hasTlsNegotiations())
+                out = al->tcpClient->hasTlsNegotiations()->helloVersion();
+            break;
+
+        case LFT_TLS_SERVER_RECEIVED_HELLO_VERSION:
+            if (al->hier.tcpServer != nullptr && al->hier.tcpServer->hasTlsNegotiations())
+                out = al->hier.tcpServer->hasTlsNegotiations()->helloVersion();
+            break;
+
+        case LFT_TLS_CLIENT_SUPPORTED_VERSION:
+            if (al->tcpClient != nullptr && al->tcpClient->hasTlsNegotiations())
+                out = al->tcpClient->hasTlsNegotiations()->supportedVersion();
+            break;
+
+        case LFT_TLS_SERVER_SUPPORTED_VERSION:
+            if (al->hier.tcpServer != nullptr && al->hier.tcpServer->hasTlsNegotiations())
+                out = al->hier.tcpServer->hasTlsNegotiations()->supportedVersion();
+            break;
+
+        case LFT_TLS_CLIENT_NEGOTIATED_CIPHER:
+            if (al->tcpClient != nullptr && al->tcpClient->hasTlsNegotiations())
+                out = al->tcpClient->hasTlsNegotiations()->cipherName();
+            break;
+
+        case LFT_TLS_SERVER_NEGOTIATED_CIPHER:
+            if (al->hier.tcpServer != nullptr && al->hier.tcpServer->hasTlsNegotiations())
+                out = al->hier.tcpServer->hasTlsNegotiations()->cipherName();
             break;
 #endif
 
@@ -1217,18 +1376,12 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             out = "%";
             break;
 
-        // XXX: external_acl_type format tokens which are not output by logformat.
-        // They are listed here because the switch requires
-        // every ByteCode_t to be explicitly enumerated.
-        // But do not output due to lack of access to the values.
-        case LFT_EXT_ACL_USER_CERT_RAW:
-        case LFT_EXT_ACL_USER_CERTCHAIN_RAW:
-        case LFT_EXT_ACL_USER_CERT:
-        case LFT_EXT_ACL_USER_CA_CERT:
-        case LFT_EXT_ACL_CLIENT_EUI48:
-        case LFT_EXT_ACL_CLIENT_EUI64:
         case LFT_EXT_ACL_NAME:
+            out = al->lastAclName;
+            break;
+
         case LFT_EXT_ACL_DATA:
+            out = al->lastAclData;
             break;
         }
 
@@ -1283,6 +1436,16 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
                 case LOG_QUOTE_URL:
                     newout = rfc1738_escape(out);
                     break;
+
+                case LOG_QUOTE_SHELL: {
+                    MemBuf mbq;
+                    mbq.init();
+                    strwordquote(&mbq, out);
+                    newout = mbq.content();
+                    mbq.stolen = 1;
+                    newfree = 1;
+                }
+                break;
 
                 case LOG_QUOTE_RAW:
                     break;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -17,6 +17,7 @@
 #include "auth/basic/Scheme.h"
 #include "auth/basic/User.h"
 #include "auth/basic/UserRequest.h"
+#include "auth/CredentialsCache.h"
 #include "auth/Gadgets.h"
 #include "auth/State.h"
 #include "cache_cf.h"
@@ -72,7 +73,7 @@ Auth::Basic::Config::type() const
 }
 
 void
-Auth::Basic::Config::fixHeader(Auth::UserRequest::Pointer, HttpReply *rep, http_hdr_type hdrType, HttpRequest *)
+Auth::Basic::Config::fixHeader(Auth::UserRequest::Pointer, HttpReply *rep, Http::HdrType hdrType, HttpRequest *)
 {
     if (authenticateProgram) {
         debugs(29, 9, "Sending type:" << hdrType << " header: 'Basic realm=\"" << realm << "\"'");
@@ -210,14 +211,14 @@ Auth::Basic::Config::decode(char const *proxy_auth, const char *aRequestRealm)
     /* permitted because local_basic is purely local function scope. */
     Auth::Basic::User *local_basic = NULL;
 
-    char *seperator = strchr(cleartext, ':');
+    char *separator = strchr(cleartext, ':');
 
     lb = local_basic = new Auth::Basic::User(this, aRequestRealm);
 
-    if (seperator) {
+    if (separator) {
         /* terminate the username */
-        *seperator = '\0';
-        local_basic->passwd = xstrdup(seperator+1);
+        *separator = '\0';
+        local_basic->passwd = xstrdup(separator+1);
     }
 
     if (!casesensitive)
@@ -246,7 +247,7 @@ Auth::Basic::Config::decode(char const *proxy_auth, const char *aRequestRealm)
     /* now lookup and see if we have a matching auth_user structure in memory. */
     Auth::User::Pointer auth_user;
 
-    if ((auth_user = findUserInCache(lb->userKey(), Auth::AUTH_BASIC)) == NULL) {
+    if (!(auth_user = Auth::Basic::User::Cache()->lookup(lb->userKey()))) {
         /* the user doesn't exist in the username cache yet */
         /* save the credentials */
         debugs(29, 9, HERE << "Creating new user '" << lb->username() << "'");

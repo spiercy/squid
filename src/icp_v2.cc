@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -39,7 +39,6 @@
 #include "StatCounters.h"
 #include "Store.h"
 #include "store_key_md5.h"
-#include "SwapDir.h"
 #include "tools.h"
 #include "wordlist.h"
 
@@ -51,7 +50,7 @@
 static void icpIncomingConnectionOpened(const Comm::ConnectionPointer &conn, int errNo);
 
 /// \ingroup ServerProtocolICPInternal2
-static void icpLogIcp(const Ip::Address &, LogTags, int, const char *, int);
+static void icpLogIcp(const Ip::Address &, const LogTags &, int, const char *, int);
 
 /// \ingroup ServerProtocolICPInternal2
 static void icpHandleIcpV2(int, Ip::Address &, char *, int);
@@ -101,10 +100,10 @@ _icp_common_t::_icp_common_t(char *buf, unsigned int len) :
 icp_opcode
 _icp_common_t::getOpCode() const
 {
-    if (opcode > (char)ICP_END)
+    if (opcode > static_cast<char>(icp_opcode::ICP_END))
         return ICP_INVALID;
 
-    return (icp_opcode)opcode;
+    return static_cast<icp_opcode>(opcode);
 }
 
 /* ICPState */
@@ -180,14 +179,14 @@ ICP2State::created(StoreEntry *newEntry)
 
 /// \ingroup ServerProtocolICPInternal2
 static void
-icpLogIcp(const Ip::Address &caddr, LogTags logcode, int len, const char *url, int delay)
+icpLogIcp(const Ip::Address &caddr, const LogTags &logcode, int len, const char *url, int delay)
 {
     AccessLogEntry::Pointer al = new AccessLogEntry();
 
-    if (LOG_TAG_NONE == logcode)
+    if (LOG_TAG_NONE == logcode.oldType)
         return;
 
-    if (LOG_ICP_QUERY == logcode)
+    if (LOG_ICP_QUERY == logcode.oldType)
         return;
 
     clientdbUpdate(caddr, logcode, AnyP::PROTO_ICP, len);
@@ -278,7 +277,7 @@ int
 icpUdpSend(int fd,
            const Ip::Address &to,
            icp_common_t * msg,
-           LogTags logcode,
+           const LogTags &logcode,
            int delay)
 {
     icpUdpData *queue;
@@ -777,14 +776,14 @@ icpCount(void *buf, int which, size_t len, int delay)
 
     if (SENT == which) {
         ++statCounter.icp.pkts_sent;
-        kb_incr(&statCounter.icp.kbytes_sent, len);
+        statCounter.icp.kbytes_sent += len;
 
         if (ICP_QUERY == icp->opcode) {
             ++statCounter.icp.queries_sent;
-            kb_incr(&statCounter.icp.q_kbytes_sent, len);
+            statCounter.icp.q_kbytes_sent += len;
         } else {
             ++statCounter.icp.replies_sent;
-            kb_incr(&statCounter.icp.r_kbytes_sent, len);
+            statCounter.icp.r_kbytes_sent += len;
             /* this is the sent-reply service time */
             statCounter.icp.replySvcTime.count(delay);
         }
@@ -793,14 +792,14 @@ icpCount(void *buf, int which, size_t len, int delay)
             ++statCounter.icp.hits_sent;
     } else if (RECV == which) {
         ++statCounter.icp.pkts_recv;
-        kb_incr(&statCounter.icp.kbytes_recv, len);
+        statCounter.icp.kbytes_recv += len;
 
         if (ICP_QUERY == icp->opcode) {
             ++statCounter.icp.queries_recv;
-            kb_incr(&statCounter.icp.q_kbytes_recv, len);
+            statCounter.icp.q_kbytes_recv += len;
         } else {
             ++statCounter.icp.replies_recv;
-            kb_incr(&statCounter.icp.r_kbytes_recv, len);
+            statCounter.icp.r_kbytes_recv += len;
             /* statCounter.icp.querySvcTime set in clientUpdateCounters */
         }
 

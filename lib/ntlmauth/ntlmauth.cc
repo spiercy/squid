@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -185,7 +185,7 @@ void
 ntlm_make_nonce(char *nonce)
 {
     static std::mt19937 mt(time(0));
-    static std::uniform_int_distribution<uint8_t> dist;
+    static xuniform_int_distribution<uint8_t> dist;
 
     for (int i = 0; i < NTLM_NONCE_LEN; ++i)
         nonce[i] = static_cast<char>(dist(mt) & 0xFF);

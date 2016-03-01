@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,7 +11,9 @@
 
 #include "acl/Data.h"
 
-class RegexList;
+#include <list>
+
+class RegexPattern;
 
 class ACLRegexData : public ACLData<char const *>
 {
@@ -26,7 +28,7 @@ public:
     virtual ACLData<char const *> *clone() const;
 
 private:
-    RegexList *data;
+    std::list<RegexPattern> data;
 };
 
 #endif /* SQUID_ACLREGEXDATA_H */

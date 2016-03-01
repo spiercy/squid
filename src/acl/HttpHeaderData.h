@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,6 +11,7 @@
 
 #include "acl/Data.h"
 #include "HttpHeader.h"
+#include "sbuf/SBuf.h"
 #include "SquidString.h"
 
 class ACLHTTPHeaderData : public ACLData<HttpHeader*>
@@ -27,8 +28,8 @@ public:
     virtual ACLData<HttpHeader*> *clone() const;
 
 private:
-    http_hdr_type hdrId;                /**< set if header is known */
-    String hdrName;                     /**< always set */
+    Http::HdrType hdrId;            /**< set if header is known */
+    SBuf hdrName;                   /**< always set */
     ACLData<char const *> * regex_rule;
 };
 

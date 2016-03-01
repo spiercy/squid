@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -43,7 +43,8 @@ Http::One::Parser::grabMimeBlock(const char *which, const size_t limit)
 {
     // MIME headers block exist in (only) HTTP/1.x and ICY
     const bool expectMime = (msgProtocol_.protocol == AnyP::PROTO_HTTP && msgProtocol_.major == 1) ||
-                            msgProtocol_.protocol == AnyP::PROTO_ICY;
+                            msgProtocol_.protocol == AnyP::PROTO_ICY ||
+                            hackExpectsMime_;
 
     if (expectMime) {
         /* NOTE: HTTP/0.9 messages do not have a mime header block.
@@ -133,7 +134,7 @@ Http::One::Parser::getHeaderField(const char *name)
         p.chop(0, sizeof(header)-1);
 
         // return the header field-value
-        xstrncpy(header, p.rawContent(), p.length()+1);
+        SBufToCstring(header, p);
         debugs(25, 5, "returning " << header);
         return header;
     }

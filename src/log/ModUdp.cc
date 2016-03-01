@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,9 +11,9 @@
 #include "squid.h"
 #include "comm.h"
 #include "comm/Connection.h"
-#include "disk.h"
 #include "fatal.h"
 #include "fd.h"
+#include "fs_io.h"
 #include "log/File.h"
 #include "log/ModUdp.h"
 #include "Parsing.h"

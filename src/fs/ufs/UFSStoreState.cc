@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -16,7 +16,7 @@
 #include "Generic.h"
 #include "SquidList.h"
 #include "Store.h"
-#include "SwapDir.h"
+#include "store/Disk.h"
 #include "UFSStoreState.h"
 #include "UFSStrategy.h"
 

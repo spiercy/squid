@@ -1,3 +1,264 @@
+Changes to squid-4.0.7 (23 Feb 2016):
+
+	- Regression Fix: external_acl parameters separated by %20 instead of space
+	- Bug 4432: assertion failed: store.cc:1919: "isEmpty()"
+	- Bug 4111: leave_suid() does not properly handle error codes returned by setuid
+	- Fix propagation of response status line parsing error details
+	- Fix memory leak when the cache of sslcrtvalidator_program is disabled via ttl=0
+	- ... and some code SourceLayout project cleaning
+	- ... and all fixes from squid 3.5.15
+
+Changes to squid-4.0.6 (16 Feb 2016):
+
+	- Regression Bug 4436: Fix DEFAULT_SSL_CRTD
+	- Fix "dial: Ssl::PeerConnector::sslCrtvdHandleReply threw exception: callback != NULL"
+	- ... and some documentation updates
+	- ... and all fixes from squid 3.5.14
+
+Changes to squid-4.0.5 (09 Feb 2016):
+
+	- Regression Bug 4429: http(s)_port options= error message missing characters
+	- Regression Bug 4410: 4.0.4 compile error in basic_ncsa_auth
+	- Regression Bug 4403: helper compile errors after 4.0.4 rev.14454
+	- Regression Bug 4401: compile error on Solaris
+	- Regression Fix: TLS/SSL flags parsing
+	- Regression Fix: cert validadator always disabled in 4.x
+	- Regression Fix: Name-only note ACL stopped matching after 4.0.4 rev.14465 (note -m)
+	- Regression Fix: external_acl problems after 4.0.1 rev.14351
+	- Bug 4409 (partial): compile error when two Heimdal libraries are installed
+	- Bug 4005: Dynamic certificate cache exceeds dynamic_cert_mem_cache_size
+	- SMP: Fix cleanup of a shared memory segment in an unusual configuration
+	- SSL-Bump: Fix step3 splicing.
+	- Add connections_encrypted ACL
+	- Make %<a and %<p details available to [eCAP] RESPMOD services
+	- Rename cert_valid.pl to security_fake_certverify
+	- Rename ssl_crtd helper to security_file_certgen
+	- ... and a lot of code SourceLayout project cleaning
+	- ... and some documentation updates
+	- ... and all fixes from squid 3.5.13 up to rev.13979
+
+Changes to squid-4.0.4 (06 Jan 2016):
+
+	- Regression Bug 4393: compile fails on OS X
+	- Bug 4392: assertion CbcPointer.h:159: 'c' via tunnelServerClosed or tunnelClientClosed
+	- Support use of Kerberos credentials cache instead of keytab
+	- Support logging of TLS Cryptography Parameters
+	- Support substring matching in Note ACL
+	- ... and some code cleanup and polishing
+	- ... and all fixes from squid 3.5.13
+
+Changes to squid-4.0.3 (28 Nov 2015):
+
+	- Bug 4372: missing template files
+	- Bug 4371: compile errors: no such file or directory: DiskIO/*/*DiskIOModule.o
+	- Bug 4368: A simpler and more robust HTTP request line parser
+	- Fix compile erorr on clang undefined reference to '__atomic_load_8'
+	- ext_kerberos_ldap_group_acl: Add missing workarounds for Heimdal Kerberos
+	- ext_ldap_group_acl: Allow unlimited LDAP search filter
+	- ext_unix_group_acl: Support -r parameter to strip @REALM from usernames
+	- ... and much code cleanup and polishing
+	- ... and all fixes from squid 3.5.12
+
+Changes to squid-4.0.2 (01 Nov 2015):
+
+	- Regression Bug 4351: compile errors when authentication modules disabled
+	- Regression fix: HTTP/1.1 Transfer-Encoding:chunked parsing
+	- Bug 4359: assertion failure 'Comm::IsConnOpen(conn)' within ConnStateData::requestTimeout
+	- Bug 4356: segmentation fault using proxy_auth ACL
+	- Bug 4352: compile errors in OS X 10.11
+	- Bug 4021: ext_user_regex does exact match
+	- Bug 3574: avoid crashes, prohibit reconfiguration during shutdown
+	- Support re-assigning delay pools based on HTTP reply details
+	- ... and all fixes from squid 3.5.11
+
+Changes to squid-4.0.1 (14 Oct 2015):
+
+	- Bug 4329: GCC 5.2 no known conversion for argument
+	- Bug 4292: negotiate_wrapper: Unreleased Resources
+	- Bug 4269: ignore-must-revalidate broken
+	- Bug 4190: assertion 'hash_remove_link' from Auth::User::cacheCleanup
+	- Bug 3920: Splay::remove() reference counting inconsistent
+	- Bug 3069: CONNECT method bytes sent logging
+	- Bug 2741 partial: libsecurity API for GnuTLS support
+	- Bug 1961 partial: redesign of URL handling
+	- Fix crash when parsing invalid squid.conf
+	- Fix eCAP: Return 'unknown body size' for bodies with unknown body sizes
+	- Remove unused OS detection: Sun, SysV, Ultrix, BSDi
+	- Remove cache_peer_domain directive
+	- RFC 6176 compliance: Remove SSLv2 support
+	- HTTP/1.1: Remove refresh_pattern ignore-auth and ignore-must-revalidate
+	- Remove GCC 2.x and 3.x detection and support
+	- C++11 compiler support is now mandatory
+	- Enable flexible transport protocol
+	- Enable long (--foo) command line parameters on squid binary
+	- Add per-rule refresh_pattern matching statistics
+	- Replace sslversion=N with tls-min-version=1.N
+	- Replace sslproxy_* directives with tls_outgoing_options
+	- Replace GNU atomics and related hacks with C++11 std::atomic
+	- Replace external_acl_type format %macros with logformat codes
+	- Support Secure ICAP services
+	- Support rotate=N option on access_log
+	- Support bypass for non-HTTP intercepted traffic (on_unsupported_protocol)
+	- Support lifetime timeout for persistent connections (pconn_lifetime)
+	- Support timeout for URL-rewrite helper lookups (url_rewrite_timeout)
+	- Support logging fast things (nanosecond log resolution)
+	- Support ICAP/eCAP adaptation for 100-continue responses
+	- Support configurable helper queue size, with consistent defaults
+	     and better overflow handling.
+	- Support named service PID file by default (pid_filename)
+	- url_lfs_rewrite: Add URL-rewriter based on local file existence
+	- negotiate_kerberos_auth: output group= kv-pair
+	- helper-mux: add man(8) page
+	- purge: convert README to man(1) page
+	- basic_msnt_multi_domain_auth: Superceeded by basic_smb_lm_auth
+	- basic_sspi_auth: fix MinGW compile errors
+	- negotiate_sspi_auth: fix various build errors
+	- Crypto-NG: libnettle Base64 algorithm support
+	- Parser-NG: HTTP Parser structural redesign
+	- libltdl: copyright updated to LGPL version 2.1
+	- ... and several performance optimizations
+	- ... and many documentation changes
+	- ... and much code cleanup and polishing
+
+Changes to squid-3.5.15 (23 Feb 2016):
+
+	- Bug 3870: assertion failed: String.cc: 'len_ + len <65536' in ESI::CustomParser
+	- Fix multiple assertion on String overflows
+	- Fix unit test errors on MacOS
+	- Better handling of huge response headers. Fewer incorrect "Bug #3279" messages.
+	- Log noise reduction for eCAP
+
+Changes to squid-3.5.14 (16 Feb 2016):
+
+	- Bug 4437: Fix Segfault on Certain SSL Handshake Errors
+	- Bug 4431: C code is not compiled with CFLAGS
+	- Bug 4418: FlexibleArray compile error with GCC 6
+	- Bug 4378: assertion failed: DestinationIp.cc:60:
+		'checklist->conn() && checklist->conn()->clientConnection != NULL'
+	- Fix invalid FTP connection handling on blocked content
+	- Fix handling of shared memory left over by Squid crashes or bugs
+	- Fix mgr:config report 'qos_flows mark' output
+	- Fix compile error in CPU affinity
+	- Fix %un logging external ACL username
+	- Avoid more certificate validation memory leaks
+	- ... and some documentation updates
+
+Changes to squid-3.5.13 (06 Jan 2016):
+
+	- Bug 4397: DragonFly BSD, POSIX shared memory is implemented as filepath
+	- Bug 4387: Kerberos build errors on Solaris
+	- TLS: Support Ephemeral Elliptic Curve Diffie-Hellman (EECDH) key exchange
+	- TLS: Complete certificate chains using external intermediate certificates
+	- Avoid memory leaks when an X.509 certificate validator is used with SslBump
+	- Fix connection retry and fallback after failed server TLS connections
+	- Fix GnuTLS detection via pkg-config
+	- Fix startup crash with a misconfigured (too-small) shared memory cache
+	- ... and some documentation updates
+
+Changes to squid-3.5.12 (28 Nov 2015):
+
+	- Bug 4374: refresh_pattern config parser (%)
+	- Bug 4373: assertion 'calloutContext->redirect_state == REDIRECT_NONE'
+	- Bug 4228: links with krb5 libs despite --without options
+	- Fix SSL_get_certificate() problem detection
+	- Fix TLS handshake problem during Renegotiation
+	- Fix cache_peer forceddomain= in CONNECT
+	- Fix status code-based HTTP reason phrase for eCAP-generated messages
+	- Fix build errors in cpuafinity.cc
+	- ... and several documentation updates
+
+Changes to squid-3.5.11 (01 Nov 2015):
+
+	- Bug 3574: crashes on reconfigure and startup
+	- Bug 4347: compile errors with LibreSSL 2.3
+	- Bug 4281: copy-paste typos in src/tools.cc
+	- Bug 4279: No response from proxy for FTP-download of non-existing file
+	- Bug 4188: Bumping intercepted SSL connections does not work on Solaris
+	- Fix incorrect authentication headers on cache digest requests
+	- Fix connection stats, including %<lp, missing for persistent connections
+	- Fix invalid memory access issues in SBuf
+	- Avoid errors when parsing manager ACL in old squid.conf
+
+Changes to squid-3.5.10 (01 Oct 2015):
+
+	- Regression Fix cache_peer login=PASS(THRU) after CVE-2015-5400
+	- Regression Bug 4326: base64 binary encoder rejects data beginning with nil byte
+	- Bug 4323: Netfilter broken cross-includes with Linux 4.2
+	- Bug 4328: %un format code does not work for external ACLs in credentials-fetching rules
+	- Bug 4208: more than one port in wccp2_service_info line causes error
+	- Bug 4303: PeerConnector.cc:743 "!callback" assertion.
+	- Bug 4330: Do not use SSL_METHOD::put_cipher_by_char to determine size of SSL hello ciphers
+	- Relicense ntlm_fake_auth.pl to GPLv2+
+	- Relicense smb_lm auth helper to GPLv2+
+	- Relicense SSPI helper to GPLv2+
+	- ... and several minor performance optimizations
+
+Changes to squid-3.5.9 (17 Sep 2015):
+
+	- Regression Bug 3618: ntlm_smb_lm_auth rejects correct passwords
+	- Bug 4309: incorrect extensions detection in SSL Hello messages
+	- Bug 4309: crash during Skype login
+	- Bug 4284: missing sanity checks for malloc
+	- Regression Fix: CONNECT request debugging 11,2 traces
+	- Regression Fix: Quieten UFS cache maintenance skipped warnings
+	- TLS: Support SNI on generated CONNECT after peek
+	- ... and some documentation updates
+
+Changes to squid-3.5.8 (02 Sep 2015):
+
+	- Regression Bug 4306: build portability fix in Kerberos helpers
+	- Bug 4302: IPFilter v5 transparent interception
+	- Bug 4301: compile errors with IPFilter interception
+	- Bug 4285 partial: %us is not supported in access.log
+	- Bug 4278: Docs: typo in the refresh_pattern freshness algorithm
+	- Bug 4242: compile errors with eCAP using clang-3.6
+	- Bug 3696: crash when client delay pools are activated
+	- Bug 3553: cache_swap_high ignored and maxCapacity used instead
+	- Regression Fix: FtpServer.cc:1024: "reply != NULL" assertion
+	- Fix ignore of impossible SSL bumping actions, as intended and documented
+	- Fix memory leak in Surrogate-Capability header detection
+	- Fix truncated body length when RESPMOD service aborts
+	- Reject non-chunked HTTP messages with conflicting Content-Length values
+	- Support splice for SSLv3 and TLSv1 sessions that start with an SSLv2 Hello
+	- ... and several portability and compile fixes
+	- ... and several documentation updates
+
+Changes to squid-3.5.7 (01 Aug 2015):
+
+	- Bug 4293: wrong SNI sent to server after URL-rewrite
+	- Bug 4251: incorrect instance name for memory segments in /dev/shm
+	- Bug 4227: invalid key in AuthUserHashPointer causing assertation failure
+	- Bug 3345: support %un (any available user name) format code for external ACLs.
+	- basic_smb_auth: Fix several old issues identified by Debian users
+	- Support ssl-bump splicing to origin cache_peer
+	- Fix SSL errors relayed using invalid certificates
+	- Fix crash in TcpAccepter with profiler enabled
+	- Fix some cases of ssl_crtd SSL certificate DB corruption
+	- Fix performance regression in SBuf::chop operations
+	- Improve handling of client connections on shutdown
+	- Handle exceptions during squid.conf parse
+	- Make pod2man an optional dependency
+	- ... and polishing for several cache.log notification messages
+	- ... and all fixes from squid 3.4.14
+
+Changes to squid-3.5.6 (03 Jul 2015):
+
+	- Bug 4274: ssl_crtd.8 not being installed
+	- Bug 4193: memory leak on FTP listings
+	- Bug 4183: segfault when freeing https_port clientca on reconfigure or exit
+	- Bug 3875: bad mimeLoadIconFile error handling
+	- Bug 3483: assertion failed store.cc:1866: 'isEmpty()'
+	- Bug 3329: pinned server connection is not closed properly
+	- TLS: Disable client-initiated renegotiation
+	- ext_edirectory_userip_acl: fix uninitialized variable
+	- Support custom OIDs in *_cert ACLs
+	- Fix CONNECT failover to IPv4 after trying broken IPv6 servers
+	- Use relative-URL in errorpage.css for SN.png
+	- Do not blindly forward cache peer CONNECT responses
+	- Fix assertion String.cc:221: "str"
+	- Fix assertion comm.cc:759: "Comm::IsConnOpen(conn)" in ConnStateData::getSslContextDone
+	- Translations: add Spanish US dialect alias
+
 Changes to squid-3.5.5 (28 May 2015):
 
 	- Regression Bug 4132: short_icon_urls with global_internal_static on
@@ -163,6 +424,10 @@ Changes to squid-3.5.0.1 (17 Oct 2014):
 	- digest_ldap_auth: support concurrency
 	- ... and many error page translation updates
 	- ... and much code cleanup and polishing
+
+Changes to squid-3.4.14 (01 Aug 2015):
+
+	- Do not blindly forward cache peer CONNECT responses (CVE-2015-5400)
 
 Changes to squid-3.4.13 (01 May 2015):
 

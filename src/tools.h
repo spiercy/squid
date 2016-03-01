@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,8 +11,7 @@
 #ifndef SQUID_TOOLS_H_
 #define SQUID_TOOLS_H_
 
-#include "SBuf.h"
-#include "SquidString.h"
+#include "sbuf/SBuf.h"
 #include "typedefs.h"
 
 class MemBuf;
@@ -23,7 +22,6 @@ extern int DebugSignal;
 /// Default is APP_SHORTNAME ('squid').
 extern SBuf service_name;
 
-void kb_incr(kb_t *, size_t);
 void parseEtcHosts(void);
 int getMyPort(void);
 void setUmask(mode_t mask);
@@ -36,6 +34,9 @@ typedef void (*ObjPackMethod) (void *obj, Packable * p);
 
 /* packs, then prints an object using debugs() */
 void debugObj(int section, int level, const char *label, void *obj, ObjPackMethod pm);
+
+/// callback type for signal handlers
+typedef void SIGHDLR(int sig);
 
 const char *getMyHostname(void);
 const char *uniqueHostname(void);
@@ -76,7 +77,7 @@ bool UsingSmp(); // try using specific Iam*() checks above first
 /// number of Kid processes as defined in src/ipc/Kid.h
 int NumberOfKids();
 /// a string describing this process roles such as worker or coordinator
-String ProcessRoles();
+SBuf ProcessRoles();
 
 void debug_trap(const char *);
 

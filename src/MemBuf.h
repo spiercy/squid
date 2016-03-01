@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,6 +11,10 @@
 
 #include "base/Packable.h"
 #include "cbdata.h"
+#include "mem/forward.h"
+
+/* in case we want to change it later */
+typedef ssize_t mb_size_t;
 
 /**
  * Auto-growing memory-resident buffer with Packable interface

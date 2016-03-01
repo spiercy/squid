@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -10,6 +10,7 @@
 
 #include "squid.h"
 #include "Debug.h"
+#include "http/one/Parser.h"
 #include "HttpHeaderTools.h"
 #include "HttpMsg.h"
 #include "MemBuf.h"
@@ -23,7 +24,8 @@ HttpMsg::HttpMsg(http_hdr_owner_type owner):
     cache_control(NULL),
     hdr_sz(0),
     content_length(0),
-    pstate(psReadyToParseStartLine)
+    pstate(psReadyToParseStartLine),
+    sources(0)
 {}
 
 HttpMsg::~HttpMsg()
@@ -281,6 +283,22 @@ HttpMsg::httpMsgParseStep(const char *buf, int len, int atEnd)
     return 1;
 }
 
+bool
+HttpMsg::parseHeader(Http1::Parser &hp)
+{
+    // HTTP/1 message contains "zero or more header fields"
+    // zero does not need parsing
+    // XXX: c_str() reallocates. performance regression.
+    if (hp.headerBlockSize() && !header.parse(hp.mimeHeader().c_str(), hp.headerBlockSize())) {
+        pstate = psError;
+        return false;
+    }
+
+    pstate = psParsed;
+    hdrCacheInit();
+    return true;
+}
+
 /* handy: resets and returns -1 */
 int
 HttpMsg::httpMsgParseError()
@@ -292,8 +310,8 @@ HttpMsg::httpMsgParseError()
 void
 HttpMsg::setContentLength(int64_t clen)
 {
-    header.delById(HDR_CONTENT_LENGTH); // if any
-    header.putInt64(HDR_CONTENT_LENGTH, clen);
+    header.delById(Http::HdrType::CONTENT_LENGTH); // if any
+    header.putInt64(Http::HdrType::CONTENT_LENGTH, clen);
     content_length = clen;
 }
 
@@ -321,7 +339,7 @@ void HttpMsg::packInto(Packable *p, bool full_uri) const
 
 void HttpMsg::hdrCacheInit()
 {
-    content_length = header.getInt64(HDR_CONTENT_LENGTH);
+    content_length = header.getInt64(Http::HdrType::CONTENT_LENGTH);
     assert(NULL == cache_control);
     cache_control = header.getCc();
 }

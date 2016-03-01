@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -28,7 +28,7 @@
  *     might be the way to go.
  */
 
-#include "memMeter.h"
+#include "mem/Meter.h"
 #include "splay.h"
 #include "util.h"
 
@@ -95,9 +95,10 @@ class MemPoolMeter
 public:
     MemPoolMeter();
     void flush();
-    MemMeter alloc;
-    MemMeter inuse;
-    MemMeter idle;
+
+    Mem::Meter alloc;
+    Mem::Meter inuse;
+    Mem::Meter idle;
 
     /** history Allocations */
     mgb_t gb_allocated;

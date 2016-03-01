@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-## Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+## Copyright (C) 1996-2016 The Squid Software Foundation and contributors
 ##
 ## Squid software is distributed under GPLv2+ license and includes
 ## contributions from numerous individuals and organizations.
@@ -160,13 +160,17 @@ for FILENAME in `bzr ls --versioned`; do
 	mv ${FILENAME}.styled ${FILENAME}
 	;;
 
-    */ChangeLog|*.list|*.png|*.po|*.pot|*.txt|*test-suite/squidconf/empty)
+    ChangeLog|CREDITS|CONTRIBUTORS|COPYING|*.list|*.png|*.po|*.pot|rfcs/|*.txt|test-suite/squidconf/empty|.bzrignore)
         # we do not enforce copyright blurbs in:
         #
+        #  Squid Project contributor attribution file
+        #  third-party copyright attribution file
         #  images,
         #  translation PO/POT
         #  auto-generated .list files,
+        #  license documentation files
         #  (imported) plain-text documentation files and ChangeLogs
+        #  VCS internal files
         #
         skip_copyright_check=1
         ;;
@@ -272,6 +276,9 @@ do
 done
 echo " "
 )| sed s%${ROOT}/src/%%g >${ROOT}/src/tests/Stub.list
+
+# Build the GPERF generated content
+make -C src/http gperf-files
 
 # Run formating
 echo "" >${ROOT}/doc/debug-sections.tmp

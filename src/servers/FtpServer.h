@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -41,22 +41,35 @@ class MasterState: public RefCountable
 public:
     typedef RefCount<MasterState> Pointer;
 
-    MasterState(): serverState(fssBegin), clientReadGreeting(false) {}
+    MasterState(): serverState(fssBegin), clientReadGreeting(false), userDataDone(0), waitForOriginData(false) {}
 
     Ip::Address clientDataAddr; ///< address of our FTP client data connection
     SBuf workingDir; ///< estimated current working directory for URI formation
     ServerState serverState; ///< what our FTP server is doing
     bool clientReadGreeting; ///< whether our FTP client read their FTP server greeting
+    /// Squid will send or has sent this final status code to the FTP client
+    int userDataDone;
+    /// whether the transfer on the Squid-origin data connection is not over yet
+    bool waitForOriginData;
 };
 
 /// Manages a control connection from an FTP client.
 class Server: public ConnStateData
 {
     CBDATA_CLASS(Server);
+    // XXX CBDATA_CLASS expands to nonvirtual toCbdata, AsyncJob::toCbdata
+    //     is pure virtual. breaks build on clang if override is used
 
 public:
     explicit Server(const MasterXaction::Pointer &xact);
     virtual ~Server();
+    /* AsyncJob API */
+    virtual void callException(const std::exception &e);
+
+    /// Called by Ftp::Client class when it is done receiving or
+    /// sending data. Waits for both agents to be done before
+    /// responding to the FTP client and closing the data connection.
+    void originDataCompletionCheckpoint();
 
     // This is a pointer in hope to minimize future changes when MasterState
     // becomes a part of MasterXaction. Guaranteed not to be nil.
@@ -66,24 +79,24 @@ protected:
     friend void StartListening();
 
     // errors detected before it is possible to create an HTTP request wrapper
-    typedef enum {
-        eekHugeRequest,
-        eekMissingLogin,
-        eekMissingUsername,
-        eekMissingHost,
-        eekUnsupportedCommand,
-        eekInvalidUri,
-        eekMalformedCommand
-    } EarlyErrorKind;
+    enum class EarlyErrorKind {
+        HugeRequest,
+        MissingLogin,
+        MissingUsername,
+        MissingHost,
+        UnsupportedCommand,
+        InvalidUri,
+        MalformedCommand
+    };
 
     /* ConnStateData API */
-    virtual ClientSocketContext *parseOneRequest();
-    virtual void processParsedRequest(ClientSocketContext *context);
+    virtual Http::Stream *parseOneRequest();
+    virtual void processParsedRequest(Http::Stream *context);
     virtual void notePeerConnection(Comm::ConnectionPointer conn);
     virtual void clientPinnedConnectionClosed(const CommCloseCbParams &io);
     virtual void handleReply(HttpReply *header, StoreIOBuffer receivedData);
     virtual int pipelinePrefetchMax() const;
-    virtual void writeControlMsgAndCall(ClientSocketContext *context, HttpReply *rep, AsyncCall::Pointer &call);
+    virtual void writeControlMsgAndCall(HttpReply *rep, AsyncCall::Pointer &call);
     virtual time_t idleTimeout() const;
 
     /* BodyPipe API */
@@ -106,9 +119,17 @@ protected:
     bool createDataConnection(Ip::Address cltAddr);
     void closeDataConnection();
 
+    /// Called after data trasfer on client-to-squid data connection is
+    /// finished.
+    void userDataCompletionCheckpoint(int finalStatusCode);
+
+    /// Writes the data-transfer status reply to the FTP client and
+    /// closes the data connection.
+    void completeDataExchange();
+
     void calcUri(const SBuf *file);
     void changeState(const Ftp::ServerState newState, const char *reason);
-    ClientSocketContext *handleUserRequest(const SBuf &cmd, SBuf &params);
+    Http::Stream *handleUserRequest(const SBuf &cmd, SBuf &params);
     bool checkDataConnPost() const;
     void replyDataWritingCheckpoint();
     void maybeReadUploadData();
@@ -122,7 +143,7 @@ protected:
     void writeForwardedReplyAndCall(const HttpReply *reply, AsyncCall::Pointer &call);
     void writeReply(MemBuf &mb);
 
-    ClientSocketContext *earlyError(const EarlyErrorKind eek);
+    Http::Stream *earlyError(const EarlyErrorKind eek);
     bool handleRequest(HttpRequest *);
     void setDataCommand();
     bool checkDataConnPre();

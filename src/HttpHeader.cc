@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -9,11 +9,12 @@
 /* DEBUG: section 55    HTTP Header */
 
 #include "squid.h"
+#include "base/EnumIterator.h"
 #include "base64.h"
 #include "globals.h"
 #include "HttpHdrCc.h"
 #include "HttpHdrContRange.h"
-#include "HttpHdrSc.h"
+#include "HttpHdrScTarget.h" // also includes HttpHdrSc.h
 #include "HttpHeader.h"
 #include "HttpHeaderFieldInfo.h"
 #include "HttpHeaderStat.h"
@@ -23,7 +24,7 @@
 #include "profiler/Profiler.h"
 #include "rfc1123.h"
 #include "SquidConfig.h"
-#include "SquidString.h"
+//#include "SquidString.h" // pulled by HttpHdrCc.h
 #include "StatHist.h"
 #include "Store.h"
 #include "StrList.h"
@@ -59,267 +60,14 @@
  * local constants and vars
  */
 
-/*
- * A table with major attributes for every known field.
- * We calculate name lengths and reorganize this array on start up.
- * After reorganization, field id can be used as an index to the table.
- */
-static const HttpHeaderFieldAttrs HeadersAttrs[] = {
-    HttpHeaderFieldAttrs("Accept", HDR_ACCEPT, ftStr),
+// statistics counters for headers. clients must not allow Http::HdrType::BAD_HDR to be counted
+std::vector<HttpHeaderFieldStat> headerStatsTable(Http::HdrType::enumEnd_);
 
-    HttpHeaderFieldAttrs("Accept-Charset", HDR_ACCEPT_CHARSET, ftStr),
-    HttpHeaderFieldAttrs("Accept-Encoding", HDR_ACCEPT_ENCODING, ftStr),
-    HttpHeaderFieldAttrs("Accept-Language", HDR_ACCEPT_LANGUAGE, ftStr),
-    HttpHeaderFieldAttrs("Accept-Ranges", HDR_ACCEPT_RANGES, ftStr),
-    HttpHeaderFieldAttrs("Age", HDR_AGE, ftInt),
-    HttpHeaderFieldAttrs("Allow", HDR_ALLOW, ftStr),
-    HttpHeaderFieldAttrs("Alternate-Protocol", HDR_ALTERNATE_PROTOCOL, ftStr),
-    HttpHeaderFieldAttrs("Authorization", HDR_AUTHORIZATION, ftStr),    /* for now */
-    HttpHeaderFieldAttrs("Cache-Control", HDR_CACHE_CONTROL, ftPCc),
-    HttpHeaderFieldAttrs("Connection", HDR_CONNECTION, ftStr),
-    HttpHeaderFieldAttrs("Content-Base", HDR_CONTENT_BASE, ftStr),
-    HttpHeaderFieldAttrs("Content-Disposition", HDR_CONTENT_DISPOSITION, ftStr),  /* for now */
-    HttpHeaderFieldAttrs("Content-Encoding", HDR_CONTENT_ENCODING, ftStr),
-    HttpHeaderFieldAttrs("Content-Language", HDR_CONTENT_LANGUAGE, ftStr),
-    HttpHeaderFieldAttrs("Content-Length", HDR_CONTENT_LENGTH, ftInt64),
-    HttpHeaderFieldAttrs("Content-Location", HDR_CONTENT_LOCATION, ftStr),
-    HttpHeaderFieldAttrs("Content-MD5", HDR_CONTENT_MD5, ftStr),    /* for now */
-    HttpHeaderFieldAttrs("Content-Range", HDR_CONTENT_RANGE, ftPContRange),
-    HttpHeaderFieldAttrs("Content-Type", HDR_CONTENT_TYPE, ftStr),
-    HttpHeaderFieldAttrs("Cookie", HDR_COOKIE, ftStr),
-    HttpHeaderFieldAttrs("Cookie2", HDR_COOKIE2, ftStr),
-    HttpHeaderFieldAttrs("Date", HDR_DATE, ftDate_1123),
-    HttpHeaderFieldAttrs("ETag", HDR_ETAG, ftETag),
-    HttpHeaderFieldAttrs("Expect", HDR_EXPECT, ftStr),
-    HttpHeaderFieldAttrs("Expires", HDR_EXPIRES, ftDate_1123),
-    HttpHeaderFieldAttrs("Forwarded", HDR_FORWARDED, ftStr),
-    HttpHeaderFieldAttrs("From", HDR_FROM, ftStr),
-    HttpHeaderFieldAttrs("Host", HDR_HOST, ftStr),
-    HttpHeaderFieldAttrs("HTTP2-Settings", HDR_HTTP2_SETTINGS, ftStr), /* for now */
-    HttpHeaderFieldAttrs("If-Match", HDR_IF_MATCH, ftStr),  /* for now */
-    HttpHeaderFieldAttrs("If-Modified-Since", HDR_IF_MODIFIED_SINCE, ftDate_1123),
-    HttpHeaderFieldAttrs("If-None-Match", HDR_IF_NONE_MATCH, ftStr),    /* for now */
-    HttpHeaderFieldAttrs("If-Range", HDR_IF_RANGE, ftDate_1123_or_ETag),
-    HttpHeaderFieldAttrs("If-Unmodified-Since", HDR_IF_UNMODIFIED_SINCE, ftDate_1123),
-    HttpHeaderFieldAttrs("Keep-Alive", HDR_KEEP_ALIVE, ftStr),
-    HttpHeaderFieldAttrs("Key", HDR_KEY, ftStr),
-    HttpHeaderFieldAttrs("Last-Modified", HDR_LAST_MODIFIED, ftDate_1123),
-    HttpHeaderFieldAttrs("Link", HDR_LINK, ftStr),
-    HttpHeaderFieldAttrs("Location", HDR_LOCATION, ftStr),
-    HttpHeaderFieldAttrs("Max-Forwards", HDR_MAX_FORWARDS, ftInt64),
-    HttpHeaderFieldAttrs("Mime-Version", HDR_MIME_VERSION, ftStr),  /* for now */
-    HttpHeaderFieldAttrs("Negotiate", HDR_NEGOTIATE, ftStr),
-    HttpHeaderFieldAttrs("Origin", HDR_ORIGIN, ftStr),
-    HttpHeaderFieldAttrs("Pragma", HDR_PRAGMA, ftStr),
-    HttpHeaderFieldAttrs("Proxy-Authenticate", HDR_PROXY_AUTHENTICATE, ftStr),
-    HttpHeaderFieldAttrs("Proxy-Authentication-Info", HDR_PROXY_AUTHENTICATION_INFO, ftStr),
-    HttpHeaderFieldAttrs("Proxy-Authorization", HDR_PROXY_AUTHORIZATION, ftStr),
-    HttpHeaderFieldAttrs("Proxy-Connection", HDR_PROXY_CONNECTION, ftStr),
-    HttpHeaderFieldAttrs("Proxy-support", HDR_PROXY_SUPPORT, ftStr),
-    HttpHeaderFieldAttrs("Public", HDR_PUBLIC, ftStr),
-    HttpHeaderFieldAttrs("Range", HDR_RANGE, ftPRange),
-    HttpHeaderFieldAttrs("Referer", HDR_REFERER, ftStr),
-    HttpHeaderFieldAttrs("Request-Range", HDR_REQUEST_RANGE, ftPRange), /* usually matches HDR_RANGE */
-    HttpHeaderFieldAttrs("Retry-After", HDR_RETRY_AFTER, ftStr),    /* for now (ftDate_1123 or ftInt!) */
-    HttpHeaderFieldAttrs("Server", HDR_SERVER, ftStr),
-    HttpHeaderFieldAttrs("Set-Cookie", HDR_SET_COOKIE, ftStr),
-    HttpHeaderFieldAttrs("Set-Cookie2", HDR_SET_COOKIE2, ftStr),
-    HttpHeaderFieldAttrs("TE", HDR_TE, ftStr),
-    HttpHeaderFieldAttrs("Title", HDR_TITLE, ftStr),
-    HttpHeaderFieldAttrs("Trailer", HDR_TRAILER, ftStr),
-    HttpHeaderFieldAttrs("Transfer-Encoding", HDR_TRANSFER_ENCODING, ftStr),
-    HttpHeaderFieldAttrs("Translate", HDR_TRANSLATE, ftStr),    /* for now. may need to crop */
-    HttpHeaderFieldAttrs("Unless-Modified-Since", HDR_UNLESS_MODIFIED_SINCE, ftStr),  /* for now ignore. may need to crop */
-    HttpHeaderFieldAttrs("Upgrade", HDR_UPGRADE, ftStr),    /* for now */
-    HttpHeaderFieldAttrs("User-Agent", HDR_USER_AGENT, ftStr),
-    HttpHeaderFieldAttrs("Vary", HDR_VARY, ftStr),  /* for now */
-    HttpHeaderFieldAttrs("Via", HDR_VIA, ftStr),    /* for now */
-    HttpHeaderFieldAttrs("Warning", HDR_WARNING, ftStr),    /* for now */
-    HttpHeaderFieldAttrs("WWW-Authenticate", HDR_WWW_AUTHENTICATE, ftStr),
-    HttpHeaderFieldAttrs("Authentication-Info", HDR_AUTHENTICATION_INFO, ftStr),
-    HttpHeaderFieldAttrs("X-Cache", HDR_X_CACHE, ftStr),
-    HttpHeaderFieldAttrs("X-Cache-Lookup", HDR_X_CACHE_LOOKUP, ftStr),
-    HttpHeaderFieldAttrs("X-Forwarded-For", HDR_X_FORWARDED_FOR, ftStr),
-    HttpHeaderFieldAttrs("X-Request-URI", HDR_X_REQUEST_URI, ftStr),
-    HttpHeaderFieldAttrs("X-Squid-Error", HDR_X_SQUID_ERROR, ftStr),
-#if X_ACCELERATOR_VARY
-    HttpHeaderFieldAttrs("X-Accelerator-Vary", HDR_X_ACCELERATOR_VARY, ftStr),
-#endif
-#if USE_ADAPTATION
-    HttpHeaderFieldAttrs("X-Next-Services", HDR_X_NEXT_SERVICES, ftStr),
-#endif
-    HttpHeaderFieldAttrs("Surrogate-Capability", HDR_SURROGATE_CAPABILITY, ftStr),
-    HttpHeaderFieldAttrs("Surrogate-Control", HDR_SURROGATE_CONTROL, ftPSc),
-    HttpHeaderFieldAttrs("Front-End-Https", HDR_FRONT_END_HTTPS, ftStr),
-    HttpHeaderFieldAttrs("FTP-Command", HDR_FTP_COMMAND, ftStr),
-    HttpHeaderFieldAttrs("FTP-Arguments", HDR_FTP_ARGUMENTS, ftStr),
-    HttpHeaderFieldAttrs("FTP-Pre", HDR_FTP_PRE, ftStr),
-    HttpHeaderFieldAttrs("FTP-Status", HDR_FTP_STATUS, ftInt),
-    HttpHeaderFieldAttrs("FTP-Reason", HDR_FTP_REASON, ftStr),
-    HttpHeaderFieldAttrs("Other:", HDR_OTHER, ftStr)    /* ':' will not allow matches */
-};
-
-static HttpHeaderFieldInfo *Headers = NULL;
-
-http_hdr_type &operator++ (http_hdr_type &aHeader)
-{
-    int tmp = (int)aHeader;
-    aHeader = (http_hdr_type)(++tmp);
-    return aHeader;
-}
-
-/*
- * headers with field values defined as #(values) in HTTP/1.1
- * Headers that are currently not recognized, are commented out.
- */
-static HttpHeaderMask ListHeadersMask;  /* set run-time using  ListHeadersArr */
-static http_hdr_type ListHeadersArr[] = {
-    HDR_ACCEPT,
-    HDR_ACCEPT_CHARSET,
-    HDR_ACCEPT_ENCODING,
-    HDR_ACCEPT_LANGUAGE,
-    HDR_ACCEPT_RANGES,
-    HDR_ALLOW,
-    HDR_CACHE_CONTROL,
-    HDR_CONTENT_ENCODING,
-    HDR_CONTENT_LANGUAGE,
-    HDR_CONNECTION,
-    HDR_EXPECT,
-    HDR_IF_MATCH,
-    HDR_IF_NONE_MATCH,
-    HDR_KEY,
-    HDR_LINK,
-    HDR_PRAGMA,
-    HDR_PROXY_CONNECTION,
-    HDR_PROXY_SUPPORT,
-    HDR_TRANSFER_ENCODING,
-    HDR_UPGRADE,
-    HDR_VARY,
-    HDR_VIA,
-    HDR_WARNING,
-    HDR_WWW_AUTHENTICATE,
-    HDR_AUTHENTICATION_INFO,
-    HDR_PROXY_AUTHENTICATION_INFO,
-    /* HDR_TE, HDR_TRAILER */
-#if X_ACCELERATOR_VARY
-    HDR_X_ACCELERATOR_VARY,
-#endif
-#if USE_ADAPTATION
-    HDR_X_NEXT_SERVICES,
-#endif
-    HDR_SURROGATE_CAPABILITY,
-    HDR_SURROGATE_CONTROL,
-    HDR_FORWARDED,
-    HDR_X_FORWARDED_FOR
-};
-
-/* general-headers */
-static http_hdr_type GeneralHeadersArr[] = {
-    HDR_CACHE_CONTROL,
-    HDR_CONNECTION,
-    HDR_DATE,
-    HDR_FORWARDED,
-    HDR_X_FORWARDED_FOR,
-    HDR_MIME_VERSION,
-    HDR_PRAGMA,
-    HDR_PROXY_CONNECTION,
-    HDR_TRANSFER_ENCODING,
-    HDR_UPGRADE,
-    /* HDR_TRAILER, */
-    HDR_VIA,
-};
-
-/* entity-headers */
-static http_hdr_type EntityHeadersArr[] = {
-    HDR_ALLOW,
-    HDR_CONTENT_BASE,
-    HDR_CONTENT_ENCODING,
-    HDR_CONTENT_LANGUAGE,
-    HDR_CONTENT_LENGTH,
-    HDR_CONTENT_LOCATION,
-    HDR_CONTENT_MD5,
-    HDR_CONTENT_RANGE,
-    HDR_CONTENT_TYPE,
-    HDR_ETAG,
-    HDR_EXPIRES,
-    HDR_LAST_MODIFIED,
-    HDR_LINK,
-    HDR_OTHER
-};
-
-/* request-only headers */
+/* request-only headers. Used for cachemgr */
 static HttpHeaderMask RequestHeadersMask;   /* set run-time using RequestHeaders */
-static http_hdr_type RequestHeadersArr[] = {
-    HDR_ACCEPT,
-    HDR_ACCEPT_CHARSET,
-    HDR_ACCEPT_ENCODING,
-    HDR_ACCEPT_LANGUAGE,
-    HDR_AUTHORIZATION,
-    HDR_EXPECT,
-    HDR_FROM,
-    HDR_HOST,
-    HDR_HTTP2_SETTINGS,
-    HDR_IF_MATCH,
-    HDR_IF_MODIFIED_SINCE,
-    HDR_IF_NONE_MATCH,
-    HDR_IF_RANGE,
-    HDR_IF_UNMODIFIED_SINCE,
-    HDR_MAX_FORWARDS,
-    HDR_ORIGIN,
-    HDR_PROXY_AUTHORIZATION,
-    HDR_RANGE,
-    HDR_REFERER,
-    HDR_REQUEST_RANGE,
-    HDR_TE,
-    HDR_USER_AGENT,
-    HDR_SURROGATE_CAPABILITY
-};
 
-/* reply-only headers */
+/* reply-only headers. Used for cachemgr */
 static HttpHeaderMask ReplyHeadersMask;     /* set run-time using ReplyHeaders */
-static http_hdr_type ReplyHeadersArr[] = {
-    HDR_ACCEPT_ENCODING,
-    HDR_ACCEPT_RANGES,
-    HDR_AGE,
-    HDR_KEY,
-    HDR_LOCATION,
-    HDR_PROXY_AUTHENTICATE,
-    HDR_PUBLIC,
-    HDR_RETRY_AFTER,
-    HDR_SERVER,
-    HDR_SET_COOKIE,
-    HDR_SET_COOKIE2,
-    HDR_VARY,
-    HDR_WARNING,
-    HDR_WWW_AUTHENTICATE,
-    HDR_X_CACHE,
-    HDR_X_CACHE_LOOKUP,
-    HDR_X_REQUEST_URI,
-#if X_ACCELERATOR_VARY
-    HDR_X_ACCELERATOR_VARY,
-#endif
-#if USE_ADAPTATION
-    HDR_X_NEXT_SERVICES,
-#endif
-    HDR_X_SQUID_ERROR,
-    HDR_SURROGATE_CONTROL
-};
-
-/* hop-by-hop headers */
-static HttpHeaderMask HopByHopHeadersMask;
-static http_hdr_type HopByHopHeadersArr[] = {
-    HDR_ALTERNATE_PROTOCOL,
-    HDR_CONNECTION,
-    HDR_HTTP2_SETTINGS,
-    HDR_KEEP_ALIVE,
-    /*HDR_PROXY_AUTHENTICATE, // removal handled specially for peer login */
-    HDR_PROXY_AUTHORIZATION,
-    HDR_TE,
-    HDR_TRAILER,
-    HDR_TRANSFER_ENCODING,
-    HDR_UPGRADE,
-    HDR_PROXY_CONNECTION
-};
 
 /* header accounting */
 // NP: keep in sync with enum http_hdr_owner_type
@@ -344,12 +92,11 @@ static int HeaderEntryParsedCount = 0;
  */
 
 class StoreEntry;
-#define assert_eid(id) assert((id) >= 0 && (id) < HDR_ENUM_END)
 
-static void httpHeaderNoteParsedEntry(http_hdr_type id, String const &value, int error);
-
+// update parse statistics for header id; if error is true also account
+// for errors and write to debug log what happened
+static void httpHeaderNoteParsedEntry(Http::HdrType id, String const &value, bool error);
 static void httpHeaderStatDump(const HttpHeaderStat * hs, StoreEntry * e);
-
 /** store report about current header usage and other stats */
 static void httpHeaderStoreReport(StoreEntry * e);
 
@@ -369,29 +116,15 @@ void
 httpHeaderInitModule(void)
 {
     /* check that we have enough space for masks */
-    assert(8 * sizeof(HttpHeaderMask) >= HDR_ENUM_END);
-    /* all headers must be described */
-    assert(countof(HeadersAttrs) == HDR_ENUM_END);
+    assert(8 * sizeof(HttpHeaderMask) >= Http::HdrType::enumEnd_);
 
-    if (!Headers)
-        Headers = httpHeaderBuildFieldsInfo(HeadersAttrs, HDR_ENUM_END);
-
-    /* create masks */
-    httpHeaderMaskInit(&ListHeadersMask, 0);
-    httpHeaderCalcMask(&ListHeadersMask, ListHeadersArr, countof(ListHeadersArr));
-
-    httpHeaderMaskInit(&ReplyHeadersMask, 0);
-    httpHeaderCalcMask(&ReplyHeadersMask, ReplyHeadersArr, countof(ReplyHeadersArr));
-    httpHeaderCalcMask(&ReplyHeadersMask, GeneralHeadersArr, countof(GeneralHeadersArr));
-    httpHeaderCalcMask(&ReplyHeadersMask, EntityHeadersArr, countof(EntityHeadersArr));
-
-    httpHeaderMaskInit(&RequestHeadersMask, 0);
-    httpHeaderCalcMask(&RequestHeadersMask, RequestHeadersArr, countof(RequestHeadersArr));
-    httpHeaderCalcMask(&RequestHeadersMask, GeneralHeadersArr, countof(GeneralHeadersArr));
-    httpHeaderCalcMask(&RequestHeadersMask, EntityHeadersArr, countof(EntityHeadersArr));
-
-    httpHeaderMaskInit(&HopByHopHeadersMask, 0);
-    httpHeaderCalcMask(&HopByHopHeadersMask, HopByHopHeadersArr, countof(HopByHopHeadersArr));
+    // masks are needed for stats page still
+    for (auto h : WholeEnum<Http::HdrType>()) {
+        if (Http::HeaderLookupTable.lookup(h).request)
+            CBIT_SET(RequestHeadersMask,h);
+        if (Http::HeaderLookupTable.lookup(h).reply)
+            CBIT_SET(ReplyHeadersMask,h);
+    }
 
     /* header stats initialized by class constructor */
     assert(HttpHeaderStatCount == hoReply + 1);
@@ -403,32 +136,23 @@ httpHeaderInitModule(void)
     httpHeaderRegisterWithCacheManager();
 }
 
-void
-httpHeaderCleanModule(void)
-{
-    httpHeaderDestroyFieldsInfo(Headers, HDR_ENUM_END);
-    Headers = NULL;
-    httpHdrCcCleanModule();
-    httpHdrScCleanModule();
-}
-
 /*
  * HttpHeader Implementation
  */
 
-HttpHeader::HttpHeader() : owner (hoNone), len (0)
+HttpHeader::HttpHeader() : owner (hoNone), len (0), conflictingContentLength_(false)
 {
     httpHeaderMaskInit(&mask, 0);
 }
 
-HttpHeader::HttpHeader(const http_hdr_owner_type anOwner): owner(anOwner), len(0)
+HttpHeader::HttpHeader(const http_hdr_owner_type anOwner): owner(anOwner), len(0), conflictingContentLength_(false)
 {
     assert(anOwner > hoNone && anOwner < hoEnd);
     debugs(55, 7, "init-ing hdr: " << this << " owner: " << owner);
     httpHeaderMaskInit(&mask, 0);
 }
 
-HttpHeader::HttpHeader(const HttpHeader &other): owner(other.owner), len(other.len)
+HttpHeader::HttpHeader(const HttpHeader &other): owner(other.owner), len(other.len), conflictingContentLength_(false)
 {
     httpHeaderMaskInit(&mask, 0);
     update(&other, NULL); // will update the mask as well
@@ -448,6 +172,7 @@ HttpHeader::operator =(const HttpHeader &other)
         clean();
         update(&other, NULL); // will update the mask as well
         len = other.len;
+        conflictingContentLength_ = other.conflictingContentLength_;
     }
     return *this;
 }
@@ -480,11 +205,10 @@ HttpHeader::clean()
         HttpHeaderStats[owner].busyDestroyedCount += entries.size() > 0;
     } // if (owner <= hoReply)
 
-    for (std::vector<HttpHeaderEntry *>::iterator i = entries.begin(); i != entries.end(); ++i) {
-        HttpHeaderEntry *e = *i;
-        if (e == NULL)
+    for (HttpHeaderEntry *e : entries) {
+        if (e == nullptr)
             continue;
-        if (e->id < 0 || e->id >= HDR_ENUM_END) {
+        if (!Http::any_valid_header(e->id)) {
             debugs(55, DBG_CRITICAL, "BUG: invalid entry (" << e->id << "). Ignored.");
         } else {
             if (owner <= hoReply)
@@ -496,6 +220,7 @@ HttpHeader::clean()
     entries.clear();
     httpHeaderMaskInit(&mask, 0);
     len = 0;
+    conflictingContentLength_ = false;
     PROF_stop(HttpHeaderClean);
 }
 
@@ -503,23 +228,14 @@ HttpHeader::clean()
 void
 HttpHeader::append(const HttpHeader * src)
 {
-    const HttpHeaderEntry *e;
-    HttpHeaderPos pos = HttpHeaderInitPos;
     assert(src);
     assert(src != this);
     debugs(55, 7, "appending hdr: " << this << " += " << src);
 
-    while ((e = src->getEntry(&pos))) {
-        addEntry(e->clone());
+    for (auto e : src->entries) {
+        if (e)
+            addEntry(e->clone());
     }
-}
-
-/* use fresh entries to replace old ones */
-void
-httpHeaderUpdate(HttpHeader * old, const HttpHeader * fresh, const HttpHeaderMask * denied_mask)
-{
-    assert (old);
-    old->update (fresh, denied_mask);
 }
 
 void
@@ -531,12 +247,12 @@ HttpHeader::update (HttpHeader const *fresh, HttpHeaderMask const *denied_mask)
     assert(this != fresh);
 
     while ((e = fresh->getEntry(&pos))) {
-        /* deny bad guys (ok to check for HDR_OTHER) here */
+        /* deny bad guys (ok to check for Http::HdrType::OTHER) here */
 
         if (denied_mask && CBIT_TEST(*denied_mask, e->id))
             continue;
 
-        if (e->id != HDR_OTHER)
+        if (e->id != Http::HdrType::OTHER)
             delById(e->id);
         else
             delByName(e->name.termedBuf());
@@ -544,23 +260,15 @@ HttpHeader::update (HttpHeader const *fresh, HttpHeaderMask const *denied_mask)
 
     pos = HttpHeaderInitPos;
     while ((e = fresh->getEntry(&pos))) {
-        /* deny bad guys (ok to check for HDR_OTHER) here */
+        /* deny bad guys (ok to check for Http::HdrType::OTHER) here */
 
         if (denied_mask && CBIT_TEST(*denied_mask, e->id))
             continue;
 
-        debugs(55, 7, "Updating header '" << HeadersAttrs[e->id].name << "' in cached entry");
+        debugs(55, 7, "Updating header '" << Http::HeaderLookupTable.lookup(e->id).name << "' in cached entry");
 
         addEntry(e->clone());
     }
-}
-
-/* just handy in parsing: resets and returns false */
-int
-HttpHeader::reset()
-{
-    clean();
-    return 0;
 }
 
 int
@@ -582,7 +290,8 @@ HttpHeader::parse(const char *header_start, size_t hdrLen)
         debugs(55, DBG_IMPORTANT, "WARNING: HTTP header contains NULL characters {" <<
                getStringPrefix(header_start, nulpos-header_start) << "}\nNULL\n{" << getStringPrefix(nulpos+1, hdrLen-(nulpos-header_start)-1));
         PROF_stop(HttpHeaderParse);
-        return reset();
+        clean();
+        return 0;
     }
 
     /* common format headers are "<name>:[ws]<value>" lines delimited by <CRLF>.
@@ -598,7 +307,8 @@ HttpHeader::parse(const char *header_start, size_t hdrLen)
             if (!field_ptr) {
                 // missing <LF>
                 PROF_stop(HttpHeaderParse);
-                return reset();
+                clean();
+                return 0;
             }
 
             field_end = field_ptr;
@@ -619,7 +329,8 @@ HttpHeader::parse(const char *header_start, size_t hdrLen)
                                "header field to prevent request smuggling attacks: {" <<
                                getStringPrefix(header_start, hdrLen) << "}");
                         PROF_stop(HttpHeaderParse);
-                        return reset();
+                        clean();
+                        return 0;
                     }
                 }
             }
@@ -638,7 +349,8 @@ HttpHeader::parse(const char *header_start, size_t hdrLen)
                     }
                 } else {
                     PROF_stop(HttpHeaderParse);
-                    return reset();
+                    clean();
+                    return 0;
                 }
             }
 
@@ -646,7 +358,8 @@ HttpHeader::parse(const char *header_start, size_t hdrLen)
                 debugs(55, warnOnError, "WARNING: Blank continuation line in HTTP header {" <<
                        getStringPrefix(header_start, hdrLen) << "}");
                 PROF_stop(HttpHeaderParse);
-                return reset();
+                clean();
+                return 0;
             }
         } while (field_ptr < header_end && (*field_ptr == ' ' || *field_ptr == '\t'));
 
@@ -655,7 +368,8 @@ HttpHeader::parse(const char *header_start, size_t hdrLen)
                 debugs(55, warnOnError, "WARNING: unparseable HTTP header field near {" <<
                        getStringPrefix(field_start, hdrLen-(field_start-header_start)) << "}");
                 PROF_stop(HttpHeaderParse);
-                return reset();
+                clean();
+                return 0;
             }
 
             break;      /* terminating blank line */
@@ -670,10 +384,13 @@ HttpHeader::parse(const char *header_start, size_t hdrLen)
                 continue;
 
             PROF_stop(HttpHeaderParse);
-            return reset();
+            clean();
+            return 0;
         }
 
-        if (e->id == HDR_CONTENT_LENGTH && (e2 = findEntry(e->id)) != NULL) {
+        // XXX: RFC 7230 Section 3.3.3 item #4 requires sending a 502 error in
+        // several cases that we do not yet cover. TODO: Rewrite to cover more.
+        if (e->id == Http::HdrType::CONTENT_LENGTH && (e2 = findEntry(e->id)) != nullptr) {
             if (e->value != e2->value) {
                 int64_t l1, l2;
                 debugs(55, warnOnError, "WARNING: found two conflicting content-length headers in {" <<
@@ -682,7 +399,8 @@ HttpHeader::parse(const char *header_start, size_t hdrLen)
                 if (!Config.onoff.relaxed_header_parser) {
                     delete e;
                     PROF_stop(HttpHeaderParse);
-                    return reset();
+                    clean();
+                    return 0;
                 }
 
                 if (!httpHeaderParseOffset(e->value.termedBuf(), &l1)) {
@@ -692,9 +410,9 @@ HttpHeader::parse(const char *header_start, size_t hdrLen)
                 } else if (!httpHeaderParseOffset(e2->value.termedBuf(), &l2)) {
                     debugs(55, DBG_IMPORTANT, "WARNING: Unparseable content-length '" << e2->value << "'");
                     delById(e2->id);
-                } else if (l1 > l2) {
-                    delById(e2->id);
                 } else {
+                    if (l1 != l2)
+                        conflictingContentLength_ = true;
                     delete e;
                     continue;
                 }
@@ -706,18 +424,20 @@ HttpHeader::parse(const char *header_start, size_t hdrLen)
                     continue;
 
                 PROF_stop(HttpHeaderParse);
-                return reset();
+                clean();
+                return 0;
             }
         }
 
-        if (e->id == HDR_OTHER && stringHasWhitespace(e->name.termedBuf())) {
+        if (e->id == Http::HdrType::OTHER && stringHasWhitespace(e->name.termedBuf())) {
             debugs(55, warnOnError, "WARNING: found whitespace in HTTP header name {" <<
                    getStringPrefix(field_start, field_end-field_start) << "}");
 
             if (!Config.onoff.relaxed_header_parser) {
                 delete e;
                 PROF_stop(HttpHeaderParse);
-                return reset();
+                clean();
+                return 0;
             }
         }
 
@@ -726,7 +446,12 @@ HttpHeader::parse(const char *header_start, size_t hdrLen)
 
     if (chunked()) {
         // RFC 2616 section 4.4: ignore Content-Length with Transfer-Encoding
-        delById(HDR_CONTENT_LENGTH);
+        delById(Http::HdrType::CONTENT_LENGTH);
+        // RFC 7230 section 3.3.3 #4: ignore Content-Length conflicts with Transfer-Encoding
+        conflictingContentLength_ = false;
+    } else if (conflictingContentLength_) {
+        // ensure our callers do not see the conflicting Content-Length value
+        delById(Http::HdrType::CONTENT_LENGTH);
     }
 
     PROF_stop(HttpHeaderParse);
@@ -751,13 +476,13 @@ HttpHeader::packInto(Packable * p, bool mask_sensitive_info) const
 
         bool maskThisEntry = false;
         switch (e->id) {
-        case HDR_AUTHORIZATION:
-        case HDR_PROXY_AUTHORIZATION:
+        case Http::HdrType::AUTHORIZATION:
+        case Http::HdrType::PROXY_AUTHORIZATION:
             maskThisEntry = true;
             break;
 
-        case HDR_FTP_ARGUMENTS:
-            if (const HttpHeaderEntry *cmd = findEntry(HDR_FTP_COMMAND))
+        case Http::HdrType::FTP_ARGUMENTS:
+            if (const HttpHeaderEntry *cmd = findEntry(Http::HdrType::FTP_COMMAND))
                 maskThisEntry = (cmd->value == "PASS");
             break;
 
@@ -798,12 +523,10 @@ HttpHeader::getEntry(HttpHeaderPos * pos) const
  * "list" headers
  */
 HttpHeaderEntry *
-HttpHeader::findEntry(http_hdr_type id) const
+HttpHeader::findEntry(Http::HdrType id) const
 {
-    HttpHeaderPos pos = HttpHeaderInitPos;
-    HttpHeaderEntry *e;
-    assert_eid(id);
-    assert(!CBIT_TEST(ListHeadersMask, id));
+    assert(any_registered_header(id));
+    assert(!Http::HeaderLookupTable.lookup(id).list);
 
     /* check mask first */
 
@@ -811,42 +534,37 @@ HttpHeader::findEntry(http_hdr_type id) const
         return NULL;
 
     /* looks like we must have it, do linear search */
-    while ((e = getEntry(&pos))) {
-        if (e->id == id)
+    for (auto e : entries) {
+        if (e && e->id == id)
             return e;
     }
 
     /* hm.. we thought it was there, but it was not found */
-    assert(0);
-
-    return NULL;        /* not reached */
+    assert(false);
+    return nullptr;        /* not reached */
 }
 
 /*
  * same as httpHeaderFindEntry
  */
 HttpHeaderEntry *
-HttpHeader::findLastEntry(http_hdr_type id) const
+HttpHeader::findLastEntry(Http::HdrType id) const
 {
-    HttpHeaderPos pos = HttpHeaderInitPos;
-    HttpHeaderEntry *e;
-    HttpHeaderEntry *result = NULL;
-    assert_eid(id);
-    assert(!CBIT_TEST(ListHeadersMask, id));
+    assert(any_registered_header(id));
+    assert(!Http::HeaderLookupTable.lookup(id).list);
 
     /* check mask first */
-
     if (!CBIT_TEST(mask, id))
         return NULL;
 
-    /* looks like we must have it, do linear search */
-    while ((e = getEntry(&pos))) {
-        if (e->id == id)
-            result = e;
+    for (auto e = entries.rbegin(); e != entries.rend(); ++e) {
+        if (*e && (*e)->id == id)
+            return *e;
     }
 
-    assert(result);     /* must be there! */
-    return result;
+    /* hm.. we thought it was there, but it was not found */
+    assert(false);
+    return nullptr; /* not reached */
 }
 
 /*
@@ -873,22 +591,25 @@ HttpHeader::delByName(const char *name)
 
 /* deletes all entries with a given id, returns the #entries deleted */
 int
-HttpHeader::delById(http_hdr_type id)
+HttpHeader::delById(Http::HdrType id)
 {
-    int count = 0;
-    HttpHeaderPos pos = HttpHeaderInitPos;
-    HttpHeaderEntry *e;
     debugs(55, 8, this << " del-by-id " << id);
-    assert_eid(id);
-    assert(id != HDR_OTHER);        /* does not make sense */
+    assert(any_registered_header(id));
+    int count=0;
 
     if (!CBIT_TEST(mask, id))
         return 0;
 
-    while ((e = getEntry(&pos))) {
-        if (e->id == id)
-            delAt(pos, count);
-    }
+    //replace matching items with nil and count them
+    std::replace_if(entries.begin(), entries.end(),
+    [&](const HttpHeaderEntry *e) {
+        if (e && e->id == id) {
+            ++count;
+            return true;
+        }
+        return false;
+    },
+    nullptr);
 
     CBIT_CLR(mask, id);
     assert(count);
@@ -922,9 +643,8 @@ void
 HttpHeader::compact()
 {
     // TODO: optimize removal, or possibly make it so that's not needed.
-    std::vector<HttpHeaderEntry *>::iterator newend;
-    newend = std::remove(entries.begin(), entries.end(), static_cast<HttpHeaderEntry *>(NULL));
-    entries.resize(newend-entries.begin());
+    entries.erase( std::remove(entries.begin(), entries.end(), nullptr),
+                   entries.end());
 }
 
 /*
@@ -935,9 +655,9 @@ HttpHeader::refreshMask()
 {
     httpHeaderMaskInit(&mask, 0);
     debugs(55, 7, "refreshing the mask in hdr " << this);
-    HttpHeaderPos pos = HttpHeaderInitPos;
-    while (HttpHeaderEntry *e = getEntry(&pos)) {
-        CBIT_SET(mask, e->id);
+    for (auto e : entries) {
+        if (e)
+            CBIT_SET(mask, e->id);
     }
 }
 
@@ -948,15 +668,18 @@ void
 HttpHeader::addEntry(HttpHeaderEntry * e)
 {
     assert(e);
-    assert_eid(e->id);
+    assert(any_HdrType_enum_value(e->id));
     assert(e->name.size());
 
     debugs(55, 7, this << " adding entry: " << e->id << " at " << entries.size());
 
-    if (CBIT_TEST(mask, e->id))
-        ++ Headers[e->id].stat.repCount;
-    else
-        CBIT_SET(mask, e->id);
+    if (e->id != Http::HdrType::BAD_HDR) {
+        if (CBIT_TEST(mask, e->id)) {
+            ++ headerStatsTable[e->id].repCount;
+        } else {
+            CBIT_SET(mask, e->id);
+        }
+    }
 
     entries.push_back(e);
 
@@ -971,14 +694,16 @@ void
 HttpHeader::insertEntry(HttpHeaderEntry * e)
 {
     assert(e);
-    assert_eid(e->id);
+    assert(any_valid_header(e->id));
 
     debugs(55, 7, this << " adding entry: " << e->id << " at " << entries.size());
 
-    if (CBIT_TEST(mask, e->id))
-        ++ Headers[e->id].stat.repCount;
-    else
+    // Http::HdrType::BAD_HDR is filtered out by assert_any_valid_header
+    if (CBIT_TEST(mask, e->id)) {
+        ++ headerStatsTable[e->id].repCount;
+    } else {
         CBIT_SET(mask, e->id);
+    }
 
     entries.insert(entries.begin(),e);
 
@@ -987,19 +712,17 @@ HttpHeader::insertEntry(HttpHeaderEntry * e)
 }
 
 bool
-HttpHeader::getList(http_hdr_type id, String *s) const
+HttpHeader::getList(Http::HdrType id, String *s) const
 {
-    HttpHeaderEntry *e;
-    HttpHeaderPos pos = HttpHeaderInitPos;
     debugs(55, 9, this << " joining for id " << id);
     /* only fields from ListHeaders array can be "listed" */
-    assert(CBIT_TEST(ListHeadersMask, id));
+    assert(Http::HeaderLookupTable.lookup(id).list);
 
     if (!CBIT_TEST(mask, id))
         return false;
 
-    while ((e = getEntry(&pos))) {
-        if (e->id == id)
+    for (auto e: entries) {
+        if (e && e->id == id)
             strListAdd(s, e->value.termedBuf(), ',');
     }
 
@@ -1010,7 +733,7 @@ HttpHeader::getList(http_hdr_type id, String *s) const
      */
     /* temporary warning: remove it? (Is it useful for diagnostics ?) */
     if (!s->size())
-        debugs(55, 3, "empty list header: " << Headers[id].name << "(" << id << ")");
+        debugs(55, 3, "empty list header: " << Http::HeaderLookupTable.lookup(id).name << "(" << id << ")");
     else
         debugs(55, 6, this << ": joined for id " << id << ": " << s);
 
@@ -1019,13 +742,13 @@ HttpHeader::getList(http_hdr_type id, String *s) const
 
 /* return a list of entries with the same id separated by ',' and ws */
 String
-HttpHeader::getList(http_hdr_type id) const
+HttpHeader::getList(Http::HdrType id) const
 {
     HttpHeaderEntry *e;
     HttpHeaderPos pos = HttpHeaderInitPos;
     debugs(55, 9, this << "joining for id " << id);
     /* only fields from ListHeaders array can be "listed" */
-    assert(CBIT_TEST(ListHeadersMask, id));
+    assert(Http::HeaderLookupTable.lookup(id).list);
 
     if (!CBIT_TEST(mask, id))
         return String();
@@ -1044,7 +767,7 @@ HttpHeader::getList(http_hdr_type id) const
      */
     /* temporary warning: remove it? (Is it useful for diagnostics ?) */
     if (!s.size())
-        debugs(55, 3, "empty list header: " << Headers[id].name << "(" << id << ")");
+        debugs(55, 3, "empty list header: " << Http::HeaderLookupTable.lookup(id).name << "(" << id << ")");
     else
         debugs(55, 6, this << ": joined for id " << id << ": " << s);
 
@@ -1053,11 +776,11 @@ HttpHeader::getList(http_hdr_type id) const
 
 /* return a string or list of entries with the same id separated by ',' and ws */
 String
-HttpHeader::getStrOrList(http_hdr_type id) const
+HttpHeader::getStrOrList(Http::HdrType id) const
 {
     HttpHeaderEntry *e;
 
-    if (CBIT_TEST(ListHeadersMask, id))
+    if (Http::HeaderLookupTable.lookup(id).list)
         return getList(id);
 
     if ((e = findEntry(id)))
@@ -1074,33 +797,65 @@ HttpHeader::getByName(const char *name) const
 {
     String result;
     // ignore presence: return undefined string if an empty header is present
+    (void)getByNameIfPresent(name, strlen(name), result);
+    return result;
+}
+
+String
+HttpHeader::getByName(const SBuf &name) const
+{
+    String result;
+    // ignore presence: return undefined string if an empty header is present
     (void)getByNameIfPresent(name, result);
     return result;
 }
 
-bool
-HttpHeader::getByNameIfPresent(const char *name, String &result) const
+String
+HttpHeader::getById(Http::HdrType id) const
 {
-    http_hdr_type id;
+    String result;
+    (void)getByIdIfPresent(id,result);
+    return result;
+}
+
+bool
+HttpHeader::getByNameIfPresent(const SBuf &s, String &result) const
+{
+    return getByNameIfPresent(s.rawContent(), s.length(), result);
+}
+
+bool
+HttpHeader::getByIdIfPresent(Http::HdrType id, String &result) const
+{
+    if (id == Http::HdrType::BAD_HDR)
+        return false;
+    if (!has(id))
+        return false;
+    result = getStrOrList(id);
+    return true;
+}
+
+bool
+HttpHeader::getByNameIfPresent(const char *name, int namelen, String &result) const
+{
+    Http::HdrType id;
     HttpHeaderPos pos = HttpHeaderInitPos;
     HttpHeaderEntry *e;
 
     assert(name);
 
     /* First try the quick path */
-    id = httpHeaderIdByNameDef(name, strlen(name));
+    id = Http::HeaderLookupTable.lookup(name,namelen).id;
 
-    if (id != -1) {
-        if (!has(id))
-            return false;
-        result = getStrOrList(id);
-        return true;
+    if (id != Http::HdrType::BAD_HDR) {
+        if (getByIdIfPresent(id, result))
+            return true;
     }
 
     /* Sorry, an unknown header name. Do linear search */
     bool found = false;
     while ((e = getEntry(&pos))) {
-        if (e->id == HDR_OTHER && e->name.caseCmp(name) == 0) {
+        if (e->id == Http::HdrType::OTHER && e->name.caseCmp(name) == 0) {
             found = true;
             strListAdd(&result, e->value.termedBuf(), ',');
         }
@@ -1141,7 +896,7 @@ HttpHeader::getByNameListMember(const char *name, const char *member, const char
  * returns a the value of the specified list member, if any.
  */
 String
-HttpHeader::getListMember(http_hdr_type id, const char *member, const char separator) const
+HttpHeader::getListMember(Http::HdrType id, const char *member, const char separator) const
 {
     String header;
     const char *pos = NULL;
@@ -1149,7 +904,7 @@ HttpHeader::getListMember(http_hdr_type id, const char *member, const char separ
     int ilen;
     int mlen = strlen(member);
 
-    assert(id >= 0);
+    assert(any_registered_header(id));
 
     header = getStrOrList(id);
     String result;
@@ -1167,55 +922,45 @@ HttpHeader::getListMember(http_hdr_type id, const char *member, const char separ
 
 /* test if a field is present */
 int
-HttpHeader::has(http_hdr_type id) const
+HttpHeader::has(Http::HdrType id) const
 {
-    assert_eid(id);
-    assert(id != HDR_OTHER);
+    assert(any_registered_header(id));
     debugs(55, 9, this << " lookup for " << id);
     return CBIT_TEST(mask, id);
 }
 
 void
-HttpHeader::putInt(http_hdr_type id, int number)
+HttpHeader::putInt(Http::HdrType id, int number)
 {
-    assert_eid(id);
-    assert(Headers[id].type == ftInt);  /* must be of an appropriate type */
+    assert(any_registered_header(id));
+    assert(Http::HeaderLookupTable.lookup(id).type == Http::HdrFieldType::ftInt);  /* must be of an appropriate type */
     assert(number >= 0);
     addEntry(new HttpHeaderEntry(id, NULL, xitoa(number)));
 }
 
 void
-HttpHeader::putInt64(http_hdr_type id, int64_t number)
+HttpHeader::putInt64(Http::HdrType id, int64_t number)
 {
-    assert_eid(id);
-    assert(Headers[id].type == ftInt64);    /* must be of an appropriate type */
+    assert(any_registered_header(id));
+    assert(Http::HeaderLookupTable.lookup(id).type == Http::HdrFieldType::ftInt64);    /* must be of an appropriate type */
     assert(number >= 0);
     addEntry(new HttpHeaderEntry(id, NULL, xint64toa(number)));
 }
 
 void
-HttpHeader::putTime(http_hdr_type id, time_t htime)
+HttpHeader::putTime(Http::HdrType id, time_t htime)
 {
-    assert_eid(id);
-    assert(Headers[id].type == ftDate_1123);    /* must be of an appropriate type */
+    assert(any_registered_header(id));
+    assert(Http::HeaderLookupTable.lookup(id).type == Http::HdrFieldType::ftDate_1123);    /* must be of an appropriate type */
     assert(htime >= 0);
     addEntry(new HttpHeaderEntry(id, NULL, mkrfc1123(htime)));
 }
 
 void
-HttpHeader::insertTime(http_hdr_type id, time_t htime)
+HttpHeader::putStr(Http::HdrType id, const char *str)
 {
-    assert_eid(id);
-    assert(Headers[id].type == ftDate_1123);    /* must be of an appropriate type */
-    assert(htime >= 0);
-    insertEntry(new HttpHeaderEntry(id, NULL, mkrfc1123(htime)));
-}
-
-void
-HttpHeader::putStr(http_hdr_type id, const char *str)
-{
-    assert_eid(id);
-    assert(Headers[id].type == ftStr);  /* must be of an appropriate type */
+    assert(any_registered_header(id));
+    assert(Http::HeaderLookupTable.lookup(id).type == Http::HdrFieldType::ftStr);  /* must be of an appropriate type */
     assert(str);
     addEntry(new HttpHeaderEntry(id, NULL, str));
 }
@@ -1224,7 +969,7 @@ void
 HttpHeader::putAuth(const char *auth_scheme, const char *realm)
 {
     assert(auth_scheme && realm);
-    httpHeaderPutStrf(this, HDR_WWW_AUTHENTICATE, "%s realm=\"%s\"", auth_scheme, realm);
+    httpHeaderPutStrf(this, Http::HdrType::WWW_AUTHENTICATE, "%s realm=\"%s\"", auth_scheme, realm);
 }
 
 void
@@ -1232,13 +977,13 @@ HttpHeader::putCc(const HttpHdrCc * cc)
 {
     assert(cc);
     /* remove old directives if any */
-    delById(HDR_CACHE_CONTROL);
+    delById(Http::HdrType::CACHE_CONTROL);
     /* pack into mb */
     MemBuf mb;
     mb.init();
     cc->packInto(&mb);
     /* put */
-    addEntry(new HttpHeaderEntry(HDR_CACHE_CONTROL, NULL, mb.buf));
+    addEntry(new HttpHeaderEntry(Http::HdrType::CACHE_CONTROL, NULL, mb.buf));
     /* cleanup */
     mb.clean();
 }
@@ -1248,13 +993,13 @@ HttpHeader::putContRange(const HttpHdrContRange * cr)
 {
     assert(cr);
     /* remove old directives if any */
-    delById(HDR_CONTENT_RANGE);
+    delById(Http::HdrType::CONTENT_RANGE);
     /* pack into mb */
     MemBuf mb;
     mb.init();
     httpHdrContRangePackInto(cr, &mb);
     /* put */
-    addEntry(new HttpHeaderEntry(HDR_CONTENT_RANGE, NULL, mb.buf));
+    addEntry(new HttpHeaderEntry(Http::HdrType::CONTENT_RANGE, NULL, mb.buf));
     /* cleanup */
     mb.clean();
 }
@@ -1264,13 +1009,13 @@ HttpHeader::putRange(const HttpHdrRange * range)
 {
     assert(range);
     /* remove old directives if any */
-    delById(HDR_RANGE);
+    delById(Http::HdrType::RANGE);
     /* pack into mb */
     MemBuf mb;
     mb.init();
     range->packInto(&mb);
     /* put */
-    addEntry(new HttpHeaderEntry(HDR_RANGE, NULL, mb.buf));
+    addEntry(new HttpHeaderEntry(Http::HdrType::RANGE, NULL, mb.buf));
     /* cleanup */
     mb.clean();
 }
@@ -1280,13 +1025,13 @@ HttpHeader::putSc(HttpHdrSc *sc)
 {
     assert(sc);
     /* remove old directives if any */
-    delById(HDR_SURROGATE_CONTROL);
+    delById(Http::HdrType::SURROGATE_CONTROL);
     /* pack into mb */
     MemBuf mb;
     mb.init();
     sc->packInto(&mb);
     /* put */
-    addEntry(new HttpHeaderEntry(HDR_SURROGATE_CONTROL, NULL, mb.buf));
+    addEntry(new HttpHeaderEntry(Http::HdrType::SURROGATE_CONTROL, NULL, mb.buf));
     /* cleanup */
     mb.clean();
 }
@@ -1296,7 +1041,7 @@ HttpHeader::putWarning(const int code, const char *const text)
 {
     char buf[512];
     snprintf(buf, sizeof(buf), "%i %s \"%s\"", code, visible_appname_string, text);
-    putStr(HDR_WARNING, buf);
+    putStr(Http::HdrType::WARNING, buf);
 }
 
 /* add extension header (these fields are not parsed/analyzed/joined, etc.) */
@@ -1305,14 +1050,14 @@ HttpHeader::putExt(const char *name, const char *value)
 {
     assert(name && value);
     debugs(55, 8, this << " adds ext entry " << name << " : " << value);
-    addEntry(new HttpHeaderEntry(HDR_OTHER, name, value));
+    addEntry(new HttpHeaderEntry(Http::HdrType::OTHER, name, value));
 }
 
 int
-HttpHeader::getInt(http_hdr_type id) const
+HttpHeader::getInt(Http::HdrType id) const
 {
-    assert_eid(id);
-    assert(Headers[id].type == ftInt);  /* must be of an appropriate type */
+    assert(any_registered_header(id));
+    assert(Http::HeaderLookupTable.lookup(id).type == Http::HdrFieldType::ftInt);  /* must be of an appropriate type */
     HttpHeaderEntry *e;
 
     if ((e = findEntry(id)))
@@ -1322,10 +1067,10 @@ HttpHeader::getInt(http_hdr_type id) const
 }
 
 int64_t
-HttpHeader::getInt64(http_hdr_type id) const
+HttpHeader::getInt64(Http::HdrType id) const
 {
-    assert_eid(id);
-    assert(Headers[id].type == ftInt64);    /* must be of an appropriate type */
+    assert(any_registered_header(id));
+    assert(Http::HeaderLookupTable.lookup(id).type == Http::HdrFieldType::ftInt64);    /* must be of an appropriate type */
     HttpHeaderEntry *e;
 
     if ((e = findEntry(id)))
@@ -1335,12 +1080,12 @@ HttpHeader::getInt64(http_hdr_type id) const
 }
 
 time_t
-HttpHeader::getTime(http_hdr_type id) const
+HttpHeader::getTime(Http::HdrType id) const
 {
     HttpHeaderEntry *e;
     time_t value = -1;
-    assert_eid(id);
-    assert(Headers[id].type == ftDate_1123);    /* must be of an appropriate type */
+    assert(any_registered_header(id));
+    assert(Http::HeaderLookupTable.lookup(id).type == Http::HdrFieldType::ftDate_1123);    /* must be of an appropriate type */
 
     if ((e = findEntry(id))) {
         value = parse_rfc1123(e->value.termedBuf());
@@ -1352,14 +1097,14 @@ HttpHeader::getTime(http_hdr_type id) const
 
 /* sync with httpHeaderGetLastStr */
 const char *
-HttpHeader::getStr(http_hdr_type id) const
+HttpHeader::getStr(Http::HdrType id) const
 {
     HttpHeaderEntry *e;
-    assert_eid(id);
-    assert(Headers[id].type == ftStr);  /* must be of an appropriate type */
+    assert(any_registered_header(id));
+    assert(Http::HeaderLookupTable.lookup(id).type == Http::HdrFieldType::ftStr);  /* must be of an appropriate type */
 
     if ((e = findEntry(id))) {
-        httpHeaderNoteParsedEntry(e->id, e->value, 0);  /* no errors are possible */
+        httpHeaderNoteParsedEntry(e->id, e->value, false);  /* no errors are possible */
         return e->value.termedBuf();
     }
 
@@ -1368,14 +1113,14 @@ HttpHeader::getStr(http_hdr_type id) const
 
 /* unusual */
 const char *
-HttpHeader::getLastStr(http_hdr_type id) const
+HttpHeader::getLastStr(Http::HdrType id) const
 {
     HttpHeaderEntry *e;
-    assert_eid(id);
-    assert(Headers[id].type == ftStr);  /* must be of an appropriate type */
+    assert(any_registered_header(id));
+    assert(Http::HeaderLookupTable.lookup(id).type == Http::HdrFieldType::ftStr);  /* must be of an appropriate type */
 
     if ((e = findLastEntry(id))) {
-        httpHeaderNoteParsedEntry(e->id, e->value, 0);  /* no errors are possible */
+        httpHeaderNoteParsedEntry(e->id, e->value, false);  /* no errors are possible */
         return e->value.termedBuf();
     }
 
@@ -1385,12 +1130,12 @@ HttpHeader::getLastStr(http_hdr_type id) const
 HttpHdrCc *
 HttpHeader::getCc() const
 {
-    if (!CBIT_TEST(mask, HDR_CACHE_CONTROL))
+    if (!CBIT_TEST(mask, Http::HdrType::CACHE_CONTROL))
         return NULL;
     PROF_start(HttpHeader_getCc);
 
     String s;
-    getList(HDR_CACHE_CONTROL, &s);
+    getList(Http::HdrType::CACHE_CONTROL, &s);
 
     HttpHdrCc *cc=new HttpHdrCc();
 
@@ -1404,7 +1149,7 @@ HttpHeader::getCc() const
     if (cc)
         httpHdrCcUpdateStats(cc, &HttpHeaderStats[owner].ccTypeDistr);
 
-    httpHeaderNoteParsedEntry(HDR_CACHE_CONTROL, s, !cc);
+    httpHeaderNoteParsedEntry(Http::HdrType::CACHE_CONTROL, s, !cc);
 
     PROF_stop(HttpHeader_getCc);
 
@@ -1421,8 +1166,8 @@ HttpHeader::getRange() const
      * this "if" should work correctly in both cases;
      * hopefully no clients send mismatched headers! */
 
-    if ((e = findEntry(HDR_RANGE)) ||
-            (e = findEntry(HDR_REQUEST_RANGE))) {
+    if ((e = findEntry(Http::HdrType::RANGE)) ||
+            (e = findEntry(Http::HdrType::REQUEST_RANGE))) {
         r = HttpHdrRange::ParseCreate(&e->value);
         httpHeaderNoteParsedEntry(e->id, e->value, !r);
     }
@@ -1433,12 +1178,12 @@ HttpHeader::getRange() const
 HttpHdrSc *
 HttpHeader::getSc() const
 {
-    if (!CBIT_TEST(mask, HDR_SURROGATE_CONTROL))
+    if (!CBIT_TEST(mask, Http::HdrType::SURROGATE_CONTROL))
         return NULL;
 
     String s;
 
-    (void) getList(HDR_SURROGATE_CONTROL, &s);
+    (void) getList(Http::HdrType::SURROGATE_CONTROL, &s);
 
     HttpHdrSc *sc = httpHdrScParseCreate(s);
 
@@ -1447,7 +1192,7 @@ HttpHeader::getSc() const
     if (sc)
         sc->updateStats(&HttpHeaderStats[owner].scTypeDistr);
 
-    httpHeaderNoteParsedEntry(HDR_SURROGATE_CONTROL, s, !sc);
+    httpHeaderNoteParsedEntry(Http::HdrType::SURROGATE_CONTROL, s, !sc);
 
     return sc;
 }
@@ -1458,7 +1203,7 @@ HttpHeader::getContRange() const
     HttpHdrContRange *cr = NULL;
     HttpHeaderEntry *e;
 
-    if ((e = findEntry(HDR_CONTENT_RANGE))) {
+    if ((e = findEntry(Http::HdrType::CONTENT_RANGE))) {
         cr = httpHdrContRangeParseCreate(e->value.termedBuf());
         httpHeaderNoteParsedEntry(e->id, e->value, !cr);
     }
@@ -1467,7 +1212,7 @@ HttpHeader::getContRange() const
 }
 
 const char *
-HttpHeader::getAuth(http_hdr_type id, const char *auth_scheme) const
+HttpHeader::getAuth(Http::HdrType id, const char *auth_scheme) const
 {
     const char *field;
     int l;
@@ -1506,11 +1251,11 @@ HttpHeader::getAuth(http_hdr_type id, const char *auth_scheme) const
 }
 
 ETag
-HttpHeader::getETag(http_hdr_type id) const
+HttpHeader::getETag(Http::HdrType id) const
 {
     ETag etag = {NULL, -1};
     HttpHeaderEntry *e;
-    assert(Headers[id].type == ftETag);     /* must be of an appropriate type */
+    assert(Http::HeaderLookupTable.lookup(id).type == Http::HdrFieldType::ftETag);     /* must be of an appropriate type */
 
     if ((e = findEntry(id)))
         etagParseInit(&etag, e->value.termedBuf());
@@ -1519,11 +1264,11 @@ HttpHeader::getETag(http_hdr_type id) const
 }
 
 TimeOrTag
-HttpHeader::getTimeOrTag(http_hdr_type id) const
+HttpHeader::getTimeOrTag(Http::HdrType id) const
 {
     TimeOrTag tot;
     HttpHeaderEntry *e;
-    assert(Headers[id].type == ftDate_1123_or_ETag);    /* must be of an appropriate type */
+    assert(Http::HeaderLookupTable.lookup(id).type == Http::HdrFieldType::ftDate_1123_or_ETag);    /* must be of an appropriate type */
     memset(&tot, 0, sizeof(tot));
 
     if ((e = findEntry(id))) {
@@ -1549,39 +1294,34 @@ HttpHeader::getTimeOrTag(http_hdr_type id) const
  * HttpHeaderEntry
  */
 
-HttpHeaderEntry::HttpHeaderEntry(http_hdr_type anId, const char *aName, const char *aValue)
+HttpHeaderEntry::HttpHeaderEntry(Http::HdrType anId, const char *aName, const char *aValue)
 {
-    assert_eid(anId);
+    assert(any_HdrType_enum_value(anId));
     id = anId;
 
-    if (id != HDR_OTHER)
-        name = Headers[id].name;
+    if (id != Http::HdrType::OTHER)
+        name = Http::HeaderLookupTable.lookup(id).name;
     else
         name = aName;
 
     value = aValue;
 
-    ++ Headers[id].stat.aliveCount;
+    if (id != Http::HdrType::BAD_HDR)
+        ++ headerStatsTable[id].aliveCount;
 
     debugs(55, 9, "created HttpHeaderEntry " << this << ": '" << name << " : " << value );
 }
 
 HttpHeaderEntry::~HttpHeaderEntry()
 {
-    assert_eid(id);
     debugs(55, 9, "destroying entry " << this << ": '" << name << ": " << value << "'");
-    /* clean name if needed */
 
-    if (id == HDR_OTHER)
-        name.clean();
+    if (id != Http::HdrType::BAD_HDR) {
+        assert(headerStatsTable[id].aliveCount);
+        -- headerStatsTable[id].aliveCount;
+        id = Http::HdrType::BAD_HDR; // it already is BAD_HDR, no sense in resetting it
+    }
 
-    value.clean();
-
-    assert(Headers[id].stat.aliveCount);
-
-    -- Headers[id].stat.aliveCount;
-
-    id = HDR_BAD_HDR;
 }
 
 /* parses and inits header entry, returns true/false */
@@ -1623,22 +1363,21 @@ HttpHeaderEntry::parse(const char *field_start, const char *field_end)
     debugs(55, 9, "parsing HttpHeaderEntry: near '" <<  getStringPrefix(field_start, field_end-field_start) << "'");
 
     /* is it a "known" field? */
-    http_hdr_type id = httpHeaderIdByName(field_start, name_len, Headers, HDR_ENUM_END);
+    Http::HdrType id = Http::HeaderLookupTable.lookup(field_start,name_len).id;
+    debugs(55, 9, "got hdr-id=" << id);
 
     String name;
 
     String value;
 
-    if (id < 0)
-        id = HDR_OTHER;
-
-    assert_eid(id);
+    if (id == Http::HdrType::BAD_HDR)
+        id = Http::HdrType::OTHER;
 
     /* set field name */
-    if (id == HDR_OTHER)
+    if (id == Http::HdrType::OTHER)
         name.limitInit(field_start, name_len);
     else
-        name = Headers[id].name;
+        name = Http::HeaderLookupTable.lookup(id).name;
 
     /* trim field value */
     while (value_start < field_end && xisspace(*value_start))
@@ -1651,7 +1390,7 @@ HttpHeaderEntry::parse(const char *field_start, const char *field_end)
         /* String must be LESS THAN 64K and it adds a terminating NULL */
         debugs(55, DBG_IMPORTANT, "WARNING: ignoring '" << name << "' header of " << (field_end - value_start) << " bytes");
 
-        if (id == HDR_OTHER)
+        if (id == Http::HdrType::OTHER)
             name.clean();
 
         return NULL;
@@ -1660,7 +1399,8 @@ HttpHeaderEntry::parse(const char *field_start, const char *field_end)
     /* set field value */
     value.limitInit(value_start, field_end - value_start);
 
-    ++ Headers[id].stat.seenCount;
+    if (id != Http::HdrType::BAD_HDR)
+        ++ headerStatsTable[id].seenCount;
 
     debugs(55, 9, "parsed HttpHeaderEntry: '" << name << ": " << value << "'");
 
@@ -1686,11 +1426,9 @@ HttpHeaderEntry::packInto(Packable * p) const
 int
 HttpHeaderEntry::getInt() const
 {
-    assert_eid (id);
-    assert (Headers[id].type == ftInt);
     int val = -1;
     int ok = httpHeaderParseInt(value.termedBuf(), &val);
-    httpHeaderNoteParsedEntry(id, value, !ok);
+    httpHeaderNoteParsedEntry(id, value, ok == 0);
     /* XXX: Should we check ok - ie
      * return ok ? -1 : value;
      */
@@ -1700,11 +1438,9 @@ HttpHeaderEntry::getInt() const
 int64_t
 HttpHeaderEntry::getInt64() const
 {
-    assert_eid (id);
-    assert (Headers[id].type == ftInt64);
     int64_t val = -1;
     int ok = httpHeaderParseOffset(value.termedBuf(), &val);
-    httpHeaderNoteParsedEntry(id, value, !ok);
+    httpHeaderNoteParsedEntry(id, value, ok == 0);
     /* XXX: Should we check ok - ie
      * return ok ? -1 : value;
      */
@@ -1712,13 +1448,15 @@ HttpHeaderEntry::getInt64() const
 }
 
 static void
-httpHeaderNoteParsedEntry(http_hdr_type id, String const &context, int error)
+httpHeaderNoteParsedEntry(Http::HdrType id, String const &context, bool error)
 {
-    ++ Headers[id].stat.parsCount;
+    if (id != Http::HdrType::BAD_HDR)
+        ++ headerStatsTable[id].parsCount;
 
     if (error) {
-        ++ Headers[id].stat.errCount;
-        debugs(55, 2, "cannot parse hdr field: '" << Headers[id].name << ": " << context << "'");
+        if (id != Http::HdrType::BAD_HDR)
+            ++ headerStatsTable[id].errCount;
+        debugs(55, 2, "cannot parse hdr field: '" << Http::HeaderLookupTable.lookup(id).name << ": " << context << "'");
     }
 }
 
@@ -1733,9 +1471,9 @@ const HttpHeaderStat *dump_stat = NULL;
 void
 httpHeaderFieldStatDumper(StoreEntry * sentry, int, double val, double, int count)
 {
-    const int id = (int) val;
-    const int valid_id = id >= 0 && id < HDR_ENUM_END;
-    const char *name = valid_id ? Headers[id].name.termedBuf() : "INVALID";
+    const int id = static_cast<int>(val);
+    const bool valid_id = Http::any_valid_header(static_cast<Http::HdrType>(id));
+    const char *name = valid_id ? Http::HeaderLookupTable.lookup(static_cast<Http::HdrType>(id)).name : "INVALID";
     int visible = count > 0;
     /* for entries with zero count, list only those that belong to current type of message */
 
@@ -1759,7 +1497,8 @@ httpHeaderFldsPerHdrDumper(StoreEntry * sentry, int idx, double val, double, int
 static void
 httpHeaderStatDump(const HttpHeaderStat * hs, StoreEntry * e)
 {
-    assert(hs && e);
+    assert(hs);
+    assert(e);
 
     dump_stat = hs;
     storeAppendPrintf(e, "\nHeader Stats: %s\n", hs->label);
@@ -1787,7 +1526,6 @@ void
 httpHeaderStoreReport(StoreEntry * e)
 {
     int i;
-    http_hdr_type ht;
     assert(e);
 
     HttpHeaderStats[0].parsedCount =
@@ -1809,12 +1547,15 @@ httpHeaderStoreReport(StoreEntry * e)
     storeAppendPrintf(e, "%2s\t %-25s\t %5s\t %6s\t %6s\n",
                       "id", "name", "#alive", "%err", "%repeat");
 
-    for (ht = (http_hdr_type)0; ht < HDR_ENUM_END; ++ht) {
-        HttpHeaderFieldInfo *f = Headers + ht;
+    // scan heaaderTable and output
+    for (auto h : WholeEnum<Http::HdrType>()) {
+        auto stats = headerStatsTable[h];
         storeAppendPrintf(e, "%2d\t %-25s\t %5d\t %6.3f\t %6.3f\n",
-                          f->id, f->name.termedBuf(), f->stat.aliveCount,
-                          xpercent(f->stat.errCount, f->stat.parsCount),
-                          xpercent(f->stat.repCount, f->stat.seenCount));
+                          Http::HeaderLookupTable.lookup(h).id,
+                          Http::HeaderLookupTable.lookup(h).name,
+                          stats.aliveCount,
+                          xpercent(stats.errCount, stats.parsCount),
+                          xpercent(stats.repCount, stats.seenCount));
     }
 
     storeAppendPrintf(e, "Headers Parsed: %d + %d = %d\n",
@@ -1824,44 +1565,8 @@ httpHeaderStoreReport(StoreEntry * e)
     storeAppendPrintf(e, "Hdr Fields Parsed: %d\n", HeaderEntryParsedCount);
 }
 
-http_hdr_type
-httpHeaderIdByName(const char *name, size_t name_len, const HttpHeaderFieldInfo * info, int end)
-{
-    if (name_len > 0) {
-        for (int i = 0; i < end; ++i) {
-            if (name_len != info[i].name.size())
-                continue;
-
-            if (!strncasecmp(name, info[i].name.rawBuf(), name_len))
-                return info[i].id;
-        }
-    }
-
-    return HDR_BAD_HDR;
-}
-
-http_hdr_type
-httpHeaderIdByNameDef(const char *name, int name_len)
-{
-    if (!Headers)
-        Headers = httpHeaderBuildFieldsInfo(HeadersAttrs, HDR_ENUM_END);
-
-    return httpHeaderIdByName(name, name_len, Headers, HDR_ENUM_END);
-}
-
-const char *
-httpHeaderNameById(int id)
-{
-    if (!Headers)
-        Headers = httpHeaderBuildFieldsInfo(HeadersAttrs, HDR_ENUM_END);
-
-    assert(id >= 0 && id < HDR_ENUM_END);
-
-    return Headers[id].name.termedBuf();
-}
-
 int
-HttpHeader::hasListMember(http_hdr_type id, const char *member, const char separator) const
+HttpHeader::hasListMember(Http::HdrType id, const char *member, const char separator) const
 {
     int result = 0;
     const char *pos = NULL;
@@ -1869,7 +1574,7 @@ HttpHeader::hasListMember(http_hdr_type id, const char *member, const char separ
     int ilen;
     int mlen = strlen(member);
 
-    assert(id >= 0);
+    assert(any_registered_header(id));
 
     String header (getStrOrList(id));
 
@@ -1917,8 +1622,8 @@ HttpHeader::removeHopByHopEntries()
     HttpHeaderPos pos = HttpHeaderInitPos;
     int headers_deleted = 0;
     while ((e = getEntry(&pos))) {
-        int id = e->id;
-        if (CBIT_TEST(HopByHopHeadersMask, id)) {
+        Http::HdrType id = e->id;
+        if (Http::HeaderLookupTable.lookup(id).hopbyhop) {
             delAt(pos, headers_deleted);
             CBIT_CLR(mask, id);
         }
@@ -1928,11 +1633,11 @@ HttpHeader::removeHopByHopEntries()
 void
 HttpHeader::removeConnectionHeaderEntries()
 {
-    if (has(HDR_CONNECTION)) {
+    if (has(Http::HdrType::CONNECTION)) {
         /* anything that matches Connection list member will be deleted */
         String strConnection;
 
-        (void) getList(HDR_CONNECTION, &strConnection);
+        (void) getList(Http::HdrType::CONNECTION, &strConnection);
         const HttpHeaderEntry *e;
         HttpHeaderPos pos = HttpHeaderInitPos;
         /*

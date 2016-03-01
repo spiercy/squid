@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -19,6 +19,7 @@
 #include "errorpage.h"
 #include "fd.h"
 #include "ftp/Parsing.h"
+#include "http/Stream.h"
 #include "ip/tools.h"
 #include "SquidConfig.h"
 #include "SquidString.h"
@@ -242,13 +243,23 @@ Ftp::Client::doneWithServer() const
 }
 
 void
-Ftp::Client::failed(err_type error, int xerrno)
+Ftp::Client::failed(err_type error, int xerrno, ErrorState *err)
 {
     debugs(9, 3, "entry-null=" << (entry?entry->isEmpty():0) << ", entry=" << entry);
 
     const char *command, *reply;
-    const Http::StatusCode httpStatus = failedHttpStatus(error);
-    ErrorState *const ftperr = new ErrorState(error, httpStatus, fwd->request);
+    ErrorState *ftperr;
+
+    if (err) {
+        debugs(9, 6, "error=" << err->type << ", code=" << xerrno <<
+               ", status=" << err->httpStatus);
+        error = err->type;
+        ftperr = err;
+    } else {
+        Http::StatusCode httpStatus = failedHttpStatus(error);
+        ftperr = new ErrorState(error, httpStatus, fwd->request);
+    }
+
     ftperr->xerrno = xerrno;
 
     ftperr->ftp.server_msg = ctrl.message;
@@ -273,10 +284,11 @@ Ftp::Client::failed(err_type error, int xerrno)
     if (reply)
         ftperr->ftp.reply = xstrdup(reply);
 
-    fwd->request->detailError(error, xerrno);
-    fwd->fail(ftperr);
-
-    closeServer(); // we failed, so no serverComplete()
+    if (!err) {
+        fwd->request->detailError(error, xerrno);
+        fwd->fail(ftperr);
+        closeServer(); // we failed, so no serverComplete()
+    }
 }
 
 Http::StatusCode
@@ -331,16 +343,16 @@ Ftp::Client::readControlReply(const CommIoCbParams &io)
     debugs(9, 3, "FD " << io.fd << ", Read " << io.size << " bytes");
 
     if (io.size > 0) {
-        kb_incr(&(statCounter.server.all.kbytes_in), io.size);
-        kb_incr(&(statCounter.server.ftp.kbytes_in), io.size);
+        statCounter.server.all.kbytes_in += io.size;
+        statCounter.server.ftp.kbytes_in += io.size;
     }
 
     if (io.flag == Comm::ERR_CLOSING)
         return;
 
     if (EBIT_TEST(entry->flags, ENTRY_ABORTED)) {
-        abortTransaction("entry aborted during control reply read");
-        return;
+        if (abortOnData("entry aborted during control reply read"))
+            return;
     }
 
     assert(ctrl.offset < ctrl.size);
@@ -370,7 +382,7 @@ Ftp::Client::readControlReply(const CommIoCbParams &io)
         }
 
         /* XXX this may end up having to be serverComplete() .. */
-        abortTransaction("zero control reply read");
+        abortAll("zero control reply read");
         return;
     }
 
@@ -509,6 +521,8 @@ Ftp::Client::handleEpsvReply(Ip::Address &remoteAddr)
             debugs(9, DBG_IMPORTANT, "WARNING: Server at " << ctrl.conn->remote << " sent unknown protocol negotiation hint: " << buf);
             return sendPassive();
         }
+        /* coverity[unreachable] */
+        /* safeguard against possible future bugs in above conditions */
         failed(ERR_FTP_FAILURE, 0);
         return false;
     }
@@ -806,8 +820,8 @@ Ftp::Client::writeCommandCallback(const CommIoCbParams &io)
 
     if (io.size > 0) {
         fd_bytes(io.fd, io.size, FD_WRITE);
-        kb_incr(&(statCounter.server.all.kbytes_out), io.size);
-        kb_incr(&(statCounter.server.ftp.kbytes_out), io.size);
+        statCounter.server.all.kbytes_out += io.size;
+        statCounter.server.ftp.kbytes_out += io.size;
     }
 
     if (io.flag == Comm::ERR_CLOSING)
@@ -827,6 +841,7 @@ Ftp::Client::ctrlClosed(const CommCloseCbParams &)
 {
     debugs(9, 4, status());
     ctrl.clear();
+    doneWithFwd = "ctrlClosed()"; // assume FwdState is monitoring too
     mustStop("Ftp::Client::ctrlClosed");
 }
 
@@ -892,8 +907,8 @@ Ftp::Client::dataRead(const CommIoCbParams &io)
     debugs(9, 3, "FD " << io.fd << " Read " << io.size << " bytes");
 
     if (io.size > 0) {
-        kb_incr(&(statCounter.server.all.kbytes_in), io.size);
-        kb_incr(&(statCounter.server.ftp.kbytes_in), io.size);
+        statCounter.server.all.kbytes_in += io.size;
+        statCounter.server.ftp.kbytes_in += io.size;
     }
 
     if (io.flag == Comm::ERR_CLOSING)
@@ -902,7 +917,7 @@ Ftp::Client::dataRead(const CommIoCbParams &io)
     assert(io.fd == data.conn->fd);
 
     if (EBIT_TEST(entry->flags, ENTRY_ABORTED)) {
-        abortTransaction("entry aborted during dataRead");
+        abortOnData("entry aborted during dataRead");
         return;
     }
 
@@ -979,24 +994,12 @@ Ftp::Client::dataComplete()
     scheduleReadControlReply(1);
 }
 
-/**
- * Quickly abort the transaction
- *
- \todo destruction should be sufficient as the destructor should cleanup,
- * including canceling close handlers
- */
 void
-Ftp::Client::abortTransaction(const char *reason)
+Ftp::Client::abortAll(const char *reason)
 {
     debugs(9, 3, "aborting transaction for " << reason <<
            "; FD " << (ctrl.conn!=NULL?ctrl.conn->fd:-1) << ", Data FD " << (data.conn!=NULL?data.conn->fd:-1) << ", this " << this);
-    if (Comm::IsConnOpen(ctrl.conn)) {
-        ctrl.conn->close();
-        return;
-    }
-
-    fwd->handleUnregisteredServerEnd();
-    mustStop("Ftp::Client::abortTransaction");
+    mustStop(reason);
 }
 
 /**
@@ -1018,7 +1021,7 @@ void
 Ftp::Client::sentRequestBody(const CommIoCbParams &io)
 {
     if (io.size > 0)
-        kb_incr(&(statCounter.server.ftp.kbytes_out), io.size);
+        statCounter.server.ftp.kbytes_out += io.size;
     ::Client::sentRequestBody(io);
 }
 

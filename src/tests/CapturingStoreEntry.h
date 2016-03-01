@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -33,6 +33,8 @@ public:
     }
 
     virtual void append(char const * buf, int len) {
+        if (!buf || len < 0) // old 'String' can't handle these cases
+            return;
         _appended_text.append(buf, len);
     }
 };

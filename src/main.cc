@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -23,7 +23,6 @@
 #include "comm.h"
 #include "ConfigParser.h"
 #include "CpuAffinity.h"
-#include "disk.h"
 #include "DiskIO/DiskIOModule.h"
 #include "dns/forward.h"
 #include "errorpage.h"
@@ -34,9 +33,11 @@
 #include "format/Token.h"
 #include "fqdncache.h"
 #include "fs/Module.h"
+#include "fs_io.h"
 #include "FwdState.h"
 #include "globals.h"
 #include "htcp.h"
+#include "http/Stream.h"
 #include "HttpHeader.h"
 #include "HttpReply.h"
 #include "icmp/IcmpSquid.h"
@@ -65,9 +66,9 @@
 #include "stat.h"
 #include "StatCounters.h"
 #include "Store.h"
+#include "store/Disks.h"
 #include "store_log.h"
 #include "StoreFileSystem.h"
-#include "SwapDir.h"
 #include "tools.h"
 #include "unlinkd.h"
 #include "URL.h"
@@ -96,9 +97,6 @@
 #endif
 #if USE_LOADABLE_MODULES
 #include "LoadableModules.h"
-#endif
-#if USE_SSL_CRTD
-#include "ssl/certificate_db.h"
 #endif
 #if USE_OPENSSL
 #include "ssl/context_storage.h"
@@ -211,6 +209,18 @@ private:
             EventLoop::Running->stop();
     }
 
+    static void FinalShutdownRunners(void *) {
+        RunRegisteredHere(RegisteredRunner::endingShutdown);
+
+        // XXX: this should be a Runner.
+#if USE_AUTH
+        /* detach the auth components (only do this on full shutdown) */
+        Auth::Scheme::FreeAll();
+#endif
+
+        eventAdd("SquidTerminate", &StopEventLoop, NULL, 0, 1, false);
+    }
+
     void doShutdown(time_t wait);
     void handleStoppedChild();
 
@@ -225,27 +235,55 @@ SignalEngine::checkEvents(int)
 {
     PROF_start(SignalEngine_checkEvents);
 
-    if (do_reconfigure) {
+    if (do_reconfigure)
         mainReconfigureStart();
-        do_reconfigure = 0;
-    } else if (do_rotate) {
+    else if (do_rotate)
         mainRotate();
-        do_rotate = 0;
-    } else if (do_shutdown) {
+    else if (do_shutdown)
         doShutdown(do_shutdown > 0 ? (int) Config.shutdownLifetime : 0);
-        do_shutdown = 0;
-    }
-    if (do_handle_stopped_child) {
-        do_handle_stopped_child = 0;
+    if (do_handle_stopped_child)
         handleStoppedChild();
-    }
     PROF_stop(SignalEngine_checkEvents);
     return EVENT_IDLE;
+}
+
+/// Decides whether the signal-controlled action X should be delayed, canceled,
+/// or executed immediately. Clears do_X (via signalVar) as needed.
+static bool
+AvoidSignalAction(const char *description, volatile int &signalVar)
+{
+    const char *avoiding = "delaying";
+    const char *currentEvent = "none";
+    if (shutting_down) {
+        currentEvent = "shutdown";
+        avoiding = "canceling";
+        // do not avoid repeated shutdown signals
+        // which just means the user wants to skip/abort shutdown timeouts
+        if (strcmp(currentEvent, description) == 0)
+            return false;
+        signalVar = 0;
+    }
+    else if (!configured_once)
+        currentEvent = "startup";
+    else if (reconfiguring)
+        currentEvent = "reconfiguration";
+    else {
+        signalVar = 0;
+        return false; // do not avoid (i.e., execute immediately)
+        // the caller may produce a signal-specific debugging message
+    }
+
+    debugs(1, DBG_IMPORTANT, avoiding << ' ' << description <<
+           " request during " << currentEvent);
+    return true;
 }
 
 void
 SignalEngine::doShutdown(time_t wait)
 {
+    if (AvoidSignalAction("shutdown", do_shutdown))
+        return;
+
     debugs(1, DBG_IMPORTANT, "Preparing for shutdown after " << statCounter.client_http.requests << " requests");
     debugs(1, DBG_IMPORTANT, "Waiting " << wait << " seconds for active connections to finish");
 
@@ -269,10 +307,6 @@ SignalEngine::doShutdown(time_t wait)
 
         /* run the closure code which can be shared with reconfigure */
         serverConnectionsClose();
-#if USE_AUTH
-        /* detach the auth components (only do this on full shutdown) */
-        Auth::Scheme::FreeAll();
-#endif
 
         RunRegisteredHere(RegisteredRunner::startShutdown);
     }
@@ -281,12 +315,16 @@ SignalEngine::doShutdown(time_t wait)
     WIN32_svcstatusupdate(SERVICE_STOP_PENDING, (wait + 1) * 1000);
 #endif
 
-    eventAdd("SquidShutdown", &StopEventLoop, this, (double) (wait + 1), 1, false);
+    eventAdd("SquidShutdown", &FinalShutdownRunners, this, (double) (wait + 1), 1, false);
 }
 
 void
 SignalEngine::handleStoppedChild()
 {
+    // no AvoidSignalAction() call: This code can run at any time because it
+    // does not depend on Squid state. It does not need debugging because it
+    // handles an "internal" signal, not an external/admin command.
+    do_handle_stopped_child = 0;
 #if !_SQUID_WINDOWS_
     PidStatus status;
     pid_t pid;
@@ -345,6 +383,8 @@ usage(void)
             "       -D        OBSOLETE. Scheduled for removal.\n"
             "       -F        Don't serve any requests until store is rebuilt.\n"
             "       -N        No daemon mode.\n"
+            "       --foreground\n"
+            "                 Parent process does not exit until its children have finished.\n"
 #if USE_WIN32_SERVICE
             "       -O options\n"
             "                 Set Windows Service Command line options in Registry.\n"
@@ -377,8 +417,9 @@ mainParseOptions(int argc, char *argv[])
 
     // long options
     static struct option squidOptions[] = {
-        {"help",    no_argument, 0, 'h'},
-        {"version", no_argument, 0, 'v'},
+        {"foreground", no_argument, 0,  1 },
+        {"help",       no_argument, 0, 'h'},
+        {"version",    no_argument, 0, 'v'},
         {0, 0, 0, 0}
     };
 
@@ -636,6 +677,12 @@ mainParseOptions(int argc, char *argv[])
             opt_create_swap_dirs = 1;
             break;
 
+        case 1:
+            /** \par --foreground
+             * Set global option opt_foreground */
+            opt_foreground = 1;
+            break;
+
         case 'h':
 
         case '?':
@@ -795,6 +842,9 @@ serverConnectionsClose(void)
 static void
 mainReconfigureStart(void)
 {
+    if (AvoidSignalAction("reconfiguration", do_reconfigure))
+        return;
+
     debugs(1, DBG_IMPORTANT, "Reconfiguring Squid Cache (version " << version_string << ")...");
     reconfiguring = 1;
 
@@ -843,10 +893,18 @@ mainReconfigureFinish(void *)
 
     // parse the config returns a count of errors encountered.
     const int oldWorkers = Config.workers;
-    if ( parseConfigFile(ConfigFile) != 0) {
+    try {
+        if (parseConfigFile(ConfigFile) != 0) {
+            // for now any errors are a fatal condition...
+            self_destruct();
+        }
+    } catch (...) {
         // for now any errors are a fatal condition...
+        debugs(1, DBG_CRITICAL, "FATAL: Unhandled exception parsing config file. " <<
+               " Run squid -k parse and check for errors.");
         self_destruct();
     }
+
     if (oldWorkers != Config.workers) {
         debugs(1, DBG_CRITICAL, "WARNING: Changing 'workers' (from " <<
                oldWorkers << " to " << Config.workers <<
@@ -949,6 +1007,9 @@ mainReconfigureFinish(void *)
 static void
 mainRotate(void)
 {
+    if (AvoidSignalAction("log rotation", do_rotate))
+        return;
+
     icmpEngine.Close();
     redirectShutdown();
 #if USE_AUTH
@@ -1046,6 +1107,7 @@ mainInitialize(void)
 
     squid_signal(SIGPIPE, SIG_IGN, SA_RESTART);
     squid_signal(SIGCHLD, sig_child, SA_NODEFER | SA_RESTART);
+    squid_signal(SIGHUP, reconfigure, SA_RESTART);
 
     setEffectiveUser();
 
@@ -1086,9 +1148,6 @@ mainInitialize(void)
 
 #endif
 
-    if (!configured_once)
-        disk_init();        /* disk_init must go before ipcache_init() */
-
     ipcache_init();
 
     fqdncache_init();
@@ -1102,9 +1161,6 @@ mainInitialize(void)
 #endif
 
 #if USE_OPENSSL
-    if (!configured_once)
-        Ssl::initialize_session_cache();
-
     if (Ssl::CertValidationHelper::GetInstance())
         Ssl::CertValidationHelper::GetInstance()->Init();
 #endif
@@ -1210,8 +1266,6 @@ mainInitialize(void)
     squid_signal(SIGUSR2, sigusr2_handle, SA_RESTART);
 
 #endif
-
-    squid_signal(SIGHUP, reconfigure, SA_RESTART);
 
     squid_signal(SIGTERM, shut_down, SA_RESTART);
 
@@ -1401,6 +1455,10 @@ SquidMain(int argc, char **argv)
 
     mainParseOptions(argc, argv);
 
+    if (opt_foreground && opt_no_daemon) {
+        debugs(1, DBG_CRITICAL, "WARNING: --foreground command-line option has no effect with -N.");
+    }
+
     if (opt_parse_cfg_only) {
         Debug::parseOptions("ALL,1");
     }
@@ -1448,13 +1506,20 @@ SquidMain(int argc, char **argv)
         StoreFileSystem::SetupAllFs();
 
         /* we may want the parsing process to set this up in the future */
-        Store::Root(new StoreController);
+        Store::Init();
         Auth::Init();      /* required for config parsing. NOP if !USE_AUTH */
         Ip::ProbeTransport(); // determine IPv4 or IPv6 capabilities before parsing.
 
         Format::Token::Init(); // XXX: temporary. Use a runners registry of pre-parse runners instead.
 
-        parse_err = parseConfigFile(ConfigFile);
+        try {
+            parse_err = parseConfigFile(ConfigFile);
+        } catch (...) {
+            // for now any errors are a fatal condition...
+            debugs(1, DBG_CRITICAL, "FATAL: Unhandled exception parsing config file." <<
+                   (opt_parse_cfg_only ? " Run squid -k parse and check for errors." : ""));
+            parse_err = 1;
+        }
 
         Mem::Report();
 
@@ -1729,7 +1794,7 @@ watch_child(char *argv[])
 {
 #if !_SQUID_WINDOWS_
     char *prog;
-    PidStatus status;
+    PidStatus status_f, status;
     pid_t pid;
 #ifdef TIOCNOTTY
 
@@ -1742,8 +1807,16 @@ watch_child(char *argv[])
 
     if ((pid = fork()) < 0)
         syslog(LOG_ALERT, "fork failed: %s", xstrerror());
-    else if (pid > 0)
+    else if (pid > 0) {
+        // parent
+        if (opt_foreground) {
+            if (WaitForAnyPid(status_f, 0) < 0) {
+                syslog(LOG_ALERT, "WaitForAnyPid failed: %s", xstrerror());
+            }
+        }
+
         exit(0);
+    }
 
     if (setsid() < 0)
         syslog(LOG_ALERT, "setsid failed: %s", xstrerror());
@@ -1987,14 +2060,12 @@ SquidShutdown()
     fqdncacheFreeMemory();
     asnFreeMemory();
     clientdbFreeMemory();
-    httpHeaderCleanModule();
     statFreeMemory();
     eventFreeMemory();
     mimeFreeMemory();
     errorClean();
 #endif
-    // clear StoreController
-    Store::Root(NULL);
+    Store::FreeMemory();
 
     fdDumpOpen();
 

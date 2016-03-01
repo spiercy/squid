@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -181,13 +181,11 @@ Comm::TcpAcceptor::setListen()
     // Set TOS if needed.
     // To correctly implement TOS values on listening sockets, probably requires
     // more work to inherit TOS values to created connection objects.
-    if (conn->tos &&
-            Ip::Qos::setSockTos(conn->fd, conn->tos, conn->remote.isIPv4() ? AF_INET : AF_INET6) < 0)
-        conn->tos = 0;
+    if (conn->tos)
+        Ip::Qos::setSockTos(conn, conn->tos)
 #if SO_MARK
-    if (conn->nfmark &&
-            Ip::Qos::setSockNfmark(conn->fd, conn->nfmark) < 0)
-        conn->nfmark = 0;
+        if (conn->nfmark)
+            Ip::Qos::setSockNfmark(conn, conn->nfmark);
 #endif
 #endif
 
@@ -234,7 +232,7 @@ Comm::TcpAcceptor::doAccept(int fd, void *data)
     } catch (const std::exception &e) {
         fatalf("FATAL: error while accepting new client connection: %s\n", e.what());
     } catch (...) {
-        fatal("FATAL: error while accepting new client connection: [unkown]\n");
+        fatal("FATAL: error while accepting new client connection: [unknown]\n");
     }
 }
 
@@ -366,6 +364,7 @@ Comm::TcpAcceptor::oldAccept(Comm::ConnectionPointer &details)
         if (clientdbEstablished(details->remote, 0) > Config.client_ip_max_connections) {
             debugs(50, DBG_IMPORTANT, "WARNING: " << details->remote << " attempting more than " << Config.client_ip_max_connections << " connections.");
             Ip::Address::FreeAddr(gai);
+            PROF_stop(comm_accept);
             return Comm::COMM_ERROR;
         }
     }
@@ -376,6 +375,7 @@ Comm::TcpAcceptor::oldAccept(Comm::ConnectionPointer &details)
     if (getsockname(sock, gai->ai_addr, &gai->ai_addrlen) != 0) {
         debugs(50, DBG_IMPORTANT, "ERROR: getsockname() failed to locate local-IP on " << details << ": " << xstrerror());
         Ip::Address::FreeAddr(gai);
+        PROF_stop(comm_accept);
         return Comm::COMM_ERROR;
     }
     details->local = *gai;
@@ -404,7 +404,9 @@ Comm::TcpAcceptor::oldAccept(Comm::ConnectionPointer &details)
 
     // Perform NAT or TPROXY operations to retrieve the real client/dest IP addresses
     if (conn->flags&(COMM_TRANSPARENT|COMM_INTERCEPTION) && !Ip::Interceptor.Lookup(details, conn)) {
+        debugs(50, DBG_IMPORTANT, "ERROR: NAT/TPROXY lookup failed to locate original IPs on " << details);
         // Failed.
+        PROF_stop(comm_accept);
         return Comm::COMM_ERROR;
     }
 

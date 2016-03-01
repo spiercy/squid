@@ -1,16 +1,16 @@
-## Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+## Copyright (C) 1996-2016 The Squid Software Foundation and contributors
 ##
 ## Squid software is distributed under GPLv2+ license and includes
 ## contributions from numerous individuals and organizations.
 ## Please see the COPYING and CONTRIBUTORS files for details.
 ##
 
-AC_INIT([Squid Web Proxy],[4.0.0-BZR],[http://bugs.squid-cache.org/],[squid])
+AC_INIT([Squid Web Proxy],[4.0.7-BZR],[http://bugs.squid-cache.org/],[squid])
 AC_PREREQ(2.61)
 AC_CONFIG_HEADERS([include/autoconf.h])
 AC_CONFIG_AUX_DIR(cfgaux)
 AC_CONFIG_SRCDIR([src/main.cc])
-AM_INIT_AUTOMAKE([tar-ustar nostdinc])
+AM_INIT_AUTOMAKE([tar-ustar nostdinc subdir-objects])
 AC_REVISION($Revision$)dnl
 AC_PREFIX_DEFAULT(/usr/local/squid)
 AM_MAINTAINER_MODE
@@ -55,7 +55,7 @@ AC_ARG_ENABLE(arch-native,
   SQUID_YESNO([$enableval],
     [Unrecognized argument to --disable-arch-native: $enableval])
 ])
-AC_MSG_NOTICE([CPU -march=native optimization enabled: ${enable_arch_native:=auto}])
+AC_MSG_NOTICE([CPU arch native optimization enabled: ${enable_arch_native:=auto}])
 if test "x${enable_arch_native}" != "xno"; then
   SQUID_CC_CHECK_ARGUMENT([squid_cv_check_marchnative],[-march=native])
 fi
@@ -128,6 +128,9 @@ if test "x$AR" = "x"; then
 fi
 AR_R="$AR r"
 AC_SUBST(AR_R)
+
+AC_PATH_PROG(LINUXDOC, linuxdoc, $FALSE)
+AM_CONDITIONAL(ENABLE_RELEASE_DOCS, test "x${ac_cv_path_LINUXDOC}" != "x$FALSE")
 
 # pre-define DEFAULT_PREFIX, some modules need it.
 if test "${prefix}" = "NONE" ; then
@@ -263,7 +266,7 @@ esac
 )
 AC_SUBST(DEFAULT_LOG_DIR)
 
-DEFAULT_PID_FILE="$localstatedir/run/squid.pid"
+DEFAULT_PID_FILE="$localstatedir/run/@SERVICE_NAME@.pid"
 AC_ARG_WITH(pidfile,
   AS_HELP_STRING([--with-pidfile=PATH],
     [Default location for squid pid file. Default: PREFIX/var/run/squid.pid]), [
@@ -292,21 +295,6 @@ case $withval in
  esac
 ])
 AC_SUBST(DEFAULT_SWAP_DIR)
-
-if test "$squid_cv_compiler" = "gcc"; then
-  GCCVER=`$CC -v 2>&1 | awk '$2 ==  "version" {print $3}'`
-  GCCVER2=`echo $GCCVER | awk '{print $1 * 100}'`
-  case "$host" in
-    i386-*-freebsd*)
-      if test $GCCVER2 -lt 300 ; then
-        AC_MSG_FAILURE([GCC $GCCVER causes a coredump on $host.
-          Please use a more recent GCC version])
-      fi
-      ;;
-    esac
-  unset GCCVER
-  unset GCCVER2
-fi
 
 dnl Set Default CFLAGS
 if test "x$PRESET_CFLAGS" = "x"; then
@@ -469,6 +457,14 @@ if test "x$with_dl" = "xyes"; then
   AC_MSG_NOTICE([With dl])
 fi
 
+## check for atomics library before anything that might need it
+# AC_SEARCH_LIBS pollutes LIBS
+SQUID_STATE_SAVE(LIBATOMIC)
+AC_SEARCH_LIBS([__atomic_load_8],[atomic],[
+  test "$ac_res" = "none required" || ATOMICLIB=$ac_res],[])
+SQUID_STATE_ROLLBACK(LIBATOMIC)
+AC_SUBST(ATOMICLIB)
+
 AC_SEARCH_LIBS([shm_open], [rt])
 if test "x$ac_cv_search_shm_open" != "xno" ; then
   AC_DEFINE(HAVE_SHM,1,[Support shared memory features])
@@ -520,8 +516,6 @@ SQUID_DEFINE_BOOL(USE_DISKIO,$squid_opt_enable_diskio,
 dnl Some autoconf.h defines we might enable later...
 AC_ARG_WITH(pthreads,AS_HELP_STRING([--without-pthreads],[Disable POSIX Threads]))
 AC_ARG_WITH(aio, AS_HELP_STRING([--without-aio],[Do not use POSIX AIO. Default: auto-detect]))
-AH_TEMPLATE(USE_DISKIO_AIO, [Whether POSIX AIO support is needed. Automatic])
-AH_TEMPLATE(USE_DISKIO_DISKTHREADS, [Whether pthreads support is needed. Automatic])
 ENABLE_WIN32_AIOPS=0
 squid_opt_use_aio=
 squid_opt_use_diskthreads=
@@ -529,9 +523,13 @@ AIOLIB=
 
 dnl Setup the module paths etc.
 DISK_LIBS=
-DISK_OS_LIBS=
 DISK_MODULES=
-DISK_LINKOBJS=
+AH_TEMPLATE(HAVE_DISKIO_MODULE_AIO, [Whether POSIX AIO Disk I/O module is built])
+AH_TEMPLATE(HAVE_DISKIO_MODULE_BLOCKING, [Whether Blocking Disk I/O module is built])
+AH_TEMPLATE(HAVE_DISKIO_MODULE_DISKDAEMON, [Whether DiskDaemon Disk I/O module is built])
+AH_TEMPLATE(HAVE_DISKIO_MODULE_DISKTHREADS, [Whether DiskThreads Disk I/O module is built])
+AH_TEMPLATE(HAVE_DISKIO_MODULE_IPCIO, [Whether IpcIo Disk I/O module is built])
+AH_TEMPLATE(HAVE_DISKIO_MODULE_MMAPPED, [Whether Mmapped Disk I/O module is built])
 for module in $squid_disk_module_candidates none; do
   # maybe not needed
   if test "x$module" = "xnone"; then
@@ -541,20 +539,78 @@ for module in $squid_disk_module_candidates none; do
     AC_MSG_ERROR(disk-io $module does not exist)
   fi
   case "$module" in
+
+    AIO)
+      dnl Check for POSIX AIO availability
+      squid_opt_use_aio="yes"
+      AIOLIB=
+      if test "x$with_aio" != "xno"; then
+        have_aio_header=no
+        AC_CHECK_HEADERS(aio.h,[have_aio_header=yes])
+        dnl On some systems POSIX AIO functions are in librt
+        dnl On some systems POSIX AIO functions are in libaio
+        AC_CHECK_LIB(rt,aio_read,[AIOLIB="-lrt"],AC_CHECK_LIB(aio,aio_read,[AIOLIB="-laio"],[]))
+        dnl Enable AIO if the library and headers are found
+        if test "x$AIOLIB" != "x" && test "x$have_aio_header" = "xyes"; then
+          AC_MSG_NOTICE([Native POSIX AIO support detected.])
+          squid_opt_use_aio="yes"
+        else
+          dnl Windows does things differently. We provide wrappers.
+          dnl TODO: Windows really needs its own DiskIO module or its Overlaped IO
+          case "$squid_host_os" in
+            mingw)
+              squid_opt_use_aio="yes"
+              AC_MSG_NOTICE([Windows being built. Maybe-enable POSIX AIO.])
+              ;;
+            *)
+              AC_MSG_NOTICE([Native POSIX AIO support not detected. AIO automatically disabled.])
+              squid_opt_use_aio="no"
+              ;;
+          esac
+        fi
+      else
+        AC_MSG_NOTICE([POSIX AIO support manually disabled.])
+        squid_opt_use_aio="no"
+      fi
+      dnl Use the POSIX AIO pieces if we actually need them.
+      if test "x$squid_opt_use_aio" = "xyes" ; then
+        DISK_MODULES="$DISK_MODULES AIO"
+        AC_DEFINE([HAVE_DISKIO_MODULE_AIO],1,[POSIX AIO Disk I/O module is built])
+        case "$squid_host_os" in
+          mingw)
+            ENABLE_WIN32_AIO=1
+            AC_MSG_NOTICE([Replacing AIO DiskIO module with: Windows overlapped I/O support])
+            ;;
+          *)
+            AC_MSG_NOTICE([Enabling AIO DiskIO module])
+            ;;
+        esac
+      else
+        AC_MSG_NOTICE([AIO DiskIO Module disabled. Missing POSIX AIO support.])
+        squid_disk_module_candidates_AIO=no
+      fi
+      ;;
+
+    Blocking)
+      AC_MSG_NOTICE([Enabling Blocking DiskIO module])
+      DISK_MODULES="$DISK_MODULES Blocking"
+      AC_DEFINE([HAVE_DISKIO_MODULE_BLOCKING],1,[Blocking Disk I/O module is built])
+      ;;
+
     DiskDaemon)
       case "$squid_host_os" in
         mingw)
           AC_MSG_NOTICE(["DiskDaemon not supported on MinGW"])
+          squid_disk_module_candidates_DiskDaemon=no
           ;;
         *)
           AC_MSG_NOTICE([Enabling DiskDaemon DiskIO module])
-          DISK_LIBS="$DISK_LIBS libDiskDaemon.a"
           DISK_MODULES="$DISK_MODULES DiskDaemon"
-          DISK_PROGRAMS="$DISK_PROGRAMS DiskIO/DiskDaemon/diskd"
-          DISK_LINKOBJS="$DISK_LINKOBJS DiskIO/DiskDaemon/DiskDaemonDiskIOModule.o"
+          AC_DEFINE([HAVE_DISKIO_MODULE_DISKDAEMON],1,[DiskDaemon Disk I/O module is built])
           ;;
         esac
       ;;
+
     DiskThreads)
       squid_opt_use_diskthreads="yes"
       LIBPTHREADS=
@@ -624,70 +680,24 @@ for module in $squid_disk_module_candidates none; do
           squid_opt_use_diskthreads="no"
         fi
         if test "x$squid_opt_use_diskthreads" = "xyes" ; then
-          AC_DEFINE(USE_DISKIO_DISKTHREADS, 1, [Whether pthreads support is needed. Automatic])
           AC_MSG_NOTICE([Enabling DiskThreads DiskIO module])
-          DISK_LIBS="$DISK_LIBS libDiskThreads.a"
-          DISK_OS_LIBS="$DISK_OS_LIBS $LIBPTHREADS"
           DISK_MODULES="$DISK_MODULES DiskThreads"
-          DISK_LINKOBJS="$DISK_LINKOBJS DiskIO/DiskThreads/DiskThreadsDiskIOModule.o"
+          AC_DEFINE([HAVE_DISKIO_MODULE_DISKTHREADS],1,[DiskThreads Disk I/O module is built])
         else
-          AC_DEFINE(USE_DISKIO_DISKTHREADS, 0, [Whether pthreads support is needed. Automatic])
           AC_MSG_NOTICE([Native pthreads support disabled. DiskThreads module automaticaly disabled.])
           SQUID_STATE_ROLLBACK([diskthreads_state])
+          squid_disk_module_candidates_DiskThreads=no
         fi
       ;;
 
-    AIO)
-      dnl Check for POSIX AIO availability
-      squid_opt_use_aio="yes"
-      AIOLIB=
-      if test "x$with_aio" != "xno"; then
-        have_aio_header=no
-        AC_CHECK_HEADERS(aio.h,[have_aio_header=yes])
-        dnl On some systems POSIX AIO functions are in librt
-        dnl On some systems POSIX AIO functions are in libaio
-        AC_CHECK_LIB(rt,aio_read,[AIOLIB="-lrt"],AC_CHECK_LIB(aio,aio_read,[AIOLIB="-laio"],[]))
-        dnl Enable AIO if the library and headers are found
-        if test "x$AIOLIB" != "x" && test "x$have_aio_header" = "xyes"; then
-          AC_MSG_NOTICE([Native POSIX AIO support detected.])
-          squid_opt_use_aio="yes"
-        else
-          dnl Windows does things differently. We provide wrappers.
-          dnl TODO: Windows really needs its own DiskIO module or its Overlaped IO
-          case "$squid_host_os" in
-            mingw)
-              squid_opt_use_aio="yes"
-              AC_MSG_NOTICE([Windows being built. Maybe-enable POSIX AIO.])
-              ;;
-            *)
-              AC_MSG_NOTICE([Native POSIX AIO support not detected. AIO automatically disabled.])
-              squid_opt_use_aio="no"
-              ;;
-          esac
-        fi
+    IpcIo)
+      if test "x$ac_cv_search_shm_open" = "xno" ; then
+        AC_MSG_NOTICE([DiskIO IpcIo module requires shared memory support])
+        squid_disk_module_candidates_IpcIo=no
       else
-        AC_MSG_NOTICE([POSIX AIO support manually disabled.])
-        squid_opt_use_aio="no"
-      fi
-      dnl Use the POSIX AIO pieces if we actually need them.
-      if test "x$squid_opt_use_aio" = "xyes" ; then
-        AC_DEFINE(USE_DISKIO_AIO, 1, [Whether POSIX AIO support is needed. Automatic])
-        DISK_MODULES="$DISK_MODULES AIO"
-        DISK_LIBS="$DISK_LIBS libAIO.a"
-        DISK_LINKOBJS="$DISK_LINKOBJS DiskIO/AIO/AIODiskIOModule.o"
-        case "$squid_host_os" in
-          mingw)
-            ENABLE_WIN32_AIO=1
-            AC_MSG_NOTICE([Replacing AIO DiskIO module with: Windows overlapped I/O support])
-            ;;
-          *)
-            AC_MSG_NOTICE([Enabling AIO DiskIO module])
-            DISK_OS_LIBS="$DISK_OS_LIBS $AIOLIB"
-            ;;
-        esac
-      else
-        AC_DEFINE(USE_DISKIO_AIO, 0, [Whether POSIX AIO support is needed. Automatic])
-        AC_MSG_NOTICE([AIO DiskIO Module disabled. Missing POSIX AIO support.])
+        AC_MSG_NOTICE([Enabling IpcIo DiskIO module])
+        DISK_MODULES="$DISK_MODULES IpcIo"
+        AC_DEFINE([HAVE_DISKIO_MODULE_IPCIO],1,[IpcIo Disk I/O module is built])
       fi
       ;;
 
@@ -696,48 +706,34 @@ for module in $squid_disk_module_candidates none; do
       dnl  OR support windows mmap functions
       if test "x$squid_host_os" = "xmingw" ; then
         AC_MSG_NOTICE([Mmapped DiskIO is not available on Mingw])
+        squid_disk_module_candidates_Mmapped=no
       else
         AC_MSG_NOTICE([Enabling Mmapped DiskIO module])
-        DISK_LIBS="$DISK_LIBS libMmapped.a"
         DISK_MODULES="$DISK_MODULES Mmapped"
-        DISK_LINKOBJS="$DISK_LINKOBJS DiskIO/Mmapped/MmappedDiskIOModule.o"
+        AC_DEFINE([HAVE_DISKIO_MODULE_MMAPPED],1,[Mmapped Disk I/O module is built])
       fi
-      ;;
-
-    IpcIo)
-      AC_MSG_NOTICE([Enabling IpcIo DiskIO module])
-      if test "x$ac_cv_search_shm_open" = "xno" ; then
-        AC_MSG_ERROR([DiskIO IpcIo module requires shared memory support])
-      fi
-      DISK_LIBS="$DISK_LIBS libIpcIo.a"
-      DISK_MODULES="$DISK_MODULES IpcIo"
-      DISK_LINKOBJS="$DISK_LINKOBJS DiskIO/IpcIo/IpcIoDiskIOModule.o"
-      AC_DEFINE(USE_DISKIO_IPCIO, 1, [Enable DiskIO IpcIo module.])
-      ;;
-
-    Blocking)
-      AC_MSG_NOTICE([Enabling Blocking DiskIO module])
-      DISK_LIBS="$DISK_LIBS libBlocking.a"
-      DISK_MODULES="$DISK_MODULES Blocking"
-      DISK_LINKOBJS="$DISK_LINKOBJS DiskIO/Blocking/BlockingDiskIOModule.o"
       ;;
 
     *)
       AC_MSG_NOTICE([Enabling $module DiskIO module])
-      DISK_LIBS="$DISK_LIBS lib${module}.a"
+      DISK_LIBS="$DISK_LIBS lib${module}.la"
       DISK_MODULES="$DISK_MODULES ${module}"
-      DISK_LINKOBJS="$DISK_LINKOBJS DiskIO/${module}/${module}DiskIOModule.o"
       ;;
     esac
 done
 AC_MSG_NOTICE([IO Modules built: $DISK_MODULES])
 AC_SUBST(DISK_MODULES)
 AC_SUBST(DISK_LIBS)
-AC_SUBST(DISK_PROGRAMS)
-AC_SUBST(DISK_LINKOBJS)
-AC_SUBST(DISK_OS_LIBS)
-AM_CONDITIONAL([ENABLE_WIN32_AIOPS], [test "$ENABLE_WIN32_AIOPS" = "1"])
-AM_CONDITIONAL([ENABLE_WIN32_AIO], [test "$ENABLE_WIN32_AIO" = "1"])
+AM_CONDITIONAL([ENABLE_DISKIO_AIO], [test "x$squid_disk_module_candidates_AIO" = "xyes"])
+AC_SUBST(AIOLIB)
+AM_CONDITIONAL([ENABLE_WIN32_AIO], [test "x$squid_disk_module_candidates_AIO" = "xyes" -a "x$ENABLE_WIN32_AIO" = "x1"])
+AM_CONDITIONAL([ENABLE_DISKIO_BLOCKING], [test "x$squid_disk_module_candidates_Blocking" = "xyes"])
+AM_CONDITIONAL([ENABLE_DISKIO_DISKDAEMON], [test "x$squid_disk_module_candidates_DiskDaemon" = "xyes"])
+AM_CONDITIONAL([ENABLE_DISKIO_DISKTHREADS], [test "x$squid_disk_module_candidates_DiskThreads" = "xyes"])
+AC_SUBST(LIBPTHREADS)
+AM_CONDITIONAL([ENABLE_WIN32_AIOPS], [test "x$squid_disk_module_candidates_DiskThreads" = "xyes" -a "x$ENABLE_WIN32_AIOPS" = "x1"])
+AM_CONDITIONAL([ENABLE_DISKIO_IPCIO], [test "x$squid_disk_module_candidates_IpcIo" = "xyes"])
+AM_CONDITIONAL([ENABLE_DISKIO_MMAPPED], [test "x$squid_disk_module_candidates_Mmapped" = "xyes"])
 
 
 dnl Check what Storage formats are wanted.
@@ -803,7 +799,7 @@ for fs in $squid_storeio_module_candidates none; do
 	;;
     esac
 done
- 
+
 AM_CONDITIONAL(HAVE_FS_UFS,[test "x$squid_do_build_ufs" = "xtrue" ])
 AM_CONDITIONAL(HAVE_FS_ROCK,[test "x$squid_do_build_rock" = "xtrue" ])
 dnl hack: need to define those even if not used in the build system to
@@ -1015,7 +1011,7 @@ AM_CONDITIONAL(USE_ECAP, test "x$squid_opt_use_ecap" = "xyes")
 if test "x$squid_opt_use_ecap" = "xyes";
 then
     AC_DEFINE(USE_ECAP,1,[Enable eCAP support])
-    ECAP_LIBS="ecap/libsquid-ecap.la"
+    ECAP_LIBS="ecap/libecapsquid.la"
     squid_opt_use_adaptation=yes
 else
     AC_DEFINE(USE_ECAP,0,[Disable eCAP support])
@@ -1242,19 +1238,21 @@ case "$with_gnutls" in
 ])
 AH_TEMPLATE(USE_GNUTLS,[GnuTLS support is available])
 if test "x$with_gnutls" != "xno"; then
-  AC_CHECK_HEADERS(gnutls/gnutls.h gnutls/x509.h)
+  SQUID_STATE_SAVE(squid_gnutls_state)
 
   # User may have provided a custom location for GnuTLS. Otherwise...
-  SQUID_STATE_SAVE(squid_gnutls_state)
   LIBS="$LIBS $LIBGNUTLS_PATH"
 
   # auto-detect using pkg-config
-  PKG_CHECK_MODULES([LIBGNUTLS],[gnutls >= 3.1.5],,[
+  PKG_CHECK_MODULES([LIBGNUTLS],[gnutls >= 3.1.5],[
+    CPPFLAGS="$CPPFLAGS $LIBGNUTLS_CFLAGS"
+    ],[
     ## find the package without pkg-config
     ## check that the library is actually new enough.
     ## by testing for a 3.1.5+ function which we use
     AC_CHECK_LIB(gnutls,gnutls_certificate_verify_peers3,[LIBGNUTLS_LIBS="-lgnutls"])
   ])
+  AC_CHECK_HEADERS(gnutls/gnutls.h gnutls/x509.h)
 
   SQUID_STATE_ROLLBACK(squid_gnutls_state) #de-pollute LIBS
 
@@ -1296,6 +1294,7 @@ AH_TEMPLATE(USE_OPENSSL,[OpenSSL support is available])
 if test "x$with_openssl" = "xyes"; then
   AC_CHECK_HEADERS( \
     openssl/bio.h \
+    openssl/crypto.h \
     openssl/err.h \
     openssl/md5.h \
     openssl/opensslv.h \
@@ -1381,87 +1380,14 @@ AH_TEMPLATE(USE_APPLE_KRB5,[Apple Kerberos support is available])
 AH_TEMPLATE(USE_MIT_KRB5,[MIT Kerberos support is available])
 AH_TEMPLATE(USE_SOLARIS_KRB5,[Solaris Kerberos support is available])
 
-dnl User may specify Heimdal Kerberos is needed from a non-standard location
-AC_ARG_WITH(heimdal-krb5,
-  AS_HELP_STRING([--without-heimdal-krb5],
-		 [Compile without Heimdal Kerberos support.]), [
-case "$with_heimdal_krb5" in
-  yes|no)
-    : # Nothing special to do here
-    ;;
-  *)
-    if test ! -d "$withval" ; then
-      AC_MSG_ERROR([--with-heimdal-krb5 path does not point to a directory])
-    fi
-    if test -d "$with_heimdal_krb5/lib64" ; then
-      LIB_KRB5_PATH="-L$with_heimdal_krb5/lib64 -L$with_heimdal_krb5/lib"
-    else 
-      LIB_KRB5_PATH="-L$with_heimdal_krb5/lib"
-    fi
-    CXXFLAGS="-I$with_heimdal_krb5/include $CXXFLAGS"
-    krb5confpath="$with_heimdal_krb5/bin"
-    with_heimdal_krb5=yes
-esac
-])
-AH_TEMPLATE(USE_HEIMDAL_KRB5,[Heimdal Kerberos support is available])
-
-
-
-dnl User may specify GNU gss is needed from a non-standard location
-AC_ARG_WITH(gnugss,
-  AS_HELP_STRING([--without-gnugss],
-		 [Compile without the GNU gss libraries.]), [
-case "$with_gnugss" in
-  yes|no)
-    : # Nothing special to do here
-    ;;
-  *)
-    if test ! -d "$withval" ; then
-      AC_MSG_ERROR([--with-gnugss path does not point to a directory])
-    fi
-    if test ! -d "$with_gnugss/lib64" ; then
-      LIB_KRB5_PATH="-L$with_gnugss/lib64 -L$with_gnugss/lib"
-    else
-      LIB_KRB5_PATH="-L$with_gnugss/lib"
-    fi
-    CXXFLAGS="-I$with_gnugss/include $CXXFLAGS"
-    krb5confpath=
-    with_gnugss=yes
-esac
-])
-AH_TEMPLATE(USE_GNUGSS,[GNU gss support is available])
-
-# determine krb5 conflicts
-ac_with_krb5_count=0
-if test "x$with_mit_krb5" = "xyes"; then
- ac_with_krb5_count=`expr $ac_with_krb5_count + 1`
-fi
-if test "x$with_heimdal_krb5" = "xyes"; then
- ac_with_krb5_count=`expr $ac_with_krb5_count + 1`
-fi
-if test "x$with_gnugss" = "xyes"; then
- ac_with_krb5_count=`expr $ac_with_krb5_count + 1`
-fi
-
-if test $ac_with_krb5_count -gt 1 ; then
-  AC_MSG_ERROR([Please choose only one Kerberos library.])
-elif test $ac_with_krb5_count -eq 0 ; then
+## find out if pkg-config or krb5-config will work
+if test "x$with_mit_krb5" != "xno"; then
   # find installed libs via pkg-config or krb5-config
-  PKG_CHECK_EXISTS(gssapi-krb5 krb5, [with_mit_krb5=yes])
-  PKG_CHECK_EXISTS(heimdal-gssapi, [with_heimdal_krb5=yes])
-  PKG_CHECK_EXISTS(gss, [with_gnugss=yes])
-  if test "x$with_mit_krb5" = "xyes"; then
-    ac_with_krb5_count=`expr $ac_with_krb5_count + 1`
-  fi
-  if test "x$with_heimdal_krb5" = "xyes"; then
-    ac_with_krb5_count=`expr $ac_with_krb5_count + 1`
-  fi
-  if test "x$with_gnugss" = "xyes"; then
-    ac_with_krb5_count=`expr $ac_with_krb5_count + 1`
-  fi
-  if test $ac_with_krb5_count -gt 1 ; then
-    AC_MSG_ERROR([pkg-config found multiple Kerberos library. Please select one with --with-<kerberos package>])
-  elif test $ac_with_krb5_count -eq 0 -a "$cross_compiling" = "no"; then
+  squid_pc_krb5_name=
+  PKG_CHECK_EXISTS(mit-krb5-gssapi mit-krb5, [squid_pc_krb5_name="mit-krb5-gssapi mit-krb5"],[
+    PKG_CHECK_EXISTS(gssapi-krb5 krb5, [squid_pc_krb5_name="gssapi-krb5 krb5"])
+  ])
+  if test "x$squid_pc_krb5_name" = "x" -a "$cross_compiling" = "no"; then
     # Look for krb5-config (unless cross-compiling)
     AC_PATH_PROG(krb5_config,krb5-config,no)
     if test "x$ac_cv_path_krb5_config" != "xno" ; then
@@ -1469,34 +1395,33 @@ elif test $ac_with_krb5_count -eq 0 ; then
       ac_heimdal="`$ac_cv_path_krb5_config --version 2>/dev/null | grep -c -i heimdal`"
       ac_solaris="`$ac_cv_path_krb5_config --version 2>/dev/null | grep -c -i solaris`"
       ac_apple="`$ac_cv_path_krb5_config --vendor 2>/dev/null | grep -c -i apple`"
-      if test $ac_heimdal -gt 0 ; then
-	with_heimdal_krb5=yes
-        ac_with_krb5_count=1
-      fi
       if test $ac_solaris -gt 0 ; then
 	with_solaris_krb5=yes
-        ac_with_krb5_count=1
-      fi
-      if test $ac_apple -gt 0 ; then
+      elif test $ac_apple -gt 0 ; then
 	with_apple_krb5=yes
-        ac_with_krb5_count=1
-      fi
-      if test $ac_heimdal -eq 0 && test $ac_solaris -eq 0 && test $ac_apple -eq 0; then
-	with_mit_krb5=yes
-        ac_with_krb5_count=1
+      elif test $ac_heimdal -gt 0; then
+	with_mit_krb5=no
+        if test "x$with_mit_krb5" = "xyes"; then
+          AC_MSG_ERROR([Could not find pkg-config or krb5-config for MIT Kerberos])
+        fi
       fi
     else
-      AC_MSG_WARN([Could not find krb5-config in path])
+      if test "x$with_mit_krb5" = "xyes"; then
+        AC_MSG_ERROR([Could not find krb5-config in path])
+      else
+        with_mit_krb5=no
+      fi
     fi
   fi
 fi
 
-if test "x$with_mit_krb5" = "xyes" || test "x$with_apple_krb5" = "xyes" ; then
+# detect MIT Kerberos dependencies (except on Solaris)
+if test "x$with_mit_krb5" != "xno" -a "x$with_solaris_krb5" != "xyes"; then
   SQUID_STATE_SAVE([squid_krb5_save])
   LIBS="$LIBS $LIB_KRB5_PATH"
 
   # auto-detect using pkg-config
-  PKG_CHECK_MODULES([LIB_KRB5],[gssapi-krb5 krb5],,[
+  PKG_CHECK_MODULES([LIB_KRB5], $squid_pc_krb5_name,,[
     # look for krb5-config (unless cross-compiling)
     if test "$cross_compiling" = "no"; then
       if test "x$krb5confpath" = "x" ; then
@@ -1520,25 +1445,32 @@ if test "x$with_mit_krb5" = "xyes" || test "x$with_apple_krb5" = "xyes" ; then
       ## Detect libraries the hard way.
 
       SQUID_STATE_SAVE([squid_mit_save])
+      missing_required=
       AC_MSG_NOTICE([Try to find Kerberos libraries in given path])
       AC_CHECK_LIB(com_err, [main], [LIB_KRB5_LIBS="-lcom_err $LIB_KRB5_LIBS"],[
-        AC_MSG_ERROR([library 'com_err' is required for MIT Kerberos])
+        AC_MSG_WARN([library 'com_err' is required for MIT Kerberos])
+        missing_required=yes
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(k5crypto, [main], [LIB_KRB5_LIBS="-lk5crypto $LIB_KRB5_LIBS"],[
-        AC_MSG_ERROR([library 'k5crypto' is required for MIT Kerberos])
+        AC_MSG_WARN([library 'k5crypto' is required for MIT Kerberos])
+        missing_required=yes
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(krb5, [main], [LIB_KRB5_LIBS="-lkrb5 $LIB_KRB5_LIBS"],[
-        AC_MSG_ERROR([library 'krb5' is required for MIT Kerberos])
+        AC_MSG_WARN([library 'krb5' is required for MIT Kerberos])
+        missing_required=yes
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(gssapi_krb5, [main], [LIB_KRB5_LIBS="-lgssapi_krb5 $LIB_KRB5_LIBS"],[
-        AC_MSG_ERROR([library 'gssapi_krb5' is required for MIT Kerberos])
+        AC_MSG_WARN([library 'gssapi_krb5' is required for MIT Kerberos])
+        missing_required=yes
       ])
       SQUID_STATE_ROLLBACK([squid_mit_save])
+      if test "x$missing_required" = "xyes"; then
+        LIB_KRB5_LIBS=""
+      fi
     fi
-
   ])
 
   if test "x$LIB_KRB5_LIBS" != "x"; then
@@ -1563,17 +1495,18 @@ if test "x$with_mit_krb5" = "xyes" || test "x$with_apple_krb5" = "xyes" ; then
     AC_CHECK_HEADERS(profile.h)
 
     SQUID_CHECK_KRB5_FUNCS
-
   fi
-  if test "x$KRB5LIBS" = "x"; then
+  if test "x$with_mit_krb5" = "xyes" -a "x$KRB5LIBS" = "x"; then
     AC_MSG_ERROR([Required Kerberos library not found])
-    ac_with_krb5_count=0
+  elif test "x$KRB5LIBS" = "x"; then
+    with_mit_krb5=no
+    with_apple_krb5=no
   fi
-
   SQUID_STATE_ROLLBACK([squid_krb5_save])
 fi
 
-if test "x$with_solaris_krb5" = "xyes"; then
+# detect Solaris Kerberos dependencies
+if test "x$with_solaris_krb5" = "xyes" -a "x$KRB5LIBS" = "x"; then
   SQUID_STATE_SAVE([squid_krb5_save])
   LIBS="$LIBS $LIB_KRB5_PATH"
 
@@ -1607,15 +1540,21 @@ if test "x$with_solaris_krb5" = "xyes"; then
     CXXFLAGS="-I/usr/include/kerberosv5 $CXXFLAGS"
 
     SQUID_STATE_SAVE([squid_solaris_save])
+    missing_required=
     AC_MSG_NOTICE([Try to find Kerberos libraries in given path])
     AC_CHECK_LIB(krb5, [main], [LIB_KRB5_LIBS="-lkrb5 $LIB_KRB5_LIBS"],[
-      AC_MSG_ERROR([library 'krb5' is required for Solaris Kerberos])
+      AC_MSG_WARN([library 'krb5' is required for Solaris Kerberos])
+        missing_required=yes
     ])
     LIBS=$LIB_KRB5_LIBS
     AC_CHECK_LIB(gss, [main], [LIB_KRB5_LIBS="-lgss $LIB_KRB5_LIBS"],[
-      AC_MSG_ERROR([library 'gss' is required for Solaris Kerberos])
+      AC_MSG_WARN([library 'gss' is required for Solaris Kerberos])
+        missing_required=yes
     ])
     SQUID_STATE_ROLLBACK([squid_solaris_save])
+    if test "x$missing_required" = "xyes"; then
+      LIB_KRB5_LIBS=""
+    fi
   fi
 
   if test "x$LIB_KRB5_LIBS" != "x"; then
@@ -1640,24 +1579,72 @@ if test "x$with_solaris_krb5" = "xyes"; then
       AC_MSG_WARN([If you need Kerberos support you will have to patch])
       AC_MSG_WARN([your system. See contrib/solaris/solaris-krb5-include.patch])
     fi
-
     SQUID_CHECK_KRB5_FUNCS
-
   fi
-  if test "x$KRB5LIBS" = "x"; then
+  if test "x$with_mit_krb5" = "xyes" -a "x$KRB5LIBS" = "x"; then
+    # Error only if Solaris flavour was detected while looking for required MIT Kerberos
     AC_MSG_ERROR([Required Kerberos library not found])
-    ac_with_krb5_count=0
+  elif test "x$KRB5LIBS" = "x"; then
+    with_solaris_krb5=no
+    with_mit_krb5=no
   fi
-
   SQUID_STATE_ROLLBACK([squid_krb5_save])
 fi
 
-if test "x$with_heimdal_krb5" = "xyes"; then
+dnl User may specify Heimdal Kerberos is needed from a non-standard location
+AC_ARG_WITH(heimdal-krb5,
+  AS_HELP_STRING([--without-heimdal-krb5],
+		 [Compile without Heimdal Kerberos support.]), [
+case "$with_heimdal_krb5" in
+  yes|no)
+    : # Nothing special to do here
+    ;;
+  *)
+    if test ! -d "$withval" ; then
+      AC_MSG_ERROR([--with-heimdal-krb5 path does not point to a directory])
+    fi
+    if test -d "$with_heimdal_krb5/lib64" ; then
+      LIB_KRB5_PATH="-L$with_heimdal_krb5/lib64 -L$with_heimdal_krb5/lib"
+    else 
+      LIB_KRB5_PATH="-L$with_heimdal_krb5/lib"
+    fi
+    CXXFLAGS="-I$with_heimdal_krb5/include $CXXFLAGS"
+    krb5confpath="$with_heimdal_krb5/bin"
+    with_heimdal_krb5=yes
+esac
+])
+AH_TEMPLATE(USE_HEIMDAL_KRB5,[Heimdal Kerberos support is available])
+if test "x$with_heimdal_krb5" != "xno" -a "x$KRB5LIBS" = "x"; then
+  # find installed libs via pkg-config or krb5-config
+  PKG_CHECK_EXISTS(heimdal-krb5, [squid_pc_krb5_name="heimdal-krb5"])
+  if test "x$squid_pc_krb5_name" = "x"; then
+    PKG_CHECK_EXISTS(heimdal-gssapi, [squid_pc_krb5_name="heimdal-gssapi"])
+  fi
+  if test "x$squid_pc_krb5_name" = "x" -a "$cross_compiling" = "no"; then
+    # Look for krb5-config (unless cross-compiling)
+    AC_PATH_PROG(krb5_config,krb5-config,no)
+    if test "x$ac_cv_path_krb5_config" != "xno" ; then
+      krb5confpath="`dirname $ac_cv_path_krb5_config`"
+      ac_heimdal="`$ac_cv_path_krb5_config --version 2>/dev/null | grep -c -i heimdal`"
+      if test "x$with_heimdal_krb5" = "xyes"; then
+        AC_MSG_ERROR([Could not find pkg-config or krb5-config for Heimdal Kerberos])
+      fi
+    else
+      if test "x$with_heimdal_krb5" = "xyes"; then
+        AC_MSG_ERROR([Could not find krb5-config in path])
+      else
+        AC_MSG_WARN([Could not find krb5-config in path])
+        with_heimdal_krb5=no
+      fi
+    fi
+  fi
+fi
+if test "x$with_heimdal_krb5" != "xno" -a "x$KRB5LIBS" = "x"; then
   SQUID_STATE_SAVE([squid_krb5_save])
   LIBS="$LIBS $LIB_KRB5_PATH"
 
   # auto-detect using pkg-config
-  PKG_CHECK_MODULES([LIB_KRB5],[heimdal-gssapi],,[
+  PKG_CHECK_MODULES([LIB_KRB5], $squid_pc_krb5_name,,[
     # look for krb5-config (unless cross-compiling)
     if test "$cross_compiling" = "no"; then
       if test "x$krb5confpath" = "x" ; then
@@ -1669,7 +1656,7 @@ if test "x$with_heimdal_krb5" = "xyes"; then
         ac_krb5_config="$krb5confpath/krb5-config"
       fi
     fi
-    if test "x$ac_krb5_config" != "x" && test -x "$ac_krb5_config"; then
+    if test "x$ac_krb5_config" != "x" -a -x "$ac_krb5_config"; then
       # Get libs, etc
       AC_MSG_NOTICE([Use krb5-config to get CXXFLAGS and LIBS])
       LIB_KRB5_CFLAGS="`$ac_krb5_config --cflags krb5 2>/dev/null`"
@@ -1680,18 +1667,21 @@ if test "x$with_heimdal_krb5" = "xyes"; then
       ## For some OS pkg-config is broken or unavailable.
       ## Detect libraries the hard way.
       SQUID_STATE_SAVE([squid_heimdal_save])
-
+      missing_required=
       AC_MSG_NOTICE([Try to find Kerberos libraries in given path])
       AC_CHECK_LIB(resolv, [main], [LIB_KRB5_LIBS="-lresolv $LIB_KRB5_LIBS"],[
-        AC_MSG_ERROR([library 'resolv' is required for Heimdal Kerberos])
+        AC_MSG_WARN([library 'resolv' is required for Heimdal Kerberos])
+        missing_required=yes
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(crypt, [main], [LIB_KRB5_LIBS="-lcrypt $LIB_KRB5_LIBS"],[
-        AC_MSG_ERROR([library 'crypt' is required for Heimdal Kerberos])
+        AC_MSG_WARN([library 'crypt' is required for Heimdal Kerberos])
+        missing_required=yes
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(roken, [main], [LIB_KRB5_LIBS="-lroken $LIB_KRB5_LIBS"],[
-        AC_MSG_ERROR([library 'roken' is required for Heimdal Kerberos])
+        AC_MSG_WARN([library 'roken' is required for Heimdal Kerberos])
+        missing_required=yes
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(heimbase, [main], [LIB_KRB5_LIBS="-lheimbase $LIB_KRB5_LIBS"],[
@@ -1703,11 +1693,13 @@ if test "x$with_heimdal_krb5" = "xyes"; then
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(crypto, [main], [LIB_KRB5_LIBS="-lcrypto $LIB_KRB5_LIBS"],[
-        AC_MSG_ERROR([library 'crypto' is required for Heimdal Kerberos])
+        AC_MSG_WARN([library 'crypto' is required for Heimdal Kerberos])
+        missing_required=yes
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(com_err, [main], [LIB_KRB5_LIBS="-lcom_err $LIB_KRB5_LIBS"],[
-        AC_MSG_ERROR([library 'com_err' is required for Heimdal Kerberos])
+        AC_MSG_WARN([library 'com_err' is required for Heimdal Kerberos])
+        missing_required=yes
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(hx509, [main], [LIB_KRB5_LIBS="-lhx509 $LIB_KRB5_LIBS"],[
@@ -1715,11 +1707,13 @@ if test "x$with_heimdal_krb5" = "xyes"; then
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(asn1, [main], [LIB_KRB5_LIBS="-lasn1 $LIB_KRB5_LIBS"],[
-        AC_MSG_ERROR([library 'asn1' is required for Heimdal Kerberos])
+        AC_MSG_WARN([library 'asn1' is required for Heimdal Kerberos])
+        missing_required=yes
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(krb5, [main], [LIB_KRB5_LIBS="-lkrb5 $LIB_KRB5_LIBS"],[
-        AC_MSG_ERROR([library 'krb5' is required for Heimdal Kerberos])
+        AC_MSG_WARN([library 'krb5' is required for Heimdal Kerberos])
+        missing_required=yes
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(heimntlm, [main], [LIB_KRB5_LIBS="-lheimntlm $LIB_KRB5_LIBS"],[
@@ -1727,11 +1721,14 @@ if test "x$with_heimdal_krb5" = "xyes"; then
       ])
       LIBS=$LIB_KRB5_LIBS
       AC_CHECK_LIB(gssapi, [main], [LIB_KRB5_LIBS="-lgssapi $LIB_KRB5_LIBS"],[
-        AC_MSG_ERROR([library 'gssapi' is required for Heimdal Kerberos])
+        AC_MSG_WARN([library 'gssapi' is required for Heimdal Kerberos])
+        missing_required=yes
       ])
       SQUID_STATE_ROLLBACK([squid_heimdal_save])
+      if test "x$missing_required" = "xyes"; then
+        LIB_KRB5_LIBS=""
+      fi
     fi
-
   ])
   if test "x$LIB_KRB5_LIBS" != "x"; then
     KRB5LIBS="$LIB_KRB5_PATH $LIB_KRB5_LIBS $KRB5LIBS"
@@ -1751,19 +1748,42 @@ if test "x$with_heimdal_krb5" = "xyes"; then
     if test "x$squid_cv_broken_heimdal_krb5_h" = "xyes"; then
       AC_DEFINE(HAVE_BROKEN_HEIMDAL_KRB5_H, 1, [Define to 1 if Heimdal krb5.h is broken for C++])
     fi
-
     SQUID_CHECK_KRB5_FUNCS
-
   fi
   if test "x$KRB5LIBS" = "x"; then
-    AC_MSG_ERROR([Required Kerberos library not found])
-    ac_with_krb5_count=0
+    if test test "x$with_heimdal_krb5" = "xyes"; then
+      AC_MSG_ERROR([Required Heimdal Kerberos library not found])
+    else
+      AC_MSG_WARN([Heimdal Kerberos library not found])
+    fi
   fi
-
   SQUID_STATE_ROLLBACK([squid_krb5_save])
 fi
 
-if test "x$with_gnugss" = "xyes"; then
+dnl User may specify GNU gss is needed from a non-standard location
+AC_ARG_WITH(gnugss,
+  AS_HELP_STRING([--without-gnugss],
+		 [Compile without the GNU gss libraries.]), [
+case "$with_gnugss" in
+  yes|no)
+    : # Nothing special to do here
+    ;;
+  *)
+    if test ! -d "$withval" ; then
+      AC_MSG_ERROR([--with-gnugss path does not point to a directory])
+    fi
+    if test ! -d "$with_gnugss/lib64" ; then
+      LIB_KRB5_PATH="-L$with_gnugss/lib64 -L$with_gnugss/lib"
+    else
+      LIB_KRB5_PATH="-L$with_gnugss/lib"
+    fi
+    CXXFLAGS="-I$with_gnugss/include $CXXFLAGS"
+    krb5confpath=
+    with_gnugss=yes
+esac
+])
+AH_TEMPLATE(USE_GNUGSS,[GNU gss support is available])
+if test "x$with_gnugss" != "xno" -a "x$KRB5LIBS" = "x"; then
   SQUID_STATE_SAVE([squid_krb5_save])
   LIBS="$LIBS $LIB_KRB5_PATH"
 
@@ -1774,9 +1794,8 @@ if test "x$with_gnugss" = "xyes"; then
 
     AC_MSG_NOTICE([Try to find Kerberos libraries in given path])
     AC_CHECK_LIB(gss, [main], [LIB_KRB5_LIBS="-lgss $LIB_KRB5_LIBS"],[
-      AC_MSG_ERROR([library 'com_err' is required for GNU Kerberos])
+      AC_MSG_WARN([library 'com_err' is required for GNU Kerberos])
     ])
-
   ])
 
   if test "x$LIB_KRB5_LIBS" != "x"; then
@@ -1800,16 +1819,18 @@ if test "x$with_gnugss" = "xyes"; then
 
     SQUID_CHECK_WORKING_KRB5
     SQUID_DEFINE_BOOL(HAVE_KRB5,$squid_cv_working_krb5,[KRB5 support])
-
   fi
   if test "x$KRB5LIBS" = "x"; then
-    AC_MSG_ERROR([Required Kerberos library not found])
-    ac_with_krb5_count=0
+    if test test "x$with_gnugss" = "xyes"; then
+      AC_MSG_ERROR([Required GNU GSS Kerberos library not found])
+    else
+      AC_MSG_WARN([GNU GSS Kerberos library not found])
+    fi
   fi
-
   SQUID_STATE_ROLLBACK([squid_krb5_save])
 fi
-if test $ac_with_krb5_count -gt 0 ; then
+
+if test "x$KRB5LIBS" != "x"; then
   with_krb5=yes
 fi
 AC_MSG_NOTICE([$KRB5_FLAVOUR Kerberos library support: ${with_krb5:=no} ${LIB_KRB5_PATH} ${LIB_KRB5_LIBS}])
@@ -2425,21 +2446,6 @@ AC_ARG_ENABLE(ident-lookups,
 AC_MSG_NOTICE([Support for Ident lookups enabled: ${enable_ident_lookups:=yes}])
 SQUID_DEFINE_BOOL(USE_IDENT,$enable_ident_lookups,[Support for Ident (RFC 931) lookups])
 
-AM_CONDITIONAL(USE_SSL_CRTD, false)
-AC_ARG_ENABLE(ssl-crtd,
-  AC_HELP_STRING([--enable-ssl-crtd],
-                 [Prevent Squid from directly generation of SSL private key and 
-                  certificate request and instead enables the ssl_crtd processes.]), [
-  SQUID_YESNO([$enableval],
-  [unrecogized argument to --enable-ssl-crtd: $enableval])
-])
-
-if test "x$enable_ssl_crtd" = "xyes" -a "x$with_openssl" = "xno" ; then
-   AC_MSG_ERROR([You need to enable ssl gatewaying support to use ssl_crtd feature. Try to use --with-openssl. ])
-fi
-SQUID_DEFINE_BOOL(USE_SSL_CRTD, ${enable_ssl_crtd:=no},[Use ssl_crtd daemon])
-AM_CONDITIONAL(USE_SSL_CRTD, [test "x$enable_ssl_crtd" = "xyes"])
-
 dnl Select Default hosts file location
 AC_ARG_ENABLE(default-hostsfile,
   AS_HELP_STRING([--enable-default-hostsfile=path],
@@ -2478,10 +2484,10 @@ AC_ARG_ENABLE(auth-basic,
       all possible helpers. Default is to do so.
       To disable the basic authentication scheme, use --disable-auth-basic.
       To enable but build no helpers, specify "none".
-      To see available helpers, see the helpers/basic_auth directory. ]),[
+      To see available helpers, see the src/auth/basic/ directory. ]),[
 #nothing to do really
 ])
-m4_include([helpers/basic_auth/modules.m4])
+m4_include([src/auth/basic/helpers.m4])
 
 AC_ARG_ENABLE(auth-digest,
   AS_HELP_STRING([--enable-auth-digest="list of helpers"],
@@ -2490,24 +2496,24 @@ AC_ARG_ENABLE(auth-digest,
       all possible helpers. Default is to do so.
       To disable the Digest authentication scheme, use --disable-auth-digest.
       To enable but build no helpers, specify "none".
-      To see available helpers, see the helpers/digest_auth directory. ]),[
+      To see available helpers, see the src/auth/digest/ directory. ]),[
 #nothing to do, really
 ])
-m4_include([helpers/digest_auth/modules.m4])
+m4_include([src/auth/digest/helpers.m4])
 
 AC_ARG_ENABLE(auth-negotiate,
   AS_HELP_STRING([--enable-auth-negotiate="list of helpers"],
-     [Enable the Negotiate authentication scheme, and build the specified 
+     [Enable the Negotiate authentication scheme, and build the specified
       helpers.
       Not providing an explicit list of helpers will attempt build of
       all possible helpers. Default is to do so.
-      To disable the Negotiate authentication scheme, 
+      To disable the Negotiate authentication scheme,
       use --disable-auth-negotiate.
       To enable but build no helpers, specify "none".
-      To see available helpers, see the helpers/negotiate_auth directory. ]),[
+      To see available helpers, see the src/auth/negotiate/ directory. ]),[
 #nothing to do, really
 ])
-m4_include([helpers/negotiate_auth/modules.m4])
+m4_include([src/auth/negotiate/helpers.m4])
 
 AC_ARG_ENABLE(auth-ntlm,
   AS_HELP_STRING([--enable-auth-ntlm="list of helpers"],
@@ -2516,9 +2522,9 @@ AC_ARG_ENABLE(auth-ntlm,
       all possible helpers. Default is to do so.
       To disable the NTLM authentication scheme, use --disable-auth-ntlm.
       To enable but build no helpers, specify "none".
-      To see available helpers, see the helpers/ntlm_auth directory. ]),[
+      To see available helpers, see the src/auth/ntlm/ directory. ]),[
 ])
-m4_include([helpers/ntlm_auth/modules.m4])
+m4_include([src/auth/ntlm/helpers.m4])
 
 dnl Authentication libraries to build
 dnl This list will not be needed when each auth library has its own Makefile
@@ -2533,25 +2539,25 @@ AC_SUBST(AUTH_LIBS_TO_BUILD)
 dnl Select logging daemon helpers to build
 AC_ARG_ENABLE(log-daemon-helpers,
   AS_HELP_STRING([--enable-log-daemon-helpers="list of helpers"],
-                 [This option selects which logging daemon helpers to 
+                 [This option selects which logging daemon helpers to
                   build and install as part of the normal build process
-                  For a list of available helpers see the helpers/log_daemon
+                  For a list of available helpers see the src/log/
                   directory.]),[
 #nothing to do, really
 ])
-m4_include([helpers/log_daemon/modules.m4])
+m4_include([src/log/helpers.m4])
 
 AC_ARG_ENABLE(external-acl-helpers,
   AS_HELP_STRING([--enable-external-acl-helpers="list of helpers"],
-                 [Enable external_acl helpers support and thelpers themselves.
+                 [Enable external_acl helpers support and the helpers themselves.
                   Default is to build all buildable helpers and enable support.
                   To disable support, use --disable-external-acl-helpers.
                   To build no helpers, specify "none".
-                  To see available helpers, see the helpers/external_acl
+                  To see available helpers, see the src/acl/external/
                   directory]), [
 #nothing to do, really
 ])
-m4_include([helpers/external_acl/modules.m4])
+m4_include([src/acl/external/helpers.m4])
 
 dnl Select url_rewrite helpers to build
 AC_ARG_ENABLE(url-rewrite-helpers,
@@ -2561,9 +2567,32 @@ AC_ARG_ENABLE(url-rewrite-helpers,
                   process. The default is to attempt the build of all possible
                   helpers. Use --disable-url-rewrite-helpers to build none.
                   For a list of available helpers see the
-                  helpers/url_rewrite directory.]),[
+                  src/http/url_rewriters/ directory.]),[
 ])
-m4_include([helpers/url_rewrite/modules.m4])
+m4_include([src/http/url_rewriters/helpers.m4])
+
+dnl Select security helpers to build
+AC_ARG_ENABLE(security-cert-validators,
+  AS_HELP_STRING([--enable-security-cert-validators="list of helpers"],
+                 [This option selects which security certificate validator
+                  helpers to build and install as part of the normal build
+                  process. The default is to attempt the build of all possible
+                  helpers. Use --disable-security-cert-validators to
+                  build none. For a list of available helpers see the
+                  src/security/cert_validators/ directory.]),[
+])
+m4_include([src/security/cert_validators/helpers.m4])
+
+AC_ARG_ENABLE(security-cert-generators,
+  AS_HELP_STRING([--enable-security-cert-generators="list of helpers"],
+                 [This option selects which security certificate validator
+                  helpers to build and install as part of the normal build
+                  process. The default is to attempt the build of all possible
+                  helpers. Use --disable-security-cert-genrators to
+                  build none. For a list of available helpers see the
+                  src/security/cert_generators/ directory.]),[
+])
+m4_include([src/security/cert_generators/helpers.m4])
 
 dnl Select storeid_rewrite helpers to build
 AC_ARG_ENABLE(storeid-rewrite-helpers,
@@ -2573,9 +2602,9 @@ AC_ARG_ENABLE(storeid-rewrite-helpers,
                   process. The default is to attempt the build of all possible
                   helpers. Use --disable-storeid-rewrite-helpers to build none.
                   For a list of available helpers see the
-                  helpers/storeid_rewrite directory.]),[
+                  src/store/id_rewriters/ directory.]),[
 ])
-m4_include([helpers/storeid_rewrite/modules.m4])
+m4_include([src/store/id_rewriters/helpers.m4])
 
 AC_ARG_WITH(valgrind-debug,
   AS_HELP_STRING([--with-valgrind-debug],
@@ -2943,6 +2972,7 @@ dnl Some C++11 types we try to use
 AX_CXX_TYPE_NULLPTR
 AX_CXX_TYPE_UNIQUE_PTR
 AX_CXX_TYPE_UNIFORM_DISTRIBUTIONS
+SQUID_CXX_STD_UNDERLYING_TYPE
 
 dnl On Solaris 9 x86, gcc may includes a "fixed" set of old system include files
 dnl that is incompatible with the updated Solaris header files.
@@ -3255,18 +3285,6 @@ assert(myBar != NULL);
       AC_DEFINE(GETTIMEOFDAY_NO_TZP,1)
     ;;
   esac
-
-# Remove optimization for GCC 2.95.[123]
-# gcc -O[2] on *BSD and Linux (x86) causes pointers to magically become NULL
-if test "x$GCC" = "xyes"; then
-	GCCVER=`$CC -v 2>&1 | awk '$2 == "version" {print $3}'`
-	case "$GCCVER" in
-	[2.95.[123]])
-		AC_MSG_NOTICE([Removing -O for gcc on $host with GCC $GCCVER])
-		CFLAGS="`echo $CFLAGS | sed -e 's/-O[[0-9]]*//'`"
-		;;
-	esac
-fi
 
 dnl This has to be before AC_CHECK_FUNCS
 # Disable poll() on certain platforms. Override by setting ac_cv_func_poll
@@ -3772,56 +3790,8 @@ AC_CONFIG_FILES([
 	contrib/Makefile
 	doc/Makefile
 	doc/manuals/Makefile
+	doc/release-notes/Makefile
 	errors/Makefile
-	helpers/Makefile
-	helpers/basic_auth/Makefile
-	helpers/basic_auth/DB/Makefile
-	helpers/basic_auth/fake/Makefile
-	helpers/basic_auth/getpwnam/Makefile
-	helpers/basic_auth/LDAP/Makefile
-	helpers/basic_auth/NCSA/Makefile
-	helpers/basic_auth/NIS/Makefile
-	helpers/basic_auth/PAM/Makefile
-	helpers/basic_auth/POP3/Makefile
-	helpers/basic_auth/RADIUS/Makefile
-	helpers/basic_auth/SASL/Makefile
-	helpers/basic_auth/SMB/Makefile
-	helpers/basic_auth/SMB_LM/Makefile
-	helpers/basic_auth/SSPI/Makefile
-	helpers/digest_auth/Makefile
-	helpers/digest_auth/eDirectory/Makefile
-	helpers/digest_auth/file/Makefile
-	helpers/digest_auth/LDAP/Makefile
-	helpers/external_acl/Makefile
-	helpers/external_acl/AD_group/Makefile
-	helpers/external_acl/delayer/Makefile
-	helpers/external_acl/eDirectory_userip/Makefile
-	helpers/external_acl/file_userip/Makefile
-	helpers/external_acl/kerberos_ldap_group/Makefile
-	helpers/external_acl/LDAP_group/Makefile
-	helpers/external_acl/LM_group/Makefile
-	helpers/external_acl/session/Makefile
-	helpers/external_acl/SQL_session/Makefile
-	helpers/external_acl/unix_group/Makefile
-	helpers/external_acl/wbinfo_group/Makefile
-	helpers/external_acl/time_quota/Makefile
-	helpers/log_daemon/Makefile
-	helpers/log_daemon/DB/Makefile
-	helpers/log_daemon/file/Makefile
-	helpers/negotiate_auth/Makefile
-	helpers/negotiate_auth/kerberos/Makefile
-	helpers/negotiate_auth/SSPI/Makefile
-	helpers/negotiate_auth/wrapper/Makefile
-	helpers/ntlm_auth/Makefile
-	helpers/ntlm_auth/fake/Makefile
-	helpers/ntlm_auth/smb_lm/Makefile
-	helpers/ntlm_auth/SSPI/Makefile
-	helpers/ssl/Makefile
-	helpers/storeid_rewrite/Makefile
-	helpers/storeid_rewrite/file/Makefile
-	helpers/url_rewrite/Makefile
-	helpers/url_rewrite/fake/Makefile
-	helpers/url_rewrite/LFS/Makefile
 	icons/Makefile
 	lib/Makefile
 	lib/libTrie/Makefile
@@ -3834,19 +3804,61 @@ AC_CONFIG_FILES([
 	scripts/Makefile
 	src/Makefile
 	src/acl/Makefile
+	src/acl/external/Makefile
+	src/acl/external/AD_group/Makefile
+	src/acl/external/delayer/Makefile
+	src/acl/external/eDirectory_userip/Makefile
+	src/acl/external/file_userip/Makefile
+	src/acl/external/kerberos_ldap_group/Makefile
+	src/acl/external/LDAP_group/Makefile
+	src/acl/external/LM_group/Makefile
+	src/acl/external/session/Makefile
+	src/acl/external/SQL_session/Makefile
+	src/acl/external/unix_group/Makefile
+	src/acl/external/wbinfo_group/Makefile
+	src/acl/external/time_quota/Makefile
 	src/adaptation/Makefile
 	src/adaptation/icap/Makefile
 	src/adaptation/ecap/Makefile
 	src/anyp/Makefile
 	src/auth/Makefile
 	src/auth/basic/Makefile
+	src/auth/basic/DB/Makefile
+	src/auth/basic/fake/Makefile
+	src/auth/basic/getpwnam/Makefile
+	src/auth/basic/LDAP/Makefile
+	src/auth/basic/NCSA/Makefile
+	src/auth/basic/NIS/Makefile
+	src/auth/basic/PAM/Makefile
+	src/auth/basic/POP3/Makefile
+	src/auth/basic/RADIUS/Makefile
+	src/auth/basic/SASL/Makefile
+	src/auth/basic/SMB/Makefile
+	src/auth/basic/SMB_LM/Makefile
+	src/auth/basic/SSPI/Makefile
 	src/auth/digest/Makefile
+	src/auth/digest/eDirectory/Makefile
+	src/auth/digest/file/Makefile
+	src/auth/digest/LDAP/Makefile
 	src/auth/negotiate/Makefile
+	src/auth/negotiate/kerberos/Makefile
+	src/auth/negotiate/SSPI/Makefile
+	src/auth/negotiate/wrapper/Makefile
 	src/auth/ntlm/Makefile
+	src/auth/ntlm/fake/Makefile
+	src/auth/ntlm/SMB_LM/Makefile
+	src/auth/ntlm/SSPI/Makefile
 	src/base/Makefile
 	src/clients/Makefile
 	src/comm/Makefile
 	src/dns/Makefile
+	src/DiskIO/Makefile
+	src/DiskIO/AIO/Makefile
+	src/DiskIO/Blocking/Makefile
+	src/DiskIO/DiskDaemon/Makefile
+	src/DiskIO/DiskThreads/Makefile
+	src/DiskIO/IpcIo/Makefile
+	src/DiskIO/Mmapped/Makefile
 	src/esi/Makefile
 	src/eui/Makefile
 	src/format/Makefile
@@ -3855,19 +3867,32 @@ AC_CONFIG_FILES([
 	src/helper/Makefile
 	src/http/Makefile
 	src/http/one/Makefile
+	src/http/url_rewriters/Makefile
+	src/http/url_rewriters/fake/Makefile
+	src/http/url_rewriters/LFS/Makefile
 	src/icmp/Makefile
 	src/ident/Makefile
 	src/ip/Makefile
 	src/ipc/Makefile
 	src/log/Makefile
+	src/log/DB/Makefile
+	src/log/file/Makefile
 	src/mem/Makefile
 	src/mgr/Makefile
 	src/parser/Makefile
 	src/repl/Makefile
+	src/sbuf/Makefile
 	src/security/Makefile
+	src/security/cert_generators/Makefile
+	src/security/cert_generators/file/Makefile
+	src/security/cert_validators/Makefile
+	src/security/cert_validators/fake/Makefile
 	src/servers/Makefile
 	src/snmp/Makefile
 	src/ssl/Makefile
+	src/store/Makefile
+	src/store/id_rewriters/Makefile
+	src/store/id_rewriters/file/Makefile
 	test-suite/Makefile
 	tools/Makefile
 	tools/helper-mux/Makefile

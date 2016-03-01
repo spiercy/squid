@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,15 +13,18 @@
 #include "dlink.h"
 #include "http/RequestMethod.h"
 #include "RemovalPolicy.h"
+#include "SquidString.h"
 #include "stmem.h"
 #include "StoreIOBuffer.h"
 #include "StoreIOState.h"
+#include "typedefs.h" //for IRCB
 
 #if USE_DELAY_POOLS
 #include "DelayId.h"
 #endif
 
 typedef void STMCB (void *data, StoreIOBuffer wroteBuffer);
+typedef void STABH(void *);
 
 class store_client;
 class HttpRequest;
@@ -96,7 +99,6 @@ public:
     int64_t inmem_lo;
     dlink_list clients;
 
-    /** \todo move into .cc or .cci */
     size_t clientCount() const {return nclients;}
 
     bool clientIsFirst(void *sc) const {return (clients.head && sc == clients.head->data);}

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -184,5 +184,19 @@ StoreMeta::checkConsistency(StoreEntry *) const
     }
 
     return true;
+}
+
+StoreMeta::StoreMeta(const StoreMeta &s) :
+    length(s.length),
+    value(s.value),
+    next(s.next)
+{}
+
+StoreMeta& StoreMeta::operator=(const StoreMeta &s)
+{
+    length=s.length;
+    value=s.value;
+    next=s.next;
+    return *this;
 }
 

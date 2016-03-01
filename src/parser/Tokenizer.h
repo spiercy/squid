@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -10,7 +10,7 @@
 #define SQUID_PARSER_TOKENIZER_H_
 
 #include "base/CharacterSet.h"
-#include "SBuf.h"
+#include "sbuf/SBuf.h"
 
 /// Generic protocol-agnostic parsing tools
 namespace Parser
@@ -115,6 +115,18 @@ public:
      */
     SBuf::size_type skipAll(const CharacterSet &discardables);
 
+    /** Removes a single trailing character from the set.
+     *
+     * \return whether a character was removed
+     */
+    bool skipOneTrailing(const CharacterSet &discardables);
+
+    /** Removes all sequential trailing characters from the set, in any order.
+     *
+     * \returns the number of characters removed
+     */
+    SBuf::size_type skipAllTrailing(const CharacterSet &discardables);
+
     /** Extracts an unsigned int64_t at the beginning of the buffer.
      *
      * strtoll(3)-alike function: tries to parse unsigned 64-bit integer
@@ -134,6 +146,8 @@ public:
 protected:
     SBuf consume(const SBuf::size_type n);
     SBuf::size_type success(const SBuf::size_type n);
+    SBuf consumeTrailing(const SBuf::size_type n);
+    SBuf::size_type successTrailing(const SBuf::size_type n);
 
     /// reset the buffer and parsed stats to a saved checkpoint
     void undoParse(const SBuf &newBuf, SBuf::size_type cParsed) { buf_ = newBuf; parsed_ = cParsed; }
