@@ -73,6 +73,7 @@ public:
     } Swap;
 
     YesNoNone memShared; ///< whether the memory cache is shared among workers
+    YesNoNone shmLocking; ///< shared_memory_locking
     size_t memMaxSize;
 
     struct {
