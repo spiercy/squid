@@ -1561,19 +1561,20 @@ checkTimeouts(void)
     for (fd = 0; fd <= Biggest_FD; ++fd) {
         F = &fd_table[fd];
 
-        Comm::IoCallback *cb = COMMIO_FD_WRITECB(fd);
         if (writeTimedOut(fd)) {
             // We have an active write callback and we are timed out
             debugs(5, 5, "checkTimeouts: FD " << fd << " auto write timeout");
             Comm::SetSelect(fd, COMM_SELECT_WRITE, NULL, NULL, 0);
             COMMIO_FD_WRITECB(fd)->finish(Comm::COMM_ERROR, ETIMEDOUT);
-        } else if (F->writeQuotaHandler != NULL && cb->conn != NULL) {
+#if USE_DELAY_POOLS
+        } else if (F->writeQuotaHandler != NULL && COMMIO_FD_WRITECB(fd)->conn != NULL) {
             F->writeQuotaHandler->refillBucket();
             if (F->writeQuotaHandler->quota() && !F->writeQuotaHandler->selectWaiting && !F->closing()) {
                 F->writeQuotaHandler->selectWaiting = true;
-                Comm::SetSelect(fd, COMM_SELECT_WRITE, Comm::HandleWrite, cb, 0);
+                Comm::SetSelect(fd, COMM_SELECT_WRITE, Comm::HandleWrite, COMMIO_FD_WRITECB(fd), 0);
             }
             continue;
+#endif
         }
         else if (AlreadyTimedOut(F))
             continue;
