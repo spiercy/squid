@@ -11,6 +11,7 @@
 #include "squid.h"
 #include "Debug.h"
 #include "defines.h"
+#include "Store.h"
 #include "StoreIOState.h"
 
 void *
@@ -52,3 +53,7 @@ StoreIOState::~StoreIOState()
         cbdataReferenceDone(callback_data);
 }
 
+bool StoreIOState::touchingStoreEntry() const
+{
+    return e && e->swap_filen == swap_filen;
+}
