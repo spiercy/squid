@@ -1926,6 +1926,9 @@ SquidShutdown()
 
     WIN32_svcstatusupdate(SERVICE_STOP_PENDING, 10000);
 #endif
+#if ICAP_CLIENT
+    Adaptation::Icap::TheConfig.freeService();
+#endif
 
     Store::Root().sync(); /* Flush pending object writes/unlinks */
 
