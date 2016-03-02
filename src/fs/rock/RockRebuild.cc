@@ -117,7 +117,7 @@ private:
 /// smart db slot-level info pointer (hides anti-padding LoadingParts arrays)
 class LoadingSlot
 {
- public:
+public:
     LoadingSlot(const SlotId slotId, LoadingParts &source);
 
     /// another slot in some chain belonging to the same entry (unordered!)
@@ -140,7 +140,6 @@ class LoadingSlot
 private:
     LoadingFlags &flags; ///< slot flags (see the above accessors) are ours
 };
-
 
 /// information about store entries being loaded from disk (and their slots)
 /// used for identifying partially stored/loaded entries
@@ -169,7 +168,6 @@ private:
 
 } /* namespace Rock */
 
-
 /* LoadingEntry */
 
 Rock::LoadingEntry::LoadingEntry(const sfileno fileNo, LoadingParts &source):
@@ -179,7 +177,6 @@ Rock::LoadingEntry::LoadingEntry(const sfileno fileNo, LoadingParts &source):
 {
 }
 
-
 /* LoadingSlot */
 
 Rock::LoadingSlot::LoadingSlot(const SlotId slotId, LoadingParts &source):
@@ -187,7 +184,6 @@ Rock::LoadingSlot::LoadingSlot(const SlotId slotId, LoadingParts &source):
     flags(source.flags.at(slotId))
 {
 }
-
 
 /* LoadingParts */
 
@@ -285,7 +281,7 @@ Rock::Rebuild::doneValidating() const
 {
     // paranoid slot checking is only enabled with squid -S
     return validationPos >= dbEntryLimit +
-        (opt_store_doublecheck ? dbSlotLimit : 0);
+           (opt_store_doublecheck ? dbSlotLimit : 0);
 }
 
 bool
@@ -489,7 +485,7 @@ Rock::Rebuild::finalizeOrThrow(const sfileno fileNo, LoadingEntry &le)
     }
     /* no hodgepodge entries: one entry - one full chain and no leftovers */
     Must(slotId < 0);
-    Must(mappedSize == le.size); 
+    Must(mappedSize == le.size);
 
     if (!anchor.basics.swap_file_sz)
         anchor.basics.swap_file_sz = le.size;
@@ -518,7 +514,7 @@ Rock::Rebuild::validateOneEntry(const sfileno fileNo)
     switch (entry.state()) {
 
     case LoadingEntry::leLoading:
-        finalizeOrFree(fileNo, entry);            
+        finalizeOrFree(fileNo, entry);
         break;
 
     case LoadingEntry::leEmpty: // no entry hashed to this position
@@ -655,7 +651,7 @@ Rock::Rebuild::addSlotToEntry(const sfileno fileno, const SlotId slotId, const D
         chainSlots(anchor.start, slotId);
     }
 
-    le.size += header.payloadSize; // must precede freeBadEntry() calls 
+    le.size += header.payloadSize; // must precede freeBadEntry() calls
 
     if (header.firstSlot == slotId) {
         debugs(47,5, "added inode");
@@ -685,7 +681,6 @@ Rock::Rebuild::addSlotToEntry(const sfileno fileno, const SlotId slotId, const D
             }
         }
     }
-
 
     const uint64_t totalSize = anchor.basics.swap_file_sz; // may be 0/unknown
 

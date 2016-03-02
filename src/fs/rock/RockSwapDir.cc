@@ -877,11 +877,11 @@ Rock::SwapDir::writeCompleted(int errflag, size_t, RefCount< ::WriteRequest> r)
             assert(sio.e);
             assert(sio.writeableAnchor_);
             if (sio.touchingStoreEntry()) {
-            sio.e->swap_file_sz = sio.writeableAnchor_->basics.swap_file_sz =
-                                      sio.offset_;
+                sio.e->swap_file_sz = sio.writeableAnchor_->basics.swap_file_sz =
+                                          sio.offset_;
 
-            // close, the entry gets the read lock
-            map->closeForWriting(sio.swap_filen, true);
+                // close, the entry gets the read lock
+                map->closeForWriting(sio.swap_filen, true);
             }
             sio.writeableAnchor_ = NULL;
             sio.splicingPoint = request->sidCurrent;

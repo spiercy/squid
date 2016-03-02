@@ -556,7 +556,7 @@ Ipc::StoreMap::closeForUpdating(Update &update)
            "] prefix containing at least " << freshSplicingSlice.size << " bytes");
 }
 
-/// Visits entries until either 
+/// Visits entries until either
 /// * the `visitor` returns true (indicating its satisfaction with the offer);
 /// * we give up finding a suitable entry because it already took "too long"; or
 /// * we have offered all entries.
@@ -759,7 +759,6 @@ Ipc::StoreMapAnchor::rewind()
     // but keep the lock
 }
 
-
 /* Ipc::StoreMapUpdate */
 
 Ipc::StoreMapUpdate::StoreMapUpdate(StoreEntry *anEntry):
@@ -780,7 +779,6 @@ Ipc::StoreMapUpdate::~StoreMapUpdate()
 {
     entry->unlock("Ipc::StoreMapUpdate");
 }
-
 
 /* Ipc::StoreMap::Owner */
 

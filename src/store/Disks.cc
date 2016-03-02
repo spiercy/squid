@@ -388,7 +388,6 @@ Store::Disks::updateHeaders(StoreEntry *e)
     return e->disk().updateHeaders(e);
 }
 
-
 void
 Store::Disks::maintain()
 {

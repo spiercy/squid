@@ -245,11 +245,11 @@ Rock::IoState::writeToDisk(const SlotId sidNextProposal)
 
     const bool lastWrite = sidNextProposal < 0;
     const bool eof = lastWrite &&
-        // either not updating or the updating reader has loaded everything
-        (touchingStoreEntry() || staleSplicingPointNext < 0);
+                     // either not updating or the updating reader has loaded everything
+                     (touchingStoreEntry() || staleSplicingPointNext < 0);
     // approve sidNextProposal unless _updating_ the last slot
     const SlotId sidNext = (!touchingStoreEntry() && lastWrite) ?
-        staleSplicingPointNext : sidNextProposal;
+                           staleSplicingPointNext : sidNextProposal;
     debugs(79, 5, "sidNext:" << sidNextProposal << "=>" << sidNext << " eof=" << eof);
 
     // TODO: if DiskIO module is mmap-based, we should be writing whole pages

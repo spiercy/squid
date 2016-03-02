@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -69,3 +69,4 @@ private:
 } // namespace Rock
 
 #endif /* SQUID_FS_ROCK_HEADER_UPDATER_H */
+

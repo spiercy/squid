@@ -173,7 +173,6 @@ public:
 
 class StoreMapCleaner;
 
-
 /// Manages shared Store index (e.g., locking/unlocking/freeing entries) using
 /// StoreMapFileNos indexed by hashed entry keys (a.k.a. entry names),
 /// StoreMapAnchors indexed by fileno, and

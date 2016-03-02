@@ -73,8 +73,6 @@ public:
 /// this function is needed because atomic_flag cannot be compared with a boolean
 bool AssertFlagIsSet(std::atomic_flag &flag);
 
-
-
 } // namespace Ipc
 
 #endif /* SQUID_IPC_READ_WRITE_LOCK_H */
