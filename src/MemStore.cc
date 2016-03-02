@@ -349,7 +349,7 @@ MemStore::updateHeaders(StoreEntry *updatedE)
     Ipc::StoreMapUpdate update(updatedE);
     assert(updatedE);
     assert(updatedE->mem_obj);
-    if (!map->openForUpdatingAt(updatedE->mem_obj->memCache.index, update))
+    if (!map->openForUpdating(update, updatedE->mem_obj->memCache.index))
         return;
 
     try {

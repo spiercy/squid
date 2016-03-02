@@ -920,7 +920,7 @@ Rock::SwapDir::updateHeaders(StoreEntry *updatedE)
         return;
 
     Ipc::StoreMapUpdate update(updatedE);
-    if (!map->openForUpdatingAt(updatedE->swap_filen, update))
+    if (!map->openForUpdating(update, updatedE->swap_filen))
         return;
 
     try {

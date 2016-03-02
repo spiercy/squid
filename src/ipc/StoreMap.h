@@ -232,7 +232,7 @@ public:
     void forgetWritingEntry(const sfileno fileno);
 
     /// finds and locks the Update entry for an exclusive metadata update
-    bool openForUpdatingAt(const sfileno fileno, Update &update);
+    bool openForUpdating(Update &update, sfileno fileNoHint);
     /// makes updated info available to others, unlocks, and cleans up
     void closeForUpdating(Update &update);
     /// undoes partial update, unlocks, and cleans up
