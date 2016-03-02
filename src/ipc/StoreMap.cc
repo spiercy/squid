@@ -362,7 +362,7 @@ Ipc::StoreMap::openForReading(const cache_key *const key, sfileno &fileno)
             return slot; // locked for reading
         }
         slot->lock.unlockShared();
-        debugs(54, 7, "closed entry " << idx << " for reading " << path);
+        debugs(54, 7, "closed wrong-key entry " << idx << " for reading " << path);
     }
     return NULL;
 }
@@ -407,21 +407,35 @@ Ipc::StoreMap::closeForReading(const sfileno fileno)
 }
 
 bool
-Ipc::StoreMap::openForUpdatingAt(const sfileno fileno, Update &update)
+Ipc::StoreMap::openForUpdating(Update &update, const sfileno fileNoHint)
 {
     Must(update.entry);
     const StoreEntry &entry = *update.entry;
-    debugs(54, 5, "opening entry " << fileno << " of " << entry << " for updating " << path);
+    const cache_key *const key = reinterpret_cast<const cache_key*>(entry.key);
+    update.stale.name = nameByKey(key);
 
-    Must(validEntry(fileno));
+    if (!validEntry(fileNoHint)) {
+        debugs(54, 5, "opening entry with key " << storeKeyText(key) <<
+               " for updating " << path);
+        update.stale.fileNo = fileNoByName(update.stale.name);
+    } else {
+        update.stale.fileNo = fileNoHint;
+    }
+
+    debugs(54, 5, "opening entry " << update.stale.fileNo << " of " << entry << " for updating " << path);
 
     // Unreadable entries cannot (e.g., empty and otherwise problematic entries)
     // or should not (e.g., entries still forming their metadata) be updated.
-    if (!openForReadingAt(fileno)) {
-        debugs(54, 5, "cannot open unreadable entry " << fileno << " for updating " << path);
+    if (const Anchor *anchor = openForReadingAt(update.stale.fileNo)) {
+        if (!anchor->sameKey(key)) {
+            closeForReading(update.stale.fileNo);
+            debugs(54, 5, "cannot open wrong-key entry " << update.stale.fileNo << " for updating " << path);
+            return false;
+        }
+    } else {
+        debugs(54, 5, "cannot open unreadable entry " << update.stale.fileNo << " for updating " << path);
         return false;
     }
-    update.stale.fileNo = fileno;
 
     update.stale.anchor = &anchorAt(update.stale.fileNo);
     if (update.stale.anchor->writing()) {
@@ -441,9 +455,6 @@ Ipc::StoreMap::openForUpdatingAt(const sfileno fileno, Update &update)
         closeForReading(update.stale.fileNo);
         return false;
     }
-
-    const cache_key *const key = reinterpret_cast<const cache_key*>(entry.key);
-    update.stale.name = nameByKey(key);
 
     /* stale anchor is properly locked; we can now use abortUpdating() if needed */
 
@@ -556,7 +567,7 @@ Ipc::StoreMap::closeForUpdating(Update &update)
            "] prefix containing at least " << freshSplicingSlice.size << " bytes");
 }
 
-/// Visits entries until either 
+/// Visits entries until either
 /// * the `visitor` returns true (indicating its satisfaction with the offer);
 /// * we give up finding a suitable entry because it already took "too long"; or
 /// * we have offered all entries.
@@ -759,7 +770,6 @@ Ipc::StoreMapAnchor::rewind()
     // but keep the lock
 }
 
-
 /* Ipc::StoreMapUpdate */
 
 Ipc::StoreMapUpdate::StoreMapUpdate(StoreEntry *anEntry):
@@ -780,7 +790,6 @@ Ipc::StoreMapUpdate::~StoreMapUpdate()
 {
     entry->unlock("Ipc::StoreMapUpdate");
 }
-
 
 /* Ipc::StoreMap::Owner */
 

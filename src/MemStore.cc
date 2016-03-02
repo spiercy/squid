@@ -349,7 +349,7 @@ MemStore::updateHeaders(StoreEntry *updatedE)
     Ipc::StoreMapUpdate update(updatedE);
     assert(updatedE);
     assert(updatedE->mem_obj);
-    if (!map->openForUpdatingAt(updatedE->mem_obj->memCache.index, update))
+    if (!map->openForUpdating(update, updatedE->mem_obj->memCache.index))
         return;
 
     try {
@@ -710,7 +710,7 @@ MemStore::copyToShm(StoreEntry &e)
     // Optimize: remember lastWritingSlice in e.mem_obj
     while (e.mem_obj->memCache.offset < eSize) {
         Ipc::StoreMap::Slice &slice = nextAppendableSlice(
-            e.mem_obj->memCache.index, lastWritingSlice);
+                                          e.mem_obj->memCache.index, lastWritingSlice);
         if (anchor.start < 0)
             anchor.start = lastWritingSlice;
         copyToShmSlice(e, anchor, slice);

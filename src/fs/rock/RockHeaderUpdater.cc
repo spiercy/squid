@@ -69,10 +69,10 @@ void
 Rock::HeaderUpdater::startReading()
 {
     reader = store->openStoreIO(
-        *update.entry,
-        nullptr, // unused; see StoreIOState::file_callback
-        &NoteDoneReading,
-        this);
+                 *update.entry,
+                 nullptr, // unused; see StoreIOState::file_callback
+                 &NoteDoneReading,
+                 this);
     readMore("need swap entry metadata");
 }
 
@@ -91,7 +91,6 @@ Rock::HeaderUpdater::stopReading(const char *why)
     reader->close(StoreIOState::readerDone); // calls noteDoneReading(0)
     reader = nullptr; // so that swanSong() does not try to close again
 }
-
 
 void
 Rock::HeaderUpdater::NoteRead(void *data, const char *buf, ssize_t result, StoreIOState::Pointer)
@@ -164,17 +163,17 @@ void
 Rock::HeaderUpdater::startWriting()
 {
     writer = store->createUpdateIO(
-        update,
-        nullptr, // unused; see StoreIOState::file_callback
-        &NoteDoneWriting,
-        this);
+                 update,
+                 nullptr, // unused; see StoreIOState::file_callback
+                 &NoteDoneWriting,
+                 this);
     Must(writer);
 
     IoState &rockWriter = dynamic_cast<IoState&>(*writer);
     rockWriter.staleSplicingPointNext = staleSplicingPointNext;
 
     off_t offset = 0; // current writing offset (for debugging)
-  
+
     {
         debugs(20, 7, "fresh store meta for " << *update.entry);
         const char *freshSwapHeader = update.entry->getSerialisedMetaData();
@@ -248,8 +247,8 @@ Rock::HeaderUpdater::parseReadBytes()
     }
 
     const size_t staleHttpHeaderSize = headersEnd(
-        exchangeBuffer.rawContent(),
-        exchangeBuffer.length());
+                                           exchangeBuffer.rawContent(),
+                                           exchangeBuffer.length());
     debugs(47, 7, "staleHttpHeaderSize=" << staleHttpHeaderSize);
     if (!staleHttpHeaderSize) {
         readMore("need more stale HTTP reply header data");
@@ -262,3 +261,4 @@ Rock::HeaderUpdater::parseReadBytes()
     stopReading("read the last HTTP header slot");
     startWriting();
 }
+
