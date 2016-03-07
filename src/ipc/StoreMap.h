@@ -16,6 +16,8 @@
 #include "store/forward.h"
 #include "store_key_md5.h"
 
+#include <functional>
+
 namespace Ipc
 {
 
