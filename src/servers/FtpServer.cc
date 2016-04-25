@@ -315,7 +315,7 @@ Ftp::Server::clientPinnedConnectionClosed(const CommCloseCbParams &io)
 
     // TODO: If the server control connection is gone, reset state to login
     // again. Reseting login alone is not enough: FtpRelay::sendCommand() will
-    // not re-login because FtpRelay::serverState() is not going to be 
+    // not re-login because FtpRelay::serverState() is not going to be
     // fssConnected. Calling resetLogin() alone is also harmful because
     // it does not reset correctly the client-to-squid control connection (eg
     // respond if required with an error code, in all cases)
@@ -1723,9 +1723,9 @@ Ftp::Server::stopWaitingForOrigin(int originStatus)
     waitingForOrigin = false;
 
     // if we have already decided how to respond, respond now
-    if (delayedReply != nullptr) {
+    if (delayedReply != NULL) {
         HttpReply::Pointer reply = delayedReply;
-        delayedReply = nullptr;
+        delayedReply = NULL;
         writeForwardedReply(reply.getRaw());
         return; // do not completeDataDownload() after an earlier response
     }
@@ -1734,7 +1734,7 @@ Ftp::Server::stopWaitingForOrigin(int originStatus)
         return;
 
     // completeDataDownload() could be waitingForOrigin in fssHandleDataRequest
-    // Depending on which side has finished downloading first, either trust 
+    // Depending on which side has finished downloading first, either trust
     // master->userDataDone status or set originDataDownloadAbortedOnError:
     if (master->userDataDone) {
         // We finished downloading before Ftp::Client. Most likely, the

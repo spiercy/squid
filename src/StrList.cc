@@ -9,6 +9,7 @@
 /* DEBUG: section 66    HTTP Header Tools */
 
 #include "squid.h"
+#include "base/TextException.h"
 #include "SquidString.h"
 #include "StrList.h"
 #include "base/TextException.h" 

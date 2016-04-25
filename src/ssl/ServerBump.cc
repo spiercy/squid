@@ -13,6 +13,7 @@
 #include "client_side.h"
 #include "globals.h"
 #include "FwdState.h"
+#include "globals.h"
 #include "ssl/ServerBump.h"
 #include "Store.h"
 #include "StoreClient.h"
@@ -67,3 +68,4 @@ Ssl::ServerBump::sslErrors() const
     const Ssl::CertErrors *errs = static_cast<const Ssl::CertErrors*>(SSL_get_ex_data(serverSSL.get(), ssl_ex_index_ssl_errors));
     return errs;
 }
+
