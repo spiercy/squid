@@ -32,8 +32,6 @@ delay_pool_rates	delay_class
 client_delay_pool_access	acl
 client_delay_pool_count
 client_delay_pool_rates
-response_delay_pool_access	acl
-response_delay_pool_parameters
 denyinfo		acl
 eol
 externalAclHelper	auth_param
@@ -53,6 +51,7 @@ icap_service_failure_limit
 icmp
 ecap_service_type
 int
+int64_t
 kb_int64_t
 kb_size_t
 logformat

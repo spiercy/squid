@@ -47,8 +47,8 @@ CBDATA_NAMESPACED_CLASS_INIT(Rock, Rebuild);
  *  hodgepodge entry during rebuild, until "extra" slots are loaded/noticed.
  \par
  *  iNode: The very first db slot in an entry slot chain. This slot contains
- *  Store Entry metadata and the [beginning of] HTTP headers. It may also
- *  contain the [beginning of] HTTP body.
+ *  at least the beginning of Store Entry metadata, but most 32KB inodes contain
+ *  the entire metadata, HTTP headers, and HTTP body.
  \par
  *  Db slot: A db record containing a piece of a single store entry and linked
  *  to other slots with the same key and version fields, forming a chain.
@@ -74,7 +74,7 @@ CBDATA_NAMESPACED_CLASS_INIT(Rock, Rebuild);
 namespace Rock
 {
 
-/// low-level storage class for LoadingEntry and LoadingSlot flags
+/// low-level anti-padding storage class for LoadingEntry and LoadingSlot flags
 class LoadingFlags
 {
 public:

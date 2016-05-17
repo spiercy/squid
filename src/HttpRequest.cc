@@ -25,7 +25,7 @@
 #include "HttpRequest.h"
 #include "log/Config.h"
 #include "MemBuf.h"
-#include "sbuf/SBufStringConvert.h"
+#include "sbuf/StringConvert.h"
 #include "SquidConfig.h"
 #include "Store.h"
 #include "URL.h"
@@ -89,7 +89,7 @@ HttpRequest::init()
     peer_login = NULL;      // not allocated/deallocated by this class
     peer_domain = NULL;     // not allocated/deallocated by this class
     peer_host = NULL;
-    vary_headers = NULL;
+    vary_headers = SBuf();
     myportname = null_string;
     tag = null_string;
 #if USE_AUTH
@@ -121,8 +121,7 @@ HttpRequest::clean()
 #if USE_AUTH
     auth_user_request = NULL;
 #endif
-    safe_free(vary_headers);
-
+    vary_headers.clear();
     url.clear();
 
     header.clean();
@@ -197,7 +196,7 @@ HttpRequest::clone() const
 
     copy->lastmod = lastmod;
     copy->etag = etag;
-    copy->vary_headers = vary_headers ? xstrdup(vary_headers) : NULL;
+    copy->vary_headers = vary_headers;
     // XXX: what to do with copy->peer_domain?
 
     copy->tag = tag;
@@ -520,20 +519,9 @@ HttpRequest::expectingBody(const HttpRequestMethod &, int64_t &theSize) const
  * If the request cannot be created cleanly, NULL is returned
  */
 HttpRequest *
-HttpRequest::CreateFromUrlAndMethod(char * url, const HttpRequestMethod& method)
+HttpRequest::CreateFromUrl(char * url, const HttpRequestMethod& method)
 {
     return urlParse(method, url, NULL);
-}
-
-/*
- * Create a Request from a URL.
- *
- * If the request cannot be created cleanly, NULL is returned
- */
-HttpRequest *
-HttpRequest::CreateFromUrl(char * url)
-{
-    return urlParse(Http::METHOD_GET, url, NULL);
 }
 
 /**

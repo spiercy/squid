@@ -23,10 +23,13 @@ namespace Rock
 /// * writes new headers (1+ slots)
 /// * writes old data (0-2 slots)
 /// * chains the new entry prefix (1+ slots) to the old entry suffix (0+ slots)
-class HeaderUpdater: public AsyncJob {
+class HeaderUpdater: public AsyncJob
+{
+    CBDATA_CHILD(HeaderUpdater);
+
 public:
     HeaderUpdater(const Rock::SwapDir::Pointer &aStore, const Ipc::StoreMapUpdate &update);
-    virtual ~HeaderUpdater() override;
+    virtual ~HeaderUpdater() override = default;
 
 protected:
     /* AsyncJob API */
@@ -62,8 +65,6 @@ private:
     int staleSwapHeaderSize; ///< stored size of the stale entry metadata
 
     SlotId staleSplicingPointNext; ///< non-updatable old HTTP body suffix start
-
-    CBDATA_CLASS(HeaderUpdater);
 };
 
 } // namespace Rock

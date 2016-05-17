@@ -17,7 +17,6 @@
 #include "helper/ChildConfig.h"
 #include "HttpHeaderTools.h"
 #include "ip/Address.h"
-#include "MessageDelayPools.h"
 #include "Notes.h"
 #include "security/forward.h"
 #include "SquidTime.h"
@@ -342,6 +341,8 @@ public:
 #endif
     } onoff;
 
+    int64_t collapsed_forwarding_shared_entries_limit;
+
     int pipeline_max_prefetch;
 
     int forward_max_tries;
@@ -396,6 +397,7 @@ public:
         acl_access *ftp_epsv;
 
         acl_access *forceRequestBodyContinuation;
+        acl_access *serverPconnForNonretriable;
     } accessList;
     AclDenyInfoList *denyInfoList;
 
@@ -436,7 +438,6 @@ public:
 
     DelayConfig Delay;
     ClientDelayConfig ClientDelay;
-    MessageDelayConfig MessageDelay;
 #endif
 
     struct {
@@ -465,6 +466,8 @@ public:
     HeaderManglers *reply_header_access;
     ///request_header_add access list
     HeaderWithAclList *request_header_add;
+    ///reply_header_add access list
+    HeaderWithAclList *reply_header_add;
     ///note
     Notes notes;
     char *coredump_dir;
@@ -547,7 +550,6 @@ class SquidConfig2
 public:
     struct {
         int enable_purge;
-        int mangle_request_headers;
     } onoff;
     uid_t effectiveUserID;
     gid_t effectiveGroupID;

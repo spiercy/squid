@@ -7,10 +7,8 @@
  */
 
 #include "squid.h"
-#include "cbdata.h"
 #include "comm/Connection.h"
 #include "comm/IoCallback.h"
-#include "comm/Loops.h"
 #include "comm/Write.h"
 #include "fd.h"
 #include "fde.h"
@@ -61,8 +59,7 @@ Comm::HandleWrite(int fd, void *data)
     int len = 0;
     int nleft;
 
-    assert(state->conn != NULL);
-    assert(state->conn->fd == fd);
+    assert(state->conn != NULL && state->conn->fd == fd);
 
     PROF_start(commHandleWrite);
     debugs(5, 5, HERE << state->conn << ": off " <<
@@ -71,29 +68,9 @@ Comm::HandleWrite(int fd, void *data)
     nleft = state->size - state->offset;
 
 #if USE_DELAY_POOLS
-    MessageBucket *quotaHandler = fd_table[fd].writeQuotaHandler.getRaw();
-    //XXX: Call BandwidthBucket::quota() instead of this and clientInfo quota calculation code
-    if (quotaHandler) {
-        assert(quotaHandler->selectWaiting);
-        quotaHandler->selectWaiting = false;
-        if (nleft > 0) {
-            const int quota = quotaHandler->quota();
-            if (!quota) {
-                PROF_stop(commHandleWrite);
-                return;
-            }
-            const int nleft_corrected = min(nleft, quota);
-            if (nleft != nleft_corrected) {
-                debugs(5, 5, HERE << state->conn << " MessageBucket limits to " <<
-                       nleft_corrected << " out of " << nleft);
-                nleft = nleft_corrected;
-            }
-        }
-    }
-
     ClientInfo * clientInfo=fd_table[fd].clientInfo;
 
-    if ((clientInfo && !clientInfo->writeLimitingActive) || quotaHandler)
+    if (clientInfo && !clientInfo->writeLimitingActive)
         clientInfo = NULL; // we only care about quota limits here
 
     if (clientInfo) {
@@ -144,9 +121,6 @@ Comm::HandleWrite(int fd, void *data)
         // even if we wrote nothing, we were served; give others a chance
         clientInfo->kickQuotaQueue();
     }
-    /// XXX: Call BandwidthBucket::reduceBucket(len) insead of this and ClientInfo code
-    if (quotaHandler && len > 0)
-        quotaHandler->bytesIn(len);
 #endif /* USE_DELAY_POOLS */
 
     fd_bytes(fd, len, FD_WRITE);

@@ -74,7 +74,8 @@ public:
     virtual void close(int how) = 0; ///< finish or abort swapping per CloseHow
 
     // Tests whether we are working with the primary/public StoreEntry chain.
-    // Reads always read the primary chain, but there are two store write kinds:
+    // Reads start reading the primary chain, but it may become secondary.
+    // There are two store write kinds:
     // * regular writes that change (usually append) the entry visible to all and
     // * header updates that create a fresh chain (while keeping the stale one usable).
     bool touchingStoreEntry() const;

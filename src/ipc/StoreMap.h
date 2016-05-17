@@ -147,7 +147,8 @@ class StoreMapUpdate
 {
 public:
     /// During an update, the stored entry has two editions: stale and fresh.
-    class Edition {
+    class Edition
+    {
     public:
         Edition(): anchor(nullptr), fileNo(-1), name(-1), splicingPoint(-1) {}
 

@@ -35,6 +35,138 @@ static const char *ExtrasLabel = "cache_mem_ex";
 // used except for a positivity test. A unique value is handy for debugging.
 static const uint32_t SpacePoolId = 510716;
 
+/// Packs to shared memory, allocating new slots/pages as needed.
+/// Requires an Ipc::StoreMapAnchor locked for writing.
+class ShmWriter: public Packable
+{
+public:
+    ShmWriter(MemStore &aStore, StoreEntry *anEntry, const sfileno aFileNo, Ipc::StoreMapSliceId aFirstSlice = -1);
+
+    /* Packable API */
+    virtual void append(const char *aBuf, int aSize) override;
+    virtual void vappendf(const char *fmt, va_list ap) override;
+
+public:
+    StoreEntry *entry; ///< the entry being updated
+
+    /// the slot keeping the first byte of the appended content (at least)
+    /// either set via constructor parameter or allocated by the first append
+    Ipc::StoreMapSliceId firstSlice;
+
+    /// the slot keeping the last byte of the appended content (at least)
+    Ipc::StoreMapSliceId lastSlice;
+
+    uint64_t totalWritten; ///< cumulative number of bytes appended so far
+
+protected:
+    void copyToShm();
+    void copyToShmSlice(Ipc::StoreMap::Slice &slice);
+
+private:
+    MemStore &store;
+    const sfileno fileNo;
+
+    /* set by (and only valid during) append calls */
+    const char *buf; ///< content being appended now
+    int bufSize; ///< buf size
+    int bufWritten; ///< buf bytes appended so far
+};
+
+/* ShmWriter */
+
+ShmWriter::ShmWriter(MemStore &aStore, StoreEntry *anEntry, const sfileno aFileNo, Ipc::StoreMapSliceId aFirstSlice):
+    entry(anEntry),
+    firstSlice(aFirstSlice),
+    lastSlice(firstSlice),
+    totalWritten(0),
+    store(aStore),
+    fileNo(aFileNo),
+    buf(nullptr),
+    bufSize(0),
+    bufWritten(0)
+{
+    Must(entry);
+}
+
+void
+ShmWriter::append(const char *aBuf, int aBufSize)
+{
+    Must(!buf);
+    buf = aBuf;
+    bufSize = aBufSize;
+    if (bufSize) {
+        Must(buf);
+        bufWritten = 0;
+        copyToShm();
+    }
+    buf = nullptr;
+    bufSize = 0;
+    bufWritten = 0;
+}
+
+void
+ShmWriter::vappendf(const char *fmt, va_list ap)
+{
+    SBuf vaBuf;
+#if defined(VA_COPY)
+    va_list apCopy;
+    VA_COPY(apCopy, ap);
+    vaBuf.vappendf(fmt, apCopy);
+    va_end(apCopy);
+#else
+    vaBuf.vappendf(fmt, ap);
+#endif
+    append(vaBuf.rawContent(), vaBuf.length());
+}
+
+/// copies the entire buffer to shared memory
+void
+ShmWriter::copyToShm()
+{
+    Must(bufSize > 0); // do not use up shared memory pages for nothing
+    Must(firstSlice < 0 || lastSlice >= 0);
+
+    // fill, skip slices that are already full
+    while (bufWritten < bufSize) {
+        Ipc::StoreMap::Slice &slice = store.nextAppendableSlice(fileNo, lastSlice);
+        if (firstSlice < 0)
+            firstSlice = lastSlice;
+        copyToShmSlice(slice);
+    }
+
+    debugs(20, 7, "stored " << bufWritten << '/' << totalWritten << " header bytes of " << *entry);
+}
+
+/// copies at most one slice worth of buffer to shared memory
+void
+ShmWriter::copyToShmSlice(Ipc::StoreMap::Slice &slice)
+{
+    Ipc::Mem::PageId page = store.pageForSlice(lastSlice);
+    debugs(20, 7, "entry " << *entry << " slice " << lastSlice << " has " <<
+           page);
+
+    Must(bufWritten <= bufSize);
+    const int64_t writingDebt = bufSize - bufWritten;
+    const int64_t pageSize = Ipc::Mem::PageSize();
+    const int64_t sliceOffset = totalWritten % pageSize;
+    const int64_t copySize = std::min(writingDebt, pageSize - sliceOffset);
+    memcpy(static_cast<char*>(PagePointer(page)) + sliceOffset, buf + bufWritten,
+           copySize);
+
+    debugs(20, 7, "copied " << slice.size << '+' << copySize << " bytes of " <<
+           entry << " from " << sliceOffset << " in " << page);
+
+    slice.size += copySize;
+    bufWritten += copySize;
+    totalWritten += copySize;
+    // fresh anchor.basics.swap_file_sz is already set [to the stale value]
+
+    // either we wrote everything or we filled the entire slice
+    Must(bufWritten == bufSize || sliceOffset + copySize == pageSize);
+}
+
+/* MemStore */
+
 MemStore::MemStore(): map(NULL), lastWritingSlice(-1)
 {
 }
@@ -207,139 +339,6 @@ MemStore::get(const cache_key *key)
     return NULL;
 }
 
-/// Appends to shared memory, allocating new slots/pages as needed.
-/// Requires an Ipc::StoreMapAnchor locked for writing.
-class ShmWriter: public Packable {
-public:
-    ShmWriter(MemStore &aStore, StoreEntry *anEntry, Ipc::StoreMapAnchor &anAnchor, const sfileno aFileNo, Ipc::StoreMapSliceId aFirstSlice = -1);
-
-    /* Packable API */
-    virtual void append(const char *aBuf, int aSize) override;
-    virtual void vappendf(const char *fmt, va_list ap) override;
-
-public:
-    StoreEntry *entry; ///< the entry being updated
-    Ipc::StoreMapAnchor &anchor; ///< entry's anchor, pre-locked for updates
-
-    /// the slot keeping the first byte of the appended content (at least)
-    /// either set via constructor parameter or allocated by the first append
-    Ipc::StoreMapSliceId firstSlice;
-
-    /// the slot keeping the last byte of the appended content (at least)
-    Ipc::StoreMapSliceId lastSlice;
-
-    uint64_t totalWritten; ///< cumulative number of bytes appended so far
-
-protected:
-    void copyToShm();
-    void copyToShmSlice(Ipc::StoreMap::Slice &slice);
-
-private:
-    MemStore &store;
-    const sfileno fileNo;
-
-    /* set by (and only valid during) append calls */
-    const char *buf; ///< content being appended now
-    int bufSize; ///< buf size
-    int bufWritten; ///< buf bytes appended so far
-};
-
-ShmWriter::ShmWriter(MemStore &aStore, StoreEntry *anEntry, Ipc::StoreMapAnchor &anAnchor, const sfileno aFileNo, Ipc::StoreMapSliceId aFirstSlice):
-    entry(anEntry),
-    anchor(anAnchor),
-    firstSlice(aFirstSlice),
-    lastSlice(firstSlice),
-    totalWritten(0),
-    store(aStore),
-    fileNo(aFileNo),
-    buf(nullptr),
-    bufSize(0),
-    bufWritten(0)
-{
-    Must(entry);
-}
-
-void
-ShmWriter::append(const char *aBuf, int aBufSize)
-{
-    Must(!buf);
-    buf = aBuf;
-    bufSize = aBufSize;
-    if (bufSize) {
-        Must(buf);
-        bufWritten = 0;
-        copyToShm();
-    }
-    buf = nullptr;
-    bufSize = 0;
-    bufWritten = 0;
-}
-
-// XXX: Packable API bug: We should not be forced to re-implement vappendf()
-// logic in every Packable child: That logic should be implemented once, using
-// other Packable APIs as needed. Packable is not about providing a printf(3)
-// service. It is about writing opaque data to various custom destinations.
-void
-ShmWriter::vappendf(const char *fmt, va_list ap)
-{
-    SBuf vaBuf;
-#ifdef VA_COPY
-    va_list apCopy;
-    VA_COPY(apCopy, ap);
-    vaBuf.vappendf(fmt, apCopy);
-    va_end(apCopy);
-#else
-    vaBuf.vappendf(fmt, ap);
-#endif
-    append(vaBuf.rawContent(), vaBuf.length());
-}
-
-/// copies the entire buffer to shared memory
-void
-ShmWriter::copyToShm()
-{
-    Must(bufSize > 0); // do not use up shared memory pages for nothing
-    Must(firstSlice < 0 || lastSlice >= 0);
-
-    // fill, skip slices that are already full
-    while (bufWritten < bufSize) {
-        Ipc::StoreMap::Slice &slice = store.nextAppendableSlice(fileNo, lastSlice);
-        if (firstSlice < 0)
-            firstSlice = lastSlice;
-        copyToShmSlice(slice);
-    }
-
-    debugs(20, 7, "stored " << bufWritten << '/' << totalWritten << " header bytes of " << *entry);
-}
-
-/// copies at most one slice worth of buffer to shared memory
-void
-ShmWriter::copyToShmSlice(Ipc::StoreMap::Slice &slice)
-{
-    Ipc::Mem::PageId page = store.pageForSlice(lastSlice);
-    debugs(20, 7, "entry " << *entry << " slice " << lastSlice << " has " <<
-           page);
-
-    Must(bufWritten <= bufSize);
-    const int64_t writingDebt = bufSize - bufWritten;
-    const int64_t pageSize = Ipc::Mem::PageSize();
-    const int64_t sliceOffset = totalWritten % pageSize;
-    const int64_t copySize = std::min(writingDebt, pageSize - sliceOffset);
-    memcpy(static_cast<char*>(PagePointer(page)) + sliceOffset, buf + bufWritten,
-           copySize);
-
-    debugs(20, 7, "copied " << slice.size << '+' << copySize << " bytes of " <<
-           entry << " from " << sliceOffset << " in " << page);
-
-    slice.size += copySize;
-    bufWritten += copySize;
-    totalWritten += copySize;
-    // TODO: study whether to reflect new data in anchor.basics.swap_file_sz
-
-    // either we wrote everything or we filled the entire slice
-    Must(bufWritten == bufSize || sliceOffset + copySize == pageSize);
-}
-
 void
 MemStore::updateHeaders(StoreEntry *updatedE)
 {
@@ -379,7 +378,7 @@ MemStore::updateHeadersOrThrow(Ipc::StoreMapUpdate &update)
     Must(update.stale.anchor->basics.swap_file_sz >= staleHdrSz);
 
     Must(update.stale.anchor);
-    ShmWriter writer(*this, update.entry, *update.fresh.anchor, update.fresh.fileNo);
+    ShmWriter writer(*this, update.entry, update.fresh.fileNo);
     reply.packHeadersInto(&writer);
     const uint64_t freshHdrSz = writer.totalWritten;
     debugs(20, 7, "fresh hdr_sz: " << freshHdrSz << " diff: " << (freshHdrSz - staleHdrSz));
@@ -619,23 +618,15 @@ MemStore::shouldCache(StoreEntry &e) const
 
     assert(e.mem_obj);
 
-    if (e.mem_obj->vary_headers) {
+    if (!e.mem_obj->vary_headers.isEmpty()) {
         // XXX: We must store/load SerialisedMetaData to cache Vary in RAM
         debugs(20, 5, "Vary not yet supported: " << e.mem_obj->vary_headers);
         return false;
     }
 
     const int64_t expectedSize = e.mem_obj->expectedReplySize(); // may be < 0
-
-    // objects of unknown size are not allowed into memory cache, for now
-    if (expectedSize < 0) {
-        debugs(20, 5, "Unknown expected size: " << e);
-        return false;
-    }
-
     const int64_t loadedSize = e.mem_obj->endOffset();
     const int64_t ramSize = max(loadedSize, expectedSize);
-
     if (ramSize > maxObjectSize()) {
         debugs(20, 5, HERE << "Too big max(" <<
                loadedSize << ", " << expectedSize << "): " << e);
@@ -675,7 +666,10 @@ MemStore::startCaching(StoreEntry &e)
     e.mem_obj->memCache.index = index;
     e.mem_obj->memCache.io = MemObject::ioWriting;
     slot->set(e);
-    map->startAppending(index);
+    // Do not allow others to feed off an unknown-size entry because we will
+    // stop swapping it out if it grows too large.
+    if (e.mem_obj->expectedReplySize() >= 0)
+        map->startAppending(index);
     e.memOutDecision(true);
     return true;
 }
@@ -700,6 +694,9 @@ MemStore::copyToShm(StoreEntry &e)
                e.mem_obj->memCache.offset << " >= " << eSize);
         return; // nothing to do (yet)
     }
+
+    // throw if an accepted unknown-size entry grew too big or max-size changed
+    Must(eSize <= maxObjectSize());
 
     const int32_t index = e.mem_obj->memCache.index;
     assert(index >= 0);
@@ -778,6 +775,7 @@ MemStore::nextAppendableSlice(const sfileno fileNo, sfileno &sliceOffset)
             slice.next = sliceOffset = reserveSapForWriting(page);
             extras->items[sliceOffset].page = page;
             debugs(20, 7, "entry " << fileNo << " new slice: " << sliceOffset);
+            continue; // to get and return the slice at the new sliceOffset
         }
 
         return slice;
@@ -785,7 +783,7 @@ MemStore::nextAppendableSlice(const sfileno fileNo, sfileno &sliceOffset)
     /* not reached */
 }
 
-// safely returns a previously allocated memory page for the given entry slice
+/// safely returns a previously allocated memory page for the given entry slice
 Ipc::Mem::PageId
 MemStore::pageForSlice(Ipc::StoreMapSliceId sliceId)
 {

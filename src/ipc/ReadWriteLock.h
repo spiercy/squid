@@ -69,9 +69,10 @@ public:
     int appenders; ///< number of appending writers
 };
 
-/// same as assert(flag is set); either returns true or asserts
-/// this function is needed because atomic_flag cannot be compared with a boolean
-bool AssertFlagIsSet(std::atomic_flag &flag);
+/// Same as assert(flag is set): The process assert()s if flag is not set.
+/// Side effect: The unset flag becomes set just before we assert().
+/// Needed because atomic_flag cannot be compared with a boolean.
+void AssertFlagIsSet(std::atomic_flag &flag);
 
 } // namespace Ipc
 

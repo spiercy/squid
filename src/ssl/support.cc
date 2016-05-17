@@ -743,26 +743,20 @@ static const char *
 ssl_get_attribute(X509_NAME * name, const char *attribute_name)
 {
     static char buffer[1024];
-    int nid;
-
     buffer[0] = '\0';
 
     if (strcmp(attribute_name, "DN") == 0) {
         X509_NAME_oneline(name, buffer, sizeof(buffer));
-        goto done;
+    } else {
+        int nid = OBJ_txt2nid(const_cast<char *>(attribute_name));
+        if (nid == 0) {
+            debugs(83, DBG_IMPORTANT, "WARNING: Unknown SSL attribute name '" << attribute_name << "'");
+            return nullptr;
+        }
+        X509_NAME_get_text_by_NID(name, nid, buffer, sizeof(buffer));
     }
 
-    nid = OBJ_txt2nid((char *) attribute_name);
-
-    if (nid == 0) {
-        debugs(83, DBG_IMPORTANT, "WARNING: Unknown SSL attribute name '" << attribute_name << "'");
-        return NULL;
-    }
-
-    X509_NAME_get_text_by_NID(name, nid, buffer, sizeof(buffer));
-
-done:
-    return *buffer ? buffer : NULL;
+    return *buffer ? buffer : nullptr;
 }
 
 /// \ingroup ServerProtocolSSLInternal
@@ -973,6 +967,30 @@ Ssl::generateSslContext(CertificateProperties const &properties, AnyP::PortCfg &
         return nullptr;
 
     return createSSLContext(cert, pkey, port);
+}
+
+void
+Ssl::chainCertificatesToSSLContext(SSL_CTX *sslContext, AnyP::PortCfg &port)
+{
+    assert(sslContext != NULL);
+    // Add signing certificate to the certificates chain
+    X509 *signingCert = port.signingCert.get();
+    if (SSL_CTX_add_extra_chain_cert(sslContext, signingCert)) {
+        // increase the certificate lock
+        CRYPTO_add(&(signingCert->references),1,CRYPTO_LOCK_X509);
+    } else {
+        const int ssl_error = ERR_get_error();
+        debugs(33, DBG_IMPORTANT, "WARNING: can not add signing certificate to SSL context chain: " << ERR_error_string(ssl_error, NULL));
+    }
+    Ssl::addChainToSslContext(sslContext, port.certsToChain.get());
+}
+
+void
+Ssl::configureUnconfiguredSslContext(SSL_CTX *sslContext, Ssl::CertSignAlgorithm signAlgorithm,AnyP::PortCfg &port)
+{
+    if (sslContext && signAlgorithm == Ssl::algSignTrusted) {
+        Ssl::chainCertificatesToSSLContext(sslContext, port);
+    }
 }
 
 bool

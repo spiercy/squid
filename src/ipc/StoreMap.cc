@@ -173,8 +173,7 @@ Ipc::StoreMap::closeForWriting(const sfileno fileno, bool lockForReading)
 Ipc::StoreMap::Slice &
 Ipc::StoreMap::writeableSlice(const AnchorId anchorId, const SliceId sliceId)
 {
-    const Anchor &anchor = anchorAt(anchorId);
-    assert(anchor.writing());
+    assert(anchorAt(anchorId).writing());
     assert(validSlice(sliceId));
     return sliceAt(sliceId);
 }
@@ -459,7 +458,7 @@ Ipc::StoreMap::openForUpdating(Update &update, const sfileno fileNoHint)
     /* stale anchor is properly locked; we can now use abortUpdating() if needed */
 
     if (!openKeyless(update.fresh)) {
-        debugs(54, 5, "cannot open freshless entry " << update.stale.fileNo <<
+        debugs(54, 5, "cannot open freshchainless entry " << update.stale.fileNo <<
                " for updating " << path);
         abortUpdating(update);
         return false;

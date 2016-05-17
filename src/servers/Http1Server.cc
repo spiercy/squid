@@ -131,7 +131,7 @@ Http::One::Server::buildHttpRequest(Http::Stream *context)
         return false;
     }
 
-    if ((request = HttpRequest::CreateFromUrlAndMethod(http->uri, parser_->method())) == NULL) {
+    if ((request = HttpRequest::CreateFromUrl(http->uri, parser_->method())) == NULL) {
         debugs(33, 5, "Invalid URL: " << http->uri);
         // setLogUri should called before repContext->setReplyToError
         setLogUri(http, http->uri, true);
@@ -171,6 +171,16 @@ Http::One::Server::buildHttpRequest(Http::Stream *context)
             clientProcessRequestFinished(this, request);
         }
         return false;
+    }
+
+    // when absolute-URI is provided Host header should be ignored. However
+    // some code still uses Host directly so normalize it using the previously
+    // sanitized URL authority value.
+    // For now preserve the case where Host is completely absent. That matters.
+    if (const auto x = request->header.delById(Http::HOST)) {
+        debugs(33, 5, "normalize " << x << " Host header using " << request->url.authority());
+        SBuf tmp(request->url.authority());
+        request->header.putStr(Http::HOST, tmp.c_str());
     }
 
     http->request = request.getRaw();
@@ -276,11 +286,13 @@ Http::One::Server::handleReply(HttpReply *rep, StoreIOBuffer receivedData)
 void
 Http::One::Server::writeControlMsgAndCall(HttpReply *rep, AsyncCall::Pointer &call)
 {
+    const ClientHttpRequest *http = pipeline.front()->http;
+
     // apply selected clientReplyContext::buildReplyHeader() mods
     // it is not clear what headers are required for control messages
     rep->header.removeHopByHopEntries();
     rep->header.putStr(Http::HdrType::CONNECTION, "keep-alive");
-    httpHdrMangleList(&rep->header, pipeline.front()->http->request, ROR_REPLY);
+    httpHdrMangleList(&rep->header, http->request, http->al, ROR_REPLY);
 
     MemBuf *mb = rep->pack();
 

@@ -11,7 +11,7 @@
 #include "ipc/Messages.h"
 #include "ipc/TypedMsgHdr.h"
 #include "mgr/Registration.h"
-#include "sbuf/SBufDetailedStats.h"
+#include "sbuf/DetailedStats.h"
 #include "SBufStatsAction.h"
 
 SBufStatsAction::SBufStatsAction(const Mgr::CommandPointer &cmd_):
@@ -38,8 +38,8 @@ SBufStatsAction::collect()
 {
     sbdata = SBuf::GetStats();
     mbdata = MemBlob::GetStats();
-    sbsizesatdestruct = *collectSBufDestructTimeStats();
-    mbsizesatdestruct = *collectMemBlobDestructTimeStats();
+    sbsizesatdestruct = collectSBufDestructTimeStats();
+    mbsizesatdestruct = collectMemBlobDestructTimeStats();
 }
 
 static void

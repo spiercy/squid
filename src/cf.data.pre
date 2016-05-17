@@ -109,6 +109,21 @@ COMMENT_START
 	${service_name} expands into the current Squid service instance
 	name identifier which is provided by -n on the command line.
 
+  Logformat Macros
+
+	Logformat macros can be used in many places outside of the logformat
+	directive. In theory, all of the logformat codes can be used as %macros,
+	where they are supported. In practice, a %macro expands as a dash (-) when
+	the transaction does not yet have enough information and a value is needed.
+
+	There is no definitive list of what tokens are available at the various
+	stages of the transaction.
+
+	And some information may already be available to Squid but not yet
+	committed where the macro expansion code can access it (report
+	such instances!). The macro will be expanded into a single dash
+	('-') in such cases. Not all macros have been tested.
+
 COMMENT_END
 
 # options still not yet ported from 2.7 to 3.x
@@ -423,7 +438,7 @@ NAME: shared_memory_locking
 TYPE: YesNoNone
 COMMENT: on|off
 LOC: Config.shmLocking
-DEFAULT: on
+DEFAULT: off
 DOC_START
 	Whether to ensure that all required shared memory is available by
 	"locking" that shared memory into RAM when Squid starts. The
@@ -807,8 +822,14 @@ DOC_START
 
 	  %ACL		The name of the ACL being tested.
 
-	  %DATA		The ACL arguments separated by spaces (an
-			"argument string").
+	  %DATA		The ACL arguments specified in the referencing config
+			'acl ... external' line, separated by spaces (an
+			"argument string"). see acl external.
+
+			If there are no ACL arguments %DATA expands to '-'.
+
+			If you do not specify a DATA macro inside FORMAT,
+			Squid automatically appends %DATA to your FORMAT.
 
 			By default, Squid applies URL-encoding to each ACL
 			argument inside the argument string. If an explicit
@@ -816,9 +837,6 @@ DOC_START
 			encodes the whole argument string as a single token
 			(e.g., with %#DATA, spaces between arguments become
 			%20).
-
-			If you do not specify a DATA macro inside FORMAT,
-			Squid automatically appends %DATA to your FORMAT.
 
 	If SSL is enabled, the following formating codes become available:
 
@@ -834,15 +852,12 @@ DOC_START
 
 	General request syntax:
 
-	  [channel-ID] FORMAT-values [acl-values ...]
+	  [channel-ID] FORMAT-values
 
 
 	FORMAT-values consists of transaction details expanded with
 	whitespace separation per the config file FORMAT specification
 	using the FORMAT macros listed above.
-
-	acl-values consists of any string specified in the referencing
-	config 'acl ... external' line. see the "acl external" directive.
 
 	Request values sent to the helper are URL escaped to protect
 	each value in requests against whitespaces.
@@ -2556,7 +2571,7 @@ DOC_START
 				      Always create a new key when using
 				      temporary/ephemeral DH key exchanges
 
-			    SSL_OP_NO_TICKET
+			    NO_TICKET
 				      Disable use of RFC5077 session tickets.
 				      Some servers may have problems
 				      understanding the TLS extension due
@@ -3321,7 +3336,7 @@ DOC_START
 				      Always create a new key when using
 				      temporary/ephemeral DH key exchanges
 
-			    SSL_OP_NO_TICKET
+			    NO_TICKET
 				      Disable use of RFC5077 session tickets.
 				      Some servers may have problems
 				      understanding the TLS extension due
@@ -3632,8 +3647,6 @@ DOC_START
 	To avoid blocking locks, shared memory uses opportunistic algorithms
 	that do not guarantee that every cachable entity that could have been
 	shared among SMP workers will actually be shared.
-
-	Currently, entities exceeding 32KB in size cannot be shared.
 DOC_END
 
 NAME: memory_cache_mode
@@ -6099,7 +6112,7 @@ TYPE: HeaderWithAclList
 LOC: Config.request_header_add
 DEFAULT: none
 DOC_START
-	Usage:   request_header_add field-name field-value acl1 [acl2] ...
+	Usage:   request_header_add field-name field-value [ acl ... ]
 	Example: request_header_add X-Client-CA "CA=%ssl::>cert_issuer" all
 
 	This option adds header fields to outgoing HTTP requests (i.e.,
@@ -6119,20 +6132,45 @@ DOC_START
 	string format is used, then the surrounding quotes are removed
 	while escape sequences and %macros are processed.
 
-	In theory, all of the logformat codes can be used as %macros.
-	However, unlike logging (which happens at the very end of
-	transaction lifetime), the transaction may not yet have enough
-	information to expand a macro when the new header value is needed.
-	And some information may already be available to Squid but not yet
-	committed where the macro expansion code can access it (report
-	such instances!). The macro will be expanded into a single dash
-	('-') in such cases. Not all macros have been tested.
-
 	One or more Squid ACLs may be specified to restrict header
 	injection to matching requests. As always in squid.conf, all
-	ACLs in an option ACL list must be satisfied for the insertion
-	to happen. The request_header_add option supports fast ACLs
-	only.
+	ACLs in the ACL list must be satisfied for the insertion to
+	happen. The request_header_add supports fast ACLs only.
+
+	See also: reply_header_add.
+DOC_END
+
+NAME: reply_header_add
+TYPE: HeaderWithAclList
+LOC: Config.reply_header_add
+DEFAULT: none
+DOC_START
+	Usage:   reply_header_add field-name field-value [ acl ... ]
+	Example: reply_header_add X-Client-CA "CA=%ssl::>cert_issuer" all
+
+	This option adds header fields to outgoing HTTP responses (i.e., response
+	headers delivered by Squid to the client). This option has no effect on
+	cache hit detection. The equivalent adaptation vectoring point in
+	ICAP terminology is post-cache RESPMOD. This option does not apply to
+	successful CONNECT replies.
+
+	Field-name is a token specifying an HTTP header name. If a
+	standard HTTP header name is used, Squid does not check whether
+	the new header conflicts with any existing headers or violates
+	HTTP rules. If the response to be modified already contains a
+	field with the same name, the old field is preserved but the
+	header field values are not merged.
+
+	Field-value is either a token or a quoted string. If quoted
+	string format is used, then the surrounding quotes are removed
+	while escape sequences and %macros are processed.
+
+	One or more Squid ACLs may be specified to restrict header
+	injection to matching responses. As always in squid.conf, all
+	ACLs in the ACL list must be satisfied for the insertion to
+	happen. The reply_header_add option supports fast ACLs only.
+
+	See also: request_header_add.
 DOC_END
 
 NAME: note
@@ -6187,6 +6225,27 @@ DOC_START
        as accelleration of highly cachable content with periodic or groupped
        expiration times, the gains from collapsing [large volumes of
        simultenous refresh requests] outweigh losses from such delays.
+DOC_END
+
+NAME: collapsed_forwarding_shared_entries_limit
+COMMENT: (number of entries)
+TYPE: int64_t
+LOC: Config.collapsed_forwarding_shared_entries_limit
+DEFAULT: 16384
+DOC_START
+	This limits the size of a table used for sharing information
+	about collapsible entries among SMP workers. Limiting sharing
+	too much results in cache content duplication and missed
+	collapsing opportunities. Using excessively large values
+	wastes shared memory.
+
+	The limit should be significantly larger then the number of
+	concurrent collapsible entries one wants to share. For a cache
+	that handles less than 5000 concurrent requests, the default
+	setting of 16384 should be plenty.
+
+	If the limit is set to zero, it disables sharing of collapsed
+	forwarding between SMP workers.
 DOC_END
 
 COMMENT_START
@@ -6951,61 +7010,6 @@ DOC_START
 
 
 	See also client_delay_parameters and client_delay_pools.
-DOC_END
-
-COMMENT_START
- RESPONSE DELAY POOL PARAMETERS
- -----------------------------------------------------------------------------
-COMMENT_END
-
-NAME: response_delay_pool
-TYPE: response_delay_pool_parameters
-DEFAULT: none
-IFDEF: USE_DELAY_POOLS
-LOC: Config.MessageDelay
-DOC_START
-	This option configures client response bandwidth limits using the
-	following format:
-
-		response_delay_pool name bucket_speed_limit=... max_bucket_size=...
-			aggregate_speed_limit=... max_aggregate_size=... initial_fill_level=...
-
-		options:
-
-			name				the response delay pool name
-
-			bucket_speed_limit=...		the speed limit of an individual bucket(bytes/s)
-
-			max_bucket_size=...		the maximum size of a bucket
-
-			aggregate_speed_limit=...	the speed limit to the aggregate bucket(bytes/s)
-
-			max_aggregate_size=bytes=...	the maximum size of the aggregate bucket
-
-			initial_fill_level=...		the initial bucket size as a percentage of max_bucket_size
-
-		See also response_delay_pool_access.
-DOC_END
-
-NAME: response_delay_pool_access
-TYPE: response_delay_pool_access
-DEFAULT: none
-DEFAULT_DOC: Deny use of the pool, unless allow rules exist in squid.conf for the pool.
-IFDEF: USE_DELAY_POOLS
-LOC: Config.MessageDelay
-DOC_START
-	This option determines the response delay pool for the
-	request:
-
-		response_delay_pool_access pool_name allow|deny acl_name
-
-	All response_delay_pool_access options are checked in the order
-	they appear in this configuration file. The first rule with a
-	matching ACL wins. If (and only if) an "allow" rule won, Squid
-	assigns the response to the corresponding named delay pool.
-	This feature restricts Squid-to-client bandwidth only.
-	If no ACL matches or there are no response_delay_pool_access options,
-	the Squid-to-client bandwidth is not limited.
 DOC_END
 
 COMMENT_START
@@ -7961,6 +7965,7 @@ DOC_START
 		%H	- Request domain name
 		%i	- Client IP Address
 		%M	- Request Method
+		%O	- Unescaped message result from external ACL helper
 		%o	- Message result from external ACL helper
 		%p	- Request Port number
 		%P	- Request Protocol name
@@ -9718,6 +9723,44 @@ DOC_START
 	the request sender to proceed with sending the body. A deny match tells
 	Squid to delay that control response until the origin server confirms
 	that the request body is needed. Delaying is the default behavior.
+DOC_END
+
+NAME: server_pconn_for_nonretriable
+TYPE: acl_access
+DEFAULT: none
+DEFAULT_DOC: Open new connections for forwarding requests Squid cannot retry safely.
+LOC: Config.accessList.serverPconnForNonretriable
+DOC_START
+	This option provides fine-grained control over persistent connection
+	reuse when forwarding HTTP requests that Squid cannot retry. It is useful
+	in environments where opening new connections is very expensive
+	(e.g., all connections are secured with TLS with complex client and server
+	certificate validation) and race conditions associated with persistent
+	connections are very rare and/or only cause minor problems.
+
+	HTTP prohibits retrying unsafe and non-idempotent requests (e.g., POST).
+	Squid limitations also prohibit retrying all requests with bodies (e.g., PUT).
+	By default, when forwarding such "risky" requests, Squid opens a new
+	connection to the server or cache_peer, even if there is an idle persistent
+	connection available. When Squid is configured to risk sending a non-retriable
+	request on a previously used persistent connection, and the server closes
+	the connection before seeing that risky request, the user gets an error response
+	from Squid. In most cases, that error response will be HTTP 502 (Bad Gateway)
+	with ERR_ZERO_SIZE_OBJECT or ERR_WRITE_ERROR (peer connection reset) error detail.
+
+	If an allow rule matches, Squid reuses an available idle persistent connection
+	(if any) for the request that Squid cannot retry. If a deny rule matches, then
+	Squid opens a new connection for the request that Squid cannot retry.
+
+	This option does not affect requests that Squid can retry. They will reuse idle
+	persistent connections (if any).
+
+	This clause only supports fast acl types.
+	See http://wiki.squid-cache.org/SquidFaq/SquidAcl for details.
+
+	Example:
+		acl SpeedIsWorthTheRisk method POST
+		server_pconn_for_nonretriable allow SpeedIsWorthTheRisk
 DOC_END
 
 EOF
