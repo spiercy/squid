@@ -17,6 +17,7 @@
 #include "helper/ChildConfig.h"
 #include "HttpHeaderTools.h"
 #include "ip/Address.h"
+#include "MessageDelayPools.h"
 #include "Notes.h"
 #include "security/forward.h"
 #include "SquidTime.h"
@@ -438,6 +439,7 @@ public:
 
     DelayConfig Delay;
     ClientDelayConfig ClientDelay;
+    MessageDelayConfig MessageDelay;
 #endif
 
     struct {

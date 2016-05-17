@@ -12,6 +12,9 @@
 #include "http/forward.h"
 #include "mem/forward.h"
 #include "StoreIOBuffer.h"
+#if USE_DELAY_POOLS
+#include "MessageBucket.h"
+#endif
 
 class clientStreamNode;
 class ClientHttpRequest;
@@ -158,6 +161,9 @@ private:
 
     bool mayUseConnection_; /* This request may use the connection. Don't read anymore requests for now */
     bool connRegistered_;
+#if USE_DELAY_POOLS
+    MessageBucket::Pointer writeQuotaHandler;
+#endif
 };
 
 } // namespace Http
