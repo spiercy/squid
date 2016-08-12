@@ -230,8 +230,6 @@ static void free_ftp_epsv(acl_access **ftp_epsv);
 static void parse_b_size_t(size_t * var);
 static void parse_b_int64_t(int64_t * var);
 
-static bool parseNamedIntList(const char *data, const String &name, std::vector<int> &list);
-
 static void parse_CpuAffinityMap(CpuAffinityMap **const cpuAffinityMap);
 static void dump_CpuAffinityMap(StoreEntry *const entry, const char *const name, const CpuAffinityMap *const cpuAffinityMap);
 static void free_CpuAffinityMap(CpuAffinityMap **const cpuAffinityMap);
@@ -898,6 +896,7 @@ configDoConfigure(void)
             if (!p->sslContext) {
                 debugs(3, DBG_CRITICAL, "ERROR: Could not initialize cache_peer " << p->name << " TLS context");
                 self_destruct();
+                return;
             }
         }
     }
@@ -965,11 +964,15 @@ parse_obsolete(const char *name)
         Config.redirectChildren.concurrency = cval;
     }
 
-    if (!strcmp(name, "log_access"))
+    if (!strcmp(name, "log_access")) {
         self_destruct();
+        return;
+    }
 
-    if (!strcmp(name, "log_icap"))
+    if (!strcmp(name, "log_icap")) {
         self_destruct();
+        return;
+    }
 
     if (!strcmp(name, "ignore_ims_on_miss")) {
         // the replacement directive cache_revalidate_on_miss has opposite meanings for ON/OFF value
@@ -1001,6 +1004,7 @@ parse_obsolete(const char *name)
         else {
             debugs(3, DBG_CRITICAL, "ERROR: unknown directive: " << name);
             self_destruct();
+            return;
         }
 
         // add the value as unquoted-string because the old values did not support whitespace
@@ -1015,13 +1019,17 @@ parse_obsolete(const char *name)
 static void
 parseTimeLine(time_msec_t * tptr, const char *units,  bool allowMsec,  bool expectMoreArguments = false)
 {
-    time_msec_t u;
-    if ((u = parseTimeUnits(units, allowMsec)) == 0)
+    time_msec_t u = parseTimeUnits(units, allowMsec);
+    if (u == 0) {
         self_destruct();
+        return;
+    }
 
-    char *token;
-    if ((token = ConfigParser::NextToken()) == NULL)
+    char *token = ConfigParser::NextToken();;
+    if (!token) {
         self_destruct();
+        return;
+    }
 
     double d = xatof(token);
 
@@ -1033,6 +1041,7 @@ parseTimeLine(time_msec_t * tptr, const char *units,  bool allowMsec,  bool expe
 
         } else if (!expectMoreArguments) {
             self_destruct();
+            return;
 
         } else {
             token = NULL; // show default units if dying below
@@ -1667,27 +1676,6 @@ parse_client_delay_pool_access(ClientDelayConfig * cfg)
 }
 #endif
 
-#if USE_DELAY_POOLS
-#include "MessageDelayPools.h"
-
-#define free_response_delay_pool_access(X)
-#define free_response_delay_pool_parameters(X)
-#define dump_response_delay_pool_access(X, Y, Z)
-#define dump_response_delay_pool_parameters(X, Y, Z)
-
-static void
-parse_response_delay_pool_parameters(MessageDelayConfig * cfg)
-{
-    cfg->parseResponseDelayPool();
-}
-
-static void
-parse_response_delay_pool_access(MessageDelayConfig * cfg)
-{
-    cfg->parseResponseDelayPoolAccess(LegacyParser);
-}
-#endif
-
 #if USE_HTTP_VIOLATIONS
 static void
 dump_http_header_access(StoreEntry * entry, const char *name, const HeaderManglers *manglers)
@@ -1782,14 +1770,17 @@ check_null_string(char *s)
 static void
 parse_authparam(Auth::ConfigVector * config)
 {
-    char *type_str;
-    char *param_str;
-
-    if ((type_str = ConfigParser::NextToken()) == NULL)
+    char *type_str = ConfigParser::NextToken();
+    if (!type_str) {
         self_destruct();
+        return;
+    }
 
-    if ((param_str = ConfigParser::NextToken()) == NULL)
+    char *param_str = ConfigParser::NextToken();
+    if (!param_str) {
         self_destruct();
+        return;
+    }
 
     /* find a configuration for the scheme in the currently parsed configs... */
     Auth::Config *schemeCfg = Auth::Config::Find(type_str);
@@ -1801,6 +1792,7 @@ parse_authparam(Auth::ConfigVector * config)
         if (theScheme == NULL) {
             debugs(3, DBG_CRITICAL, "Parsing Config File: Unknown authentication scheme '" << type_str << "'.");
             self_destruct();
+            return;
         }
 
         config->push_back(theScheme->createConfig());
@@ -1808,6 +1800,7 @@ parse_authparam(Auth::ConfigVector * config)
         if (schemeCfg == NULL) {
             debugs(3, DBG_CRITICAL, "Parsing Config File: Corruption configuring authentication scheme '" << type_str << "'.");
             self_destruct();
+            return;
         }
     }
 
@@ -1848,20 +1841,19 @@ find_fstype(char *type)
 static void
 parse_cachedir(Store::DiskConfig *swap)
 {
-    char *type_str;
-    char *path_str;
-    RefCount<SwapDir> sd;
-    int i;
-    int fs;
-
-    if ((type_str = ConfigParser::NextToken()) == NULL)
+    char *type_str = ConfigParser::NextToken();
+    if (!type_str) {
         self_destruct();
+        return;
+    }
 
-    if ((path_str = ConfigParser::NextToken()) == NULL)
+    char *path_str = ConfigParser::NextToken();
+    if (!path_str) {
         self_destruct();
+        return;
+    }
 
-    fs = find_fstype(type_str);
-
+    int fs = find_fstype(type_str);
     if (fs < 0) {
         debugs(3, DBG_PARSE_NOTE(DBG_IMPORTANT), "ERROR: This proxy does not support the '" << type_str << "' cache type. Ignoring.");
         return;
@@ -1869,7 +1861,8 @@ parse_cachedir(Store::DiskConfig *swap)
 
     /* reconfigure existing dir */
 
-    for (i = 0; i < swap->n_configured; ++i) {
+    RefCount<SwapDir> sd;
+    for (int i = 0; i < swap->n_configured; ++i) {
         assert (swap->swapDirs[i].getRaw());
 
         if ((strcasecmp(path_str, dynamic_cast<SwapDir *>(swap->swapDirs[i].getRaw())->path)) == 0) {
@@ -2036,19 +2029,21 @@ GetUdpService(void)
 static void
 parse_peer(CachePeer ** head)
 {
-    char *token = NULL;
+    char *host_str = ConfigParser::NextToken();
+    if (!host_str) {
+        self_destruct();
+        return;
+    }
+
+    char *token = ConfigParser::NextToken();
+    if (!token) {
+        self_destruct();
+        return;
+    }
+
     CachePeer *p = new CachePeer;
-
-    if ((token = ConfigParser::NextToken()) == NULL)
-        self_destruct();
-
-    p->host = xstrdup(token);
-
-    p->name = xstrdup(token);
-
-    if ((token = ConfigParser::NextToken()) == NULL)
-        self_destruct();
-
+    p->host = xstrdup(host_str);
+    p->name = xstrdup(host_str);
     p->type = parseNeighborType(token);
 
     if (p->type == PEER_MULTICAST) {
@@ -2058,8 +2053,11 @@ parse_peer(CachePeer ** head)
 
     p->http_port = GetTcpService();
 
-    if (!p->http_port)
+    if (!p->http_port) {
+        delete p;
         self_destruct();
+        return;
+    }
 
     p->icp.port = GetUdpService();
 
@@ -2225,6 +2223,8 @@ parse_peer(CachePeer ** head)
 #endif
         } else if (strncmp(token, "tls-", 4) == 0) {
             p->secure.parse(token+4);
+        } else if (strncmp(token, "tls", 3) == 0) {
+            p->secure.parse(token+3);
         } else if (strcmp(token, "front-end-https") == 0) {
             p->front_end_https = 1;
         } else if (strcmp(token, "front-end-https=on") == 0) {
@@ -2409,13 +2409,14 @@ free_denyinfo(AclDenyInfoList ** list)
 static void
 parse_peer_access(void)
 {
-    char *host = NULL;
-    CachePeer *p;
-
-    if (!(host = ConfigParser::NextToken()))
+    char *host = ConfigParser::NextToken();
+    if (!host) {
         self_destruct();
+        return;
+    }
 
-    if ((p = peerFindByName(host)) == NULL) {
+    CachePeer *p = peerFindByName(host);
+    if (!p) {
         debugs(15, DBG_CRITICAL, "" << cfg_filename << ", line " << config_lineno << ": No cache_peer '" << host << "'");
         return;
     }
@@ -2428,30 +2429,31 @@ parse_peer_access(void)
 static void
 parse_hostdomaintype(void)
 {
-    char *host = NULL;
-    char *type = NULL;
-    char *domain = NULL;
-
-    if (!(host = ConfigParser::NextToken()))
+    char *host = ConfigParser::NextToken();
+    if (!host) {
         self_destruct();
+        return;
+    }
 
-    if (!(type = ConfigParser::NextToken()))
+    char *type = ConfigParser::NextToken();
+    if (!type) {
         self_destruct();
+        return;
+    }
 
+    char *domain = nullptr;
     while ((domain = ConfigParser::NextToken())) {
-        NeighborTypeDomainList *l = NULL;
-        NeighborTypeDomainList **L = NULL;
-        CachePeer *p;
-
-        if ((p = peerFindByName(host)) == NULL) {
+        CachePeer *p = peerFindByName(host);
+        if (!p) {
             debugs(15, DBG_CRITICAL, "" << cfg_filename << ", line " << config_lineno << ": No cache_peer '" << host << "'");
             return;
         }
 
-        l = static_cast<NeighborTypeDomainList *>(xcalloc(1, sizeof(NeighborTypeDomainList)));
+        auto *l = static_cast<NeighborTypeDomainList *>(xcalloc(1, sizeof(NeighborTypeDomainList)));
         l->type = parseNeighborType(type);
         l->domain = xstrdup(domain);
 
+        NeighborTypeDomainList **L = nullptr;
         for (L = &(p->typelist); *L; L = &((*L)->next));
         *L = l;
     }
@@ -2507,9 +2509,10 @@ void
 parse_onoff(int *var)
 {
     char *token = ConfigParser::NextToken();
-
-    if (token == NULL)
+    if (!token) {
         self_destruct();
+        return;
+    }
 
     if (!strcmp(token, "on")) {
         *var = 1;
@@ -2548,9 +2551,10 @@ static void
 parse_tristate(int *var)
 {
     char *token = ConfigParser::NextToken();
-
-    if (token == NULL)
+    if (!token) {
         self_destruct();
+        return;
+    }
 
     if (!strcmp(token, "on")) {
         *var = 1;
@@ -2576,9 +2580,10 @@ void
 parse_pipelinePrefetch(int *var)
 {
     char *token = ConfigParser::PeekAtToken();
-
-    if (token == NULL)
+    if (!token) {
         self_destruct();
+        return;
+    }
 
     if (!strcmp(token, "on")) {
         debugs(0, DBG_PARSE_NOTE(DBG_IMPORTANT), "WARNING: 'pipeline_prefetch on' is deprecated. Please update to use 1 (or a higher number).");
@@ -2839,11 +2844,13 @@ dump_string(StoreEntry * entry, const char *name, char *var)
 static void
 parse_string(char **var)
 {
-    char *token = ConfigParser::NextToken();
     safe_free(*var);
 
-    if (token == NULL)
+    char *token = ConfigParser::NextToken();
+    if (!token) {
         self_destruct();
+        return;
+    }
 
     *var = xstrdup(token);
 }
@@ -2887,11 +2894,13 @@ parse_eol(char *volatile *var)
 static void
 parse_TokenOrQuotedString(char **var)
 {
-    char *token = ConfigParser::NextQuotedToken();
     safe_free(*var);
 
-    if (token == NULL)
+    char *token = ConfigParser::NextQuotedToken();
+    if (!token) {
         self_destruct();
+        return;
+    }
 
     *var = xstrdup(token);
 }
@@ -3129,9 +3138,10 @@ static void
 parse_uri_whitespace(int *var)
 {
     char *token = ConfigParser::NextToken();
-
-    if (token == NULL)
+    if (!token) {
         self_destruct();
+        return;
+    }
 
     if (!strcmp(token, "strip"))
         *var = URI_WHITESPACE_STRIP;
@@ -3238,8 +3248,10 @@ static void
 parse_memcachemode(SquidConfig *)
 {
     char *token = ConfigParser::NextToken();
-    if (!token)
+    if (!token) {
         self_destruct();
+        return;
+    }
 
     if (strcmp(token, "always") == 0) {
         Config.onoff.memory_cache_first = 1;
@@ -3317,8 +3329,10 @@ parse_IpAddress_list(Ip::Address_list ** head)
             s->s = ipa;
 
             *head = s;
-        } else
+        } else {
             self_destruct();
+            return;
+        }
     }
 }
 
@@ -3376,16 +3390,19 @@ parsePortSpecification(const AnyP::PortCfgPointer &s, char *token)
         if (!t) {
             debugs(3, DBG_CRITICAL, "FATAL: " << portType << "_port: missing ']' on IPv6 address: " << token);
             self_destruct();
+            return;
         }
         *t = '\0';
         ++t;
         if (*t != ':') {
             debugs(3, DBG_CRITICAL, "FATAL: " << portType << "_port: missing Port in: " << token);
             self_destruct();
+            return;
         }
         if (!Ip::EnableIpv6) {
             debugs(3, DBG_CRITICAL, "FATAL: " << portType << "_port: IPv6 is not available.");
             self_destruct();
+            return;
         }
         port = xatos(t + 1);
     } else if ((t = strchr(token, ':'))) {
@@ -3401,11 +3418,13 @@ parsePortSpecification(const AnyP::PortCfgPointer &s, char *token)
     } else {
         debugs(3, DBG_CRITICAL, "FATAL: " << portType << "_port: missing Port: " << token);
         self_destruct();
+        return;
     }
 
     if (port == 0 && host != NULL) {
         debugs(3, DBG_CRITICAL, "FATAL: " << portType << "_port: Port cannot be 0: " << token);
         self_destruct();
+        return;
     }
 
     if (NULL == host) {
@@ -3462,6 +3481,7 @@ parse_port_option(AnyP::PortCfgPointer &s, char *token)
         if (s->flags.isIntercepted()) {
             debugs(3, DBG_CRITICAL, "FATAL: " << cfg_directive << ": Accelerator mode requires its own port. It cannot be shared with other modes.");
             self_destruct();
+            return;
         }
         s->flags.accelSurrogate = true;
         s->vhost = true;
@@ -3469,6 +3489,7 @@ parse_port_option(AnyP::PortCfgPointer &s, char *token)
         if (s->flags.accelSurrogate || s->flags.tproxyIntercept) {
             debugs(3, DBG_CRITICAL, "FATAL: " << cfg_directive << ": Intercept mode requires its own interception port. It cannot be shared with other modes.");
             self_destruct();
+            return;
         }
         s->flags.natIntercept = true;
         Ip::Interceptor.StartInterception();
@@ -3479,6 +3500,7 @@ parse_port_option(AnyP::PortCfgPointer &s, char *token)
         if (s->flags.natIntercept || s->flags.accelSurrogate) {
             debugs(3,DBG_CRITICAL, "FATAL: " << cfg_directive << ": TPROXY option requires its own interception port. It cannot be shared with other modes.");
             self_destruct();
+            return;
         }
         s->flags.tproxyIntercept = true;
         Ip::Interceptor.StartTransparency();
@@ -3492,6 +3514,7 @@ parse_port_option(AnyP::PortCfgPointer &s, char *token)
         if (!Ip::Interceptor.ProbeForTproxy(s->s)) {
             debugs(3, DBG_CRITICAL, "FATAL: " << cfg_directive << ": TPROXY support in the system does not work.");
             self_destruct();
+            return;
         }
 
     } else if (strcmp(token, "require-proxy-header") == 0) {
@@ -3506,6 +3529,7 @@ parse_port_option(AnyP::PortCfgPointer &s, char *token)
         if (!s->flags.accelSurrogate) {
             debugs(3, DBG_CRITICAL, "FATAL: " << cfg_directive << ": defaultsite option requires Acceleration mode flag.");
             self_destruct();
+            return;
         }
         safe_free(s->defaultsite);
         s->defaultsite = xstrdup(token + 12);
@@ -3524,24 +3548,28 @@ parse_port_option(AnyP::PortCfgPointer &s, char *token)
         if (!s->flags.accelSurrogate) {
             debugs(3, DBG_CRITICAL, "FATAL: " << cfg_directive << ": vport option requires Acceleration mode flag.");
             self_destruct();
+            return;
         }
         s->vport = -1;
     } else if (strncmp(token, "vport=", 6) == 0) {
         if (!s->flags.accelSurrogate) {
             debugs(3, DBG_CRITICAL, "FATAL: " << cfg_directive << ": vport option requires Acceleration mode flag.");
             self_destruct();
+            return;
         }
         s->vport = xatos(token + 6);
     } else if (strncmp(token, "protocol=", 9) == 0) {
         if (!s->flags.accelSurrogate) {
             debugs(3, DBG_CRITICAL, "FATAL: " << cfg_directive << ": protocol option requires Acceleration mode flag.");
             self_destruct();
+            return;
         }
         s->transport = parsePortProtocol(ToUpper(SBuf(token + 9)));
     } else if (strcmp(token, "allow-direct") == 0) {
         if (!s->flags.accelSurrogate) {
             debugs(3, DBG_CRITICAL, "FATAL: " << cfg_directive << ": allow-direct option requires Acceleration mode flag.");
             self_destruct();
+            return;
         }
         s->allow_direct = true;
     } else if (strcmp(token, "act-as-origin") == 0) {
@@ -3554,6 +3582,7 @@ parse_port_option(AnyP::PortCfgPointer &s, char *token)
         if (!s->flags.accelSurrogate) {
             debugs(3, DBG_CRITICAL, "FATAL: " << cfg_directive << ": ignore-cc option requires Acceleration mode flag.");
             self_destruct();
+            return;
         }
 #endif
         s->ignore_cc = true;
@@ -3575,12 +3604,15 @@ parse_port_option(AnyP::PortCfgPointer &s, char *token)
             s->disable_pmtu_discovery = DISABLE_PMTU_TRANSPARENT;
         else if (!strcmp(token + 23, "always"))
             s->disable_pmtu_discovery = DISABLE_PMTU_ALWAYS;
-        else
+        else {
             self_destruct();
+            return;
+        }
     } else if (strcmp(token, "ipv4") == 0) {
         if ( !s->s.setIPv4() ) {
             debugs(3, DBG_CRITICAL, "FATAL: " << cfg_directive << ": IPv6 addresses cannot be used as IPv4-Only. " << s->s );
             self_destruct();
+            return;
         }
     } else if (strcmp(token, "tcpkeepalive") == 0) {
         s->tcp_keepalive.enabled = true;
@@ -3716,26 +3748,31 @@ parsePortCfg(AnyP::PortCfgPointer *head, const char *optionName)
         if (s->flags.tunnelSslBumping && !hijacked) {
             debugs(3, DBG_CRITICAL, "FATAL: ssl-bump on https_port requires tproxy/intercept which is missing.");
             self_destruct();
+            return;
         }
         if (hijacked && !s->flags.tunnelSslBumping) {
             debugs(3, DBG_CRITICAL, "FATAL: tproxy/intercept on https_port requires ssl-bump which is missing.");
             self_destruct();
+            return;
         }
 #endif
         if (s->flags.proxySurrogate) {
             debugs(3,DBG_CRITICAL, "FATAL: https_port: require-proxy-header option is not supported on HTTPS ports.");
             self_destruct();
+            return;
         }
     } else if (protoName.cmp("FTP") == 0) {
         /* ftp_port does not support ssl-bump */
         if (s->flags.tunnelSslBumping) {
             debugs(3, DBG_CRITICAL, "FATAL: ssl-bump is not supported for ftp_port.");
             self_destruct();
+            return;
         }
         if (s->flags.proxySurrogate) {
             // Passive FTP data channel does not work without deep protocol inspection in the frontend.
             debugs(3,DBG_CRITICAL, "FATAL: require-proxy-header option is not supported on ftp_port.");
             self_destruct();
+            return;
         }
     }
 
@@ -3922,19 +3959,18 @@ requirePathnameExists(const char *name, const char *path)
 static void
 parse_access_log(CustomLog ** logs)
 {
-    CustomLog *cl = (CustomLog *)xcalloc(1, sizeof(*cl));
-
-    // default buffer size and fatal settings
-    cl->bufferSize = 8*MAX_URL;
-    cl->fatal = true;
-
-    /* determine configuration style */
-
     const char *filename = ConfigParser::NextToken();
     if (!filename) {
         self_destruct();
         return;
     }
+
+    CustomLog *cl = (CustomLog *)xcalloc(1, sizeof(*cl));
+
+    cl->filename = xstrdup(filename);
+    // default buffer size and fatal settings
+    cl->bufferSize = 8*MAX_URL;
+    cl->fatal = true;
 
     if (strcmp(filename, "none") == 0) {
         cl->type = Log::Format::CLF_NONE;
@@ -3945,7 +3981,6 @@ parse_access_log(CustomLog ** logs)
         return;
     }
 
-    cl->filename = xstrdup(filename);
     cl->type = Log::Format::CLF_UNKNOWN;
     cl->rotateCount = -1; // default: use global logfile_rotate setting.
 
@@ -3967,7 +4002,10 @@ parse_access_log(CustomLog ** logs)
                 } else {
                     debugs(3, DBG_CRITICAL, "Unknown value for on-error '" <<
                            token << "' expected 'drop' or 'die'");
+                    xfree(cl->filename);
+                    xfree(cl);
                     self_destruct();
+                    return;
                 }
             } else if (strncasecmp(token, "buffer-size=", 12) == 0) {
                 parseBytesOptionValue(&cl->bufferSize, B_BYTES_STR, token+12);
@@ -3980,7 +4018,10 @@ parse_access_log(CustomLog ** logs)
                 break; // done with name=value options, now to ACLs
             } else {
                 debugs(3, DBG_CRITICAL, "Unknown access_log option " << token);
+                xfree(cl->filename);
+                xfree(cl);
                 self_destruct();
+                return;
             }
             // Pop the token, it was a valid "name=value" option
             (void)ConfigParser::NextToken();
@@ -4150,6 +4191,7 @@ free_access_log(CustomLog ** definitions)
     }
 }
 
+#if HAVE_CPU_AFFINITY /* until somebody else needs this general code */
 /// parses list of integers form name=N1,N2,N3,...
 static bool
 parseNamedIntList(const char *data, const String &name, std::vector<int> &list)
@@ -4170,6 +4212,7 @@ parseNamedIntList(const char *data, const String &name, std::vector<int> &list)
     }
     return data && *data == '\0';
 }
+#endif
 
 static void
 parse_CpuAffinityMap(CpuAffinityMap **const cpuAffinityMap)
@@ -4178,8 +4221,8 @@ parse_CpuAffinityMap(CpuAffinityMap **const cpuAffinityMap)
     debugs(3, DBG_CRITICAL, "FATAL: Squid built with no CPU affinity " <<
            "support, do not set 'cpu_affinity_map'");
     self_destruct();
-#endif /* HAVE_CPU_AFFINITY */
 
+#else /* HAVE_CPU_AFFINITY */
     if (!*cpuAffinityMap)
         *cpuAffinityMap = new CpuAffinityMap;
 
@@ -4200,6 +4243,7 @@ parse_CpuAffinityMap(CpuAffinityMap **const cpuAffinityMap)
                "contain numbers <= 0");
         self_destruct();
     }
+#endif
 }
 
 static void
@@ -4322,10 +4366,12 @@ static void parse_icap_service_failure_limit(Adaptation::Icap::Config *cfg)
     if (strcmp(token,"in") != 0) {
         debugs(3, DBG_CRITICAL, "expecting 'in' on'"  << config_input_line << "'");
         self_destruct();
+        return;
     }
 
     if ((token = ConfigParser::NextToken()) == NULL) {
         self_destruct();
+        return;
     }
 
     d = static_cast<time_t> (xatoi(token));
@@ -4337,8 +4383,11 @@ static void parse_icap_service_failure_limit(Adaptation::Icap::Config *cfg)
     else if ((token = ConfigParser::NextToken()) == NULL) {
         debugs(3, DBG_CRITICAL, "No time-units on '" << config_input_line << "'");
         self_destruct();
-    } else if ((m = parseTimeUnits(token, false)) == 0)
+        return;
+    } else if ((m = parseTimeUnits(token, false)) == 0) {
         self_destruct();
+        return;
+    }
 
     cfg->oldest_service_failure = (m * d);
 }
@@ -4365,6 +4414,7 @@ static void parse_sslproxy_cert_adapt(sslproxy_cert_adapt **cert_adapt)
     char *al;
     sslproxy_cert_adapt *ca = (sslproxy_cert_adapt *) xcalloc(1, sizeof(sslproxy_cert_adapt));
     if ((al = ConfigParser::NextToken()) == NULL) {
+        xfree(ca);
         self_destruct();
         return;
     }
@@ -4376,6 +4426,7 @@ static void parse_sslproxy_cert_adapt(sslproxy_cert_adapt **cert_adapt)
         param = s;
         s = strchr(s, '}');
         if (!s) {
+            xfree(ca);
             self_destruct();
             return;
         }
@@ -4394,6 +4445,7 @@ static void parse_sslproxy_cert_adapt(sslproxy_cert_adapt **cert_adapt)
         if (param) {
             if (strlen(param) > 64) {
                 debugs(3, DBG_CRITICAL, "FATAL: sslproxy_cert_adapt: setCommonName{" <<param << "} : using common name longer than 64 bytes is not supported");
+                xfree(ca);
                 self_destruct();
                 return;
             }
@@ -4401,6 +4453,7 @@ static void parse_sslproxy_cert_adapt(sslproxy_cert_adapt **cert_adapt)
         }
     } else {
         debugs(3, DBG_CRITICAL, "FATAL: sslproxy_cert_adapt: unknown cert adaptation algorithm: " << al);
+        xfree(ca);
         self_destruct();
         return;
     }
@@ -4443,6 +4496,7 @@ static void parse_sslproxy_cert_sign(sslproxy_cert_sign **cert_sign)
     char *al;
     sslproxy_cert_sign *cs = (sslproxy_cert_sign *) xcalloc(1, sizeof(sslproxy_cert_sign));
     if ((al = ConfigParser::NextToken()) == NULL) {
+        xfree(cs);
         self_destruct();
         return;
     }
@@ -4455,6 +4509,7 @@ static void parse_sslproxy_cert_sign(sslproxy_cert_sign **cert_sign)
         cs->alg = Ssl::algSignSelf;
     else {
         debugs(3, DBG_CRITICAL, "FATAL: sslproxy_cert_sign: unknown cert signing algorithm: " << al);
+        xfree(cs);
         self_destruct();
         return;
     }
@@ -4740,6 +4795,7 @@ static void parse_ftp_epsv(acl_access **ftp_epsv)
             (ftpEpsvIsDeprecatedRule && !FtpEspvDeprecated && *ftp_epsv != NULL)) {
         debugs(3, DBG_CRITICAL, "FATAL: do not mix \"ftp_epsv on|off\" cfg lines with \"ftp_epsv allow|deny ...\" cfg lines. Update your ftp_epsv rules.");
         self_destruct();
+        return;
     }
 
     if (ftpEpsvIsDeprecatedRule) {
@@ -4750,6 +4806,7 @@ static void parse_ftp_epsv(acl_access **ftp_epsv)
             ftpEpsvRule->context("(ftp_epsv rule)", config_input_line);
             ACL *a = ACL::FindByName("all");
             if (!a) {
+                delete ftpEpsvRule;
                 self_destruct();
                 return;
             }
@@ -4798,12 +4855,14 @@ parse_UrlHelperTimeout(SquidConfig::UrlHelperTimeout *config)
             } else {
                 debugs(3, DBG_CRITICAL, "FATAL: unsuported \"on_timeout\"  action:" << value);
                 self_destruct();
+                return;
             }
         } else if (strcasecmp(key, "response") == 0) {
             config->response = xstrdup(value);
         } else {
             debugs(3, DBG_CRITICAL, "FATAL: unsuported option " << key);
             self_destruct();
+            return;
         }
     }
 

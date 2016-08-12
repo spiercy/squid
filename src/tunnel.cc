@@ -21,6 +21,7 @@
 #include "comm/Read.h"
 #include "comm/Write.h"
 #include "errorpage.h"
+#include "fd.h"
 #include "fde.h"
 #include "FwdState.h"
 #include "globals.h"
@@ -33,9 +34,9 @@
 #include "MemBuf.h"
 #include "PeerSelectState.h"
 #include "sbuf/SBuf.h"
+#include "security/BlindPeerConnector.h"
 #include "SquidConfig.h"
 #include "SquidTime.h"
-#include "ssl/BlindPeerConnector.h"
 #include "StatCounters.h"
 #if USE_OPENSSL
 #include "ssl/bio.h"
@@ -164,6 +165,7 @@ public:
     MemBuf *connectRespBuf; ///< accumulates peer CONNECT response when we need it
     bool connectReqWriting; ///< whether we are writing a CONNECT request to a peer
     SBuf preReadClientData;
+    SBuf preReadServerData;
     time_t started;         ///< when this tunnel was initiated.
 
     void copyRead(Connection &from, IOCB *completion);
@@ -172,9 +174,8 @@ public:
     void connectToPeer();
 
 private:
-#if USE_OPENSSL
     /// Gives PeerConnector access to Answer in the TunnelStateData callback dialer.
-    class MyAnswerDialer: public CallDialer, public Ssl::PeerConnector::CbDialer
+    class MyAnswerDialer: public CallDialer, public Security::PeerConnector::CbDialer
     {
     public:
         typedef void (TunnelStateData::*Method)(Security::EncryptorAnswer &);
@@ -189,7 +190,7 @@ private:
             os << '(' << tunnel_.get() << ", " << answer_ << ')';
         }
 
-        /* Ssl::PeerConnector::CbDialer API */
+        /* Security::PeerConnector::CbDialer API */
         virtual Security::EncryptorAnswer &answer() { return answer_; }
 
     private:
@@ -197,7 +198,6 @@ private:
         CbcPointer<TunnelStateData> tunnel_;
         Security::EncryptorAnswer answer_;
     };
-#endif
 
     /// callback handler after connection setup (including any encryption)
     void connectedToPeer(Security::EncryptorAnswer &answer);
@@ -214,6 +214,7 @@ public:
     static void ReadConnectResponseDone(const Comm::ConnectionPointer &, char *buf, size_t len, Comm::Flag errcode, int xerrno, void *data);
     void readConnectResponseDone(char *buf, size_t len, Comm::Flag errcode, int xerrno);
     void copyClientBytes();
+    void copyServerBytes();
 };
 
 static const char *const conn_established = "HTTP/1.1 200 Connection established\r\n\r\n";
@@ -498,7 +499,7 @@ TunnelStateData::handleConnectResponse(const size_t chunkSize)
 
     // we need to relay the 401/407 responses when login=PASS(THRU)
     const char *pwd = server.conn->getPeer()->login;
-    const bool relay = pwd && (strcmp(pwd, "PASS") != 0 || strcmp(pwd, "PASSTHRU") != 0) &&
+    const bool relay = pwd && (strcmp(pwd, "PASS") == 0 || strcmp(pwd, "PASSTHRU") == 0) &&
                        (*status_ptr == Http::scProxyAuthenticationRequired ||
                         *status_ptr == Http::scUnauthorized);
 
@@ -734,7 +735,7 @@ TunnelStateData::writeClientDone(char *, size_t len, Comm::Flag flag, int xerrno
     CbcPointer<TunnelStateData> safetyLock(this);   /* ??? should be locked by the caller... */
 
     if (cbdataReferenceValid(this))
-        copyRead(server, ReadServer);
+        copyServerBytes();
 }
 
 static void
@@ -826,6 +827,20 @@ TunnelStateData::copyClientBytes()
         copyRead(client, ReadClient);
 }
 
+void
+TunnelStateData::copyServerBytes()
+{
+    if (preReadServerData.length()) {
+        size_t copyBytes = preReadServerData.length() > SQUID_TCP_SO_RCVBUF ? SQUID_TCP_SO_RCVBUF : preReadServerData.length();
+        memcpy(server.buf, preReadServerData.rawContent(), copyBytes);
+        preReadServerData.consume(copyBytes);
+        server.bytesIn(copyBytes);
+        if (keepGoingAfterRead(copyBytes, Comm::OK, 0, server, client))
+            copy(copyBytes, server, client, TunnelStateData::WriteClientDone);
+    } else
+        copyRead(server, ReadServer);
+}
+
 /**
  * Set the HTTP status for this request and sets the read handlers for client
  * and server side connections.
@@ -841,7 +856,7 @@ tunnelStartShoveling(TunnelStateData *tunnelState)
 
         // Shovel any payload already pushed into reply buffer by the server response
         if (!tunnelState->server.len)
-            tunnelState->copyRead(tunnelState->server, TunnelStateData::ReadServer);
+            tunnelState->copyServerBytes();
         else {
             debugs(26, DBG_DATA, "Tunnel server PUSH Payload: \n" << Raw("", tunnelState->server.buf, tunnelState->server.len) << "\n----------");
             tunnelState->copy(tunnelState->server.len, tunnelState->server, tunnelState->client, TunnelStateData::WriteClientDone);
@@ -1092,19 +1107,16 @@ tunnelStart(ClientHttpRequest * http)
 void
 TunnelStateData::connectToPeer()
 {
-#if USE_OPENSSL
     if (CachePeer *p = server.conn->getPeer()) {
         if (p->secure.encryptTransport) {
             AsyncCall::Pointer callback = asyncCall(5,4,
                                                     "TunnelStateData::ConnectedToPeer",
                                                     MyAnswerDialer(&TunnelStateData::connectedToPeer, this));
-            Ssl::BlindPeerConnector *connector =
-                new Ssl::BlindPeerConnector(request, server.conn, callback, al);
+            auto *connector = new Security::BlindPeerConnector(request, server.conn, callback, al);
             AsyncJob::Start(connector); // will call our callback
             return;
         }
     }
-#endif
 
     Security::EncryptorAnswer nil;
     connectedToPeer(nil);
@@ -1226,14 +1238,13 @@ switchToTunnel(HttpRequest *request, Comm::ConnectionPointer &clientConn, Comm::
 {
     debugs(26,5, "Revert to tunnel FD " << clientConn->fd << " with FD " << srvConn->fd);
     /* Create state structure. */
-    TunnelStateData *tunnelState = NULL;
     const SBuf url(request->effectiveRequestUri());
 
     debugs(26, 3, request->method << " " << url << " " << request->http_ver);
     ++statCounter.server.all.requests;
     ++statCounter.server.other.requests;
 
-    tunnelState = new TunnelStateData;
+    TunnelStateData *tunnelState = new TunnelStateData;
     tunnelState->url = SBufToCstring(url);
     tunnelState->request = request;
     tunnelState->server.size_ptr = NULL; //Set later if Http::Stream is available
@@ -1243,10 +1254,9 @@ switchToTunnel(HttpRequest *request, Comm::ConnectionPointer &clientConn, Comm::
     tunnelState->status_ptr = &status_code;
     tunnelState->client.conn = clientConn;
 
-    ConnStateData *conn;
-    if ((conn = request->clientConnectionManager.get())) {
+    if (auto conn = request->clientConnectionManager.get()) {
         Http::StreamPointer context = conn->pipeline.front();
-        if (context != nullptr && context->http != nullptr) {
+        if (context && context->http) {
             tunnelState->logTag_ptr = &context->http->logType;
             tunnelState->server.size_ptr = &context->http->out.size;
             tunnelState->al = context->http->al;
@@ -1269,23 +1279,23 @@ switchToTunnel(HttpRequest *request, Comm::ConnectionPointer &clientConn, Comm::
     fd_table[clientConn->fd].read_method = &default_read_method;
     fd_table[clientConn->fd].write_method = &default_write_method;
 
-    tunnelState->request->hier.note(srvConn, tunnelState->getHost());
+    request->hier.note(srvConn, tunnelState->getHost());
 
     tunnelState->server.conn = srvConn;
-    tunnelState->request->peer_host = srvConn->getPeer() ? srvConn->getPeer()->host : NULL;
+    request->peer_host = srvConn->getPeer() ? srvConn->getPeer()->host : nullptr;
     comm_add_close_handler(srvConn->fd, tunnelServerClosed, tunnelState);
 
     debugs(26, 4, "determine post-connect handling pathway.");
     if (srvConn->getPeer()) {
-        tunnelState->request->peer_login = srvConn->getPeer()->login;
-        tunnelState->request->peer_domain = srvConn->getPeer()->domain;
-        tunnelState->request->flags.auth_no_keytab = srvConn->getPeer()->options.auth_no_keytab;
-        tunnelState->request->flags.proxying = !(srvConn->getPeer()->options.originserver);
+        request->peer_login = srvConn->getPeer()->login;
+        request->peer_domain = srvConn->getPeer()->domain;
+        request->flags.auth_no_keytab = srvConn->getPeer()->options.auth_no_keytab;
+        request->flags.proxying = !(srvConn->getPeer()->options.originserver);
     } else {
-        tunnelState->request->peer_login = NULL;
-        tunnelState->request->peer_domain = NULL;
-        tunnelState->request->flags.auth_no_keytab = false;
-        tunnelState->request->flags.proxying = false;
+        request->peer_login = nullptr;
+        request->peer_domain = nullptr;
+        request->flags.auth_no_keytab = false;
+        request->flags.proxying = false;
     }
 
     timeoutCall = commCbCall(5, 4, "tunnelTimeout",
@@ -1298,11 +1308,8 @@ switchToTunnel(HttpRequest *request, Comm::ConnectionPointer &clientConn, Comm::
     assert(ssl);
     BIO *b = SSL_get_rbio(ssl);
     Ssl::ServerBio *srvBio = static_cast<Ssl::ServerBio *>(b->ptr);
-    const MemBuf &buf = srvBio->rBufData();
-
-    AsyncCall::Pointer call = commCbCall(5,5, "tunnelConnectedWriteDone",
-                                         CommIoCbPtrFun(tunnelConnectedWriteDone, tunnelState));
-    tunnelState->client.write(buf.content(), buf.contentSize(), call, NULL);
+    tunnelState->preReadServerData = srvBio->rBufData();
+    tunnelStartShoveling(tunnelState);
 }
 #endif //USE_OPENSSL
 

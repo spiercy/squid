@@ -14,22 +14,23 @@
 #include "base/AsyncJob.h"
 #include "CommCalls.h"
 #include "security/EncryptorAnswer.h"
+#include "security/forward.h"
+#if USE_OPENSSL
 #include "ssl/support.h"
+#endif
 
 #include <iosfwd>
-
-#if USE_OPENSSL
+#include <queue>
 
 class HttpRequest;
 class ErrorState;
 class AccessLogEntry;
 typedef RefCount<AccessLogEntry> AccessLogEntryPointer;
 
-namespace Ssl
+namespace Security
 {
 
 /**
- \par
  * Connects Squid to SSL/TLS-capable peers or services.
  * Contains common code and interfaces of various specialized PeerConnectors,
  * including peer certificate validation code.
@@ -102,7 +103,8 @@ protected:
     /// silent server
     void setReadTimeout();
 
-    virtual Security::SessionPtr initializeSsl(); ///< Initializes SSL state
+    /// \returns true on successful TLS session initialization
+    virtual bool initializeTls(Security::SessionPointer &);
 
     /// Performs a single secure connection negotiation step.
     /// It is called multiple times untill the negotiation finish or aborted.
@@ -123,6 +125,20 @@ protected:
     /// the remote SSL server. Sets the read timeout and sets the
     /// Squid COMM_SELECT_READ handler.
     void noteWantRead();
+
+#if USE_OPENSSL
+    /// Run the certificates list sent by the SSL server and check if there
+    /// are missing certificates. Adds to the urlOfMissingCerts list the
+    /// URLS of missing certificates if this information provided by the
+    /// issued certificates with Authority Info Access extension.
+    bool checkForMissingCertificates();
+
+    /// Start downloading procedure for the given URL.
+    void startCertDownloading(SBuf &url);
+
+    /// Called by Downloader after a certificate object downloaded.
+    void certDownloadingDone(SBuf &object, int status);
+#endif
 
     /// Called when the openSSL SSL_connect function needs to write data to
     /// the remote SSL server. Sets the Squid COMM_SELECT_WRITE handler.
@@ -155,6 +171,10 @@ protected:
     /// If called the certificates validator will not used
     void bypassCertValidator() {useCertValidator_ = false;}
 
+    /// Called after negotiation finishes to record connection details for
+    /// logging
+    void recordNegotiationDetails();
+
     HttpRequestPointer request; ///< peer connection trigger or cause
     Comm::ConnectionPointer serverConn; ///< TCP connection to the peer
     AccessLogEntryPointer al; ///< info for the future access.log entry
@@ -163,22 +183,32 @@ private:
     PeerConnector(const PeerConnector &); // not implemented
     PeerConnector &operator =(const PeerConnector &); // not implemented
 
+#if USE_OPENSSL
     /// Process response from cert validator helper
     void sslCrtvdHandleReply(Ssl::CertValidationResponsePointer);
 
     /// Check SSL errors returned from cert validator against sslproxy_cert_error access list
     Ssl::CertErrors *sslCrtvdCheckForErrors(Ssl::CertValidationResponse const &, Ssl::ErrorDetail *&);
+#endif
 
     /// A wrapper function for negotiateSsl for use with Comm::SetSelect
     static void NegotiateSsl(int fd, void *data);
+
+    /// The maximum allowed missing certificates downloads.
+    static const unsigned int MaxCertsDownloads = 10;
+    /// The maximum allowed nested certificates downloads.
+    static const unsigned int MaxNestedDownloads = 3;
+
     AsyncCall::Pointer closeHandler; ///< we call this when the connection closed
     time_t negotiationTimeout; ///< the SSL connection timeout to use
     time_t startTime; ///< when the peer connector negotiation started
     bool useCertValidator_; ///< whether the certificate validator should bypassed
+    /// The list of URLs where missing certificates should be downloaded.
+    std::queue<SBuf> urlsOfMissingCerts;
+    unsigned int certsDownloads; ///< the number of downloaded missing certificates
 };
 
-} // namespace Ssl
+} // namespace Security
 
-#endif /* USE_OPENSSL */
 #endif /* SQUID_SRC_SSL_PEERCONNECTOR_H */
 

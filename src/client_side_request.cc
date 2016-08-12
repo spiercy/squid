@@ -177,7 +177,7 @@ ClientHttpRequest::ClientHttpRequest(ConnStateData * aConn) :
 #if USE_OPENSSL
         if (aConn->clientConnection != NULL && aConn->clientConnection->isOpen()) {
             if (auto ssl = fd_table[aConn->clientConnection->fd].ssl.get())
-                al->cache.sslClientCert.reset(SSL_get_peer_certificate(ssl));
+                al->cache.sslClientCert.resetWithoutLocking(SSL_get_peer_certificate(ssl));
         }
 #endif
     }
@@ -357,7 +357,7 @@ clientBeginRequest(const HttpRequestMethod& method, char const *url, CSCB * stre
      * correctness.
      */
     if (header)
-        request->header.update(header, NULL);
+        request->header.update(header);
 
     http->log_uri = xstrdup(urlCanonicalClean(request));
 
@@ -885,8 +885,7 @@ clientRedirectAccessCheckDone(allow_t answer, void *data)
     if (answer == ACCESS_ALLOWED)
         redirectStart(http, clientRedirectDoneWrapper, context);
     else {
-        Helper::Reply nilReply;
-        nilReply.result = Helper::Error;
+        Helper::Reply const nilReply(Helper::Error);
         context->clientRedirectDone(nilReply);
     }
 }
@@ -918,8 +917,7 @@ clientStoreIdAccessCheckDone(allow_t answer, void *data)
         storeIdStart(http, clientStoreIdDoneWrapper, context);
     else {
         debugs(85, 3, "access denied expected ERR reply handling: " << answer);
-        Helper::Reply nilReply;
-        nilReply.result = Helper::Error;
+        Helper::Reply const nilReply(Helper::Error);
         context->clientStoreIdDone(nilReply);
     }
 }
@@ -1056,7 +1054,6 @@ clientInterpretRequestHeaders(ClientHttpRequest * http)
     HttpRequest *request = http->request;
     HttpHeader *req_hdr = &request->header;
     bool no_cache = false;
-    const char *str;
 
     request->imslen = -1;
     request->ims = req_hdr->getTime(Http::HdrType::IF_MODIFIED_SINCE);
@@ -1072,28 +1069,6 @@ clientInterpretRequestHeaders(ClientHttpRequest * http)
             // RFC 2616: treat Pragma:no-cache as if it was Cache-Control:no-cache when Cache-Control is missing
         } else if (req_hdr->has(Http::HdrType::PRAGMA))
             no_cache = req_hdr->hasListMember(Http::HdrType::PRAGMA,"no-cache",',');
-
-        /*
-        * Work around for supporting the Reload button in IE browsers when Squid
-        * is used as an accelerator or transparent proxy, by turning accelerated
-        * IMS request to no-cache requests. Now knows about IE 5.5 fix (is
-        * actually only fixed in SP1, but we can't tell whether we are talking to
-        * SP1 or not so all 5.5 versions are treated 'normally').
-        */
-        if (Config.onoff.ie_refresh) {
-            if (http->flags.accel && request->flags.ims) {
-                if ((str = req_hdr->getStr(Http::HdrType::USER_AGENT))) {
-                    if (strstr(str, "MSIE 5.01") != NULL)
-                        no_cache=true;
-                    else if (strstr(str, "MSIE 5.0") != NULL)
-                        no_cache=true;
-                    else if (strstr(str, "MSIE 4.") != NULL)
-                        no_cache=true;
-                    else if (strstr(str, "MSIE 3.") != NULL)
-                        no_cache=true;
-                }
-            }
-        }
     }
 
     if (request->method == Http::METHOD_OTHER) {
@@ -1432,6 +1407,11 @@ ClientRequestContext::checkNoCacheDone(const allow_t &answer)
 bool
 ClientRequestContext::sslBumpAccessCheck()
 {
+    if (!http->getConn()) {
+        http->al->ssl.bumpMode = Ssl::bumpEnd; // SslBump does not apply; log -
+        return false;
+    }
+
     // If SSL connection tunneling or bumping decision has been made, obey it.
     const Ssl::BumpMode bumpMode = http->getConn()->sslBumpMode;
     if (bumpMode != Ssl::bumpEnd) {

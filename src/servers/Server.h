@@ -90,7 +90,7 @@ public:
 public:
 
     /// grows the available read buffer space (if possible)
-    bool maybeMakeSpaceAvailable();
+    void maybeMakeSpaceAvailable();
 
     // Client TCP connection details from comm layer.
     Comm::ConnectionPointer clientConnection;
@@ -116,6 +116,9 @@ public:
 protected:
     void doClientRead(const CommIoCbParams &io);
     void clientWriteDone(const CommIoCbParams &io);
+
+    /// Log the current [attempt at] transaction if nobody else will.
+    virtual void checkLogging() = 0;
 
     AsyncCall::Pointer reader; ///< set when we are reading
     AsyncCall::Pointer writer; ///< set when we are writing

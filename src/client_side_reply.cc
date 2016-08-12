@@ -89,7 +89,8 @@ clientReplyContext::clientReplyContext(ClientHttpRequest *clientContext) :
     reply(NULL),
     old_entry(NULL),
     old_sc(NULL),
-    deleting(false)
+    deleting(false),
+    collapsedRevalidation(crNone)
 {
     *tempbuf = 0;
 }
@@ -264,7 +265,6 @@ void
 clientReplyContext::processExpired()
 {
     const char *url = storeId();
-    StoreEntry *entry = NULL;
     debugs(88, 3, "clientReplyContext::processExpired: '" << http->uri << "'");
     assert(http->storeEntry()->lastmod >= 0);
     /*
@@ -278,6 +278,7 @@ clientReplyContext::processExpired()
         return;
     }
 
+    http->logType = LOG_TCP_REFRESH;
     http->request->flags.refresh = true;
 #if STORE_CLIENT_LIST_DEBUG
     /* Prevent a race with the store client memory free routines
@@ -286,9 +287,36 @@ clientReplyContext::processExpired()
 #endif
     /* Prepare to make a new temporary request */
     saveState();
-    entry = storeCreateEntry(url,
-                             http->log_uri, http->request->flags, http->request->method);
-    /* NOTE, don't call StoreEntry->lock(), storeCreateEntry() does it */
+
+    // TODO: support collapsed revalidation for Vary-controlled entries
+    const bool collapsingAllowed = Config.onoff.collapsed_forwarding &&
+                                   !Store::Root().smpAware() &&
+                                   http->request->vary_headers.isEmpty();
+
+    StoreEntry *entry = nullptr;
+    if (collapsingAllowed) {
+        if ((entry = storeGetPublicByRequest(http->request, ksRevalidation)))
+            entry->lock("clientReplyContext::processExpired#alreadyRevalidating");
+    }
+
+    if (entry) {
+        debugs(88, 5, "collapsed on existing revalidation entry: " << *entry);
+        collapsedRevalidation = crSlave;
+    } else {
+        entry = storeCreateEntry(url,
+                                 http->log_uri, http->request->flags, http->request->method);
+        /* NOTE, don't call StoreEntry->lock(), storeCreateEntry() does it */
+
+        if (collapsingAllowed) {
+            debugs(88, 5, "allow other revalidation requests to collapse on " << *entry);
+            Store::Root().allowCollapsing(entry, http->request->flags,
+                                          http->request->method);
+            collapsedRevalidation = crInitiator;
+        } else {
+            collapsedRevalidation = crNone;
+        }
+    }
+
     sc = storeClientListAdd(entry, this);
 #if USE_DELAY_POOLS
     /* delay_id is already set on original store client */
@@ -308,13 +336,14 @@ clientReplyContext::processExpired()
     assert(http->out.offset == 0);
     assert(http->request->clientConnectionManager == http->getConn());
 
-    /*
-     * A refcounted pointer so that FwdState stays around as long as
-     * this clientReplyContext does
-     */
-    Comm::ConnectionPointer conn = http->getConn() != NULL ? http->getConn()->clientConnection : NULL;
-    FwdState::Start(conn, http->storeEntry(), http->request, http->al);
-
+    if (collapsedRevalidation != crSlave) {
+        /*
+         * A refcounted pointer so that FwdState stays around as long as
+         * this clientReplyContext does
+         */
+        Comm::ConnectionPointer conn = http->getConn() != NULL ? http->getConn()->clientConnection : NULL;
+        FwdState::Start(conn, http->storeEntry(), http->request, http->al);
+    }
     /* Register with storage manager to receive updates when data comes in. */
 
     if (EBIT_TEST(entry->flags, ENTRY_ABORTED))
@@ -426,6 +455,10 @@ clientReplyContext::handleIMSReply(StoreIOBuffer result)
         // forward response from origin
         http->logType = LOG_TCP_REFRESH_MODIFIED;
         debugs(88, 3, "handleIMSReply: origin replied " << status << ", replacing existing entry and forwarding to client");
+
+        if (collapsedRevalidation)
+            http->storeEntry()->clearPublicKeyScope();
+
         sendClientUpstreamResponse();
     }
 
@@ -2120,21 +2153,28 @@ clientReplyContext::sendMoreData (StoreIOBuffer result)
 
     StoreEntry *entry = http->storeEntry();
 
-    ConnStateData * conn = http->getConn();
+    if (ConnStateData * conn = http->getConn()) {
+        if (!conn->isOpen()) {
+            debugs(33,3, "not sending more data to closing connection " << conn->clientConnection);
+            return;
+        }
+        if (conn->pinning.zeroReply) {
+            debugs(33,3, "not sending more data after a pinned zero reply " << conn->clientConnection);
+            return;
+        }
 
-    // too late, our conn is closing
-    // TODO: should we also quit?
-    if (conn == NULL) {
-        debugs(33,3, "not sending more data to a closed connection" );
-        return;
-    }
-    if (!conn->isOpen()) {
-        debugs(33,3, "not sending more data to closing connection " << conn->clientConnection);
-        return;
-    }
-    if (conn->pinning.zeroReply) {
-        debugs(33,3, "not sending more data after a pinned zero reply " << conn->clientConnection);
-        return;
+        if (reqofs==0 && !http->logType.isTcpHit()) {
+            if (Ip::Qos::TheConfig.isHitTosActive()) {
+                Ip::Qos::doTosLocalMiss(conn->clientConnection, http->request->hier.code);
+            }
+            if (Ip::Qos::TheConfig.isHitNfmarkActive()) {
+                Ip::Qos::doNfmarkLocalMiss(conn->clientConnection, http->request->hier.code);
+            }
+        }
+
+        debugs(88, 5, conn->clientConnection <<
+               " '" << entry->url() << "'" <<
+               " out.offset=" << http->out.offset);
     }
 
     char *buf = next()->readBuffer.data;
@@ -2143,15 +2183,6 @@ clientReplyContext::sendMoreData (StoreIOBuffer result)
         /* we've got to copy some data */
         assert(result.length <= next()->readBuffer.length);
         memcpy(buf, result.data, result.length);
-    }
-
-    if (reqofs==0 && !http->logType.isTcpHit() && Comm::IsConnOpen(conn->clientConnection)) {
-        if (Ip::Qos::TheConfig.isHitTosActive()) {
-            Ip::Qos::doTosLocalMiss(conn->clientConnection, http->request->hier.code);
-        }
-        if (Ip::Qos::TheConfig.isHitNfmarkActive()) {
-            Ip::Qos::doNfmarkLocalMiss(conn->clientConnection, http->request->hier.code);
-        }
     }
 
     /* We've got the final data to start pushing... */
@@ -2172,10 +2203,6 @@ clientReplyContext::sendMoreData (StoreIOBuffer result)
     debugs(88, 5, "clientReplyContext::sendMoreData: " << http->uri << ", " <<
            reqofs << " bytes (" << result.length <<
            " new bytes)");
-    debugs(88, 5, "clientReplyContext::sendMoreData:"
-           << conn->clientConnection <<
-           " '" << entry->url() << "'" <<
-           " out.offset=" << http->out.offset);
 
     /* update size of the request */
     reqsize = reqofs;

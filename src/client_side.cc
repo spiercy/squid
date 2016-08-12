@@ -120,7 +120,6 @@
 #endif
 #if USE_DELAY_POOLS
 #include "ClientInfo.h"
-#include "MessageDelayPools.h"
 #endif
 #if USE_OPENSSL
 #include "ssl/bio.h"
@@ -585,6 +584,8 @@ void
 ConnStateData::swanSong()
 {
     debugs(33, 2, HERE << clientConnection);
+    checkLogging();
+
     flags.readMore = false;
     DeregisterRunner(this);
     clientdbEstablished(clientConnection->remote, -1);  /* decrement */
@@ -2142,10 +2143,6 @@ ConnStateData::clientParseRequests()
     // On errors, bodyPipe may become nil, but readMore will be cleared
     while (!inBuf.isEmpty() && !bodyPipe && flags.readMore) {
 
-        /* Don't try to parse if the buffer is empty */
-        if (inBuf.isEmpty())
-            break;
-
         /* Limit the number of concurrent requests */
         if (concurrentRequestQueueFilled())
             break;
@@ -2186,6 +2183,13 @@ ConnStateData::clientParseRequests()
 void
 ConnStateData::afterClientRead()
 {
+#if USE_OPENSSL
+    if (parsingTlsHandshake) {
+        parseTlsHandshake();
+        return;
+    }
+#endif
+
     /* Process next request */
     if (pipeline.empty())
         fd_note(clientConnection->fd, "Reading next request");
@@ -2418,6 +2422,7 @@ ConnStateData::ConnStateData(const MasterXaction::Pointer &xact) :
     needProxyProtocolHeader_(false),
 #if USE_OPENSSL
     switchedToHttps_(false),
+    parsingTlsHandshake(false),
     sslServerBump(NULL),
     signAlgorithm(Ssl::algSignTrusted),
 #endif
@@ -2563,23 +2568,23 @@ httpAccept(const CommAcceptCbParams &params)
     ++incoming_sockets_accepted;
 
     // Socket is ready, setup the connection manager to start using it
-    ConnStateData *connState = Http::NewServer(xact);
-    AsyncJob::Start(connState); // usually async-calls readSomeData()
+    auto *srv = Http::NewServer(xact);
+    AsyncJob::Start(srv); // usually async-calls readSomeData()
 }
 
 #if USE_OPENSSL
 
 /** Create SSL connection structure and update fd_table */
-static Security::SessionPtr
+static bool
 httpsCreate(const Comm::ConnectionPointer &conn, Security::ContextPtr sslContext)
 {
-    if (auto ssl = Ssl::CreateServer(sslContext, conn->fd, "client https start")) {
+    if (Ssl::CreateServer(sslContext, conn, "client https start")) {
         debugs(33, 5, "will negotate SSL on " << conn);
-        return ssl;
+        return true;
     }
 
     conn->close();
-    return nullptr;
+    return false;
 }
 
 /**
@@ -2603,11 +2608,11 @@ Squid_SSL_accept(ConnStateData *conn, PF *callback)
         switch (ssl_error) {
 
         case SSL_ERROR_WANT_READ:
-            Comm::SetSelect(fd, COMM_SELECT_READ, callback, conn, 0);
+            Comm::SetSelect(fd, COMM_SELECT_READ, callback, (callback != NULL ? conn : NULL), 0);
             return 0;
 
         case SSL_ERROR_WANT_WRITE:
-            Comm::SetSelect(fd, COMM_SELECT_WRITE, callback, conn, 0);
+            Comm::SetSelect(fd, COMM_SELECT_WRITE, callback, (callback != NULL ? conn : NULL), 0);
             return 0;
 
         case SSL_ERROR_SYSCALL:
@@ -2654,7 +2659,7 @@ clientNegotiateSSL(int fd, void *data)
         debugs(83, 2, "clientNegotiateSSL: Session " << SSL_get_session(ssl) <<
                " reused on FD " << fd << " (" << fd_table[fd].ipaddr << ":" << (int)fd_table[fd].remote_port << ")");
     } else {
-        if (do_debug(83, 4)) {
+        if (Debug::Enabled(83, 4)) {
             /* Write out the SSL session details.. actually the call below, but
              * OpenSSL headers do strange typecasts confusing GCC.. */
             /* PEM_write_SSL_SESSION(debug_log, SSL_get_session(ssl)); */
@@ -2688,7 +2693,7 @@ clientNegotiateSSL(int fd, void *data)
     }
 
     // Connection established. Retrieve TLS connection parameters for logging.
-    conn->clientConnection->tlsNegotiations()->fillWith(ssl);
+    conn->clientConnection->tlsNegotiations()->retrieveNegotiatedInfo(ssl);
 
     client_cert = SSL_get_peer_certificate(ssl);
 
@@ -2725,11 +2730,10 @@ clientNegotiateSSL(int fd, void *data)
 static void
 httpsEstablish(ConnStateData *connState, Security::ContextPtr sslContext)
 {
-    Security::SessionPtr ssl = nullptr;
     assert(connState);
     const Comm::ConnectionPointer &details = connState->clientConnection;
 
-    if (!sslContext || !(ssl = httpsCreate(details, sslContext)))
+    if (!sslContext || !httpsCreate(details, sslContext))
         return;
 
     typedef CommCbMemFunT<ConnStateData, CommTimeoutCbParams> TimeoutDialer;
@@ -2791,8 +2795,8 @@ httpsAccept(const CommAcceptCbParams &params)
     ++incoming_sockets_accepted;
 
     // Socket is ready, setup the connection manager to start using it
-    ConnStateData *connState = Https::NewServer(xact);
-    AsyncJob::Start(connState); // usually async-calls postHttpsAccept()
+    auto *srv = Https::NewServer(xact);
+    AsyncJob::Start(srv); // usually async-calls postHttpsAccept()
 }
 
 void
@@ -3090,10 +3094,14 @@ ConnStateData::getSslContextDone(Security::ContextPtr sslContext, bool isNew)
                                      this, ConnStateData::requestTimeout);
     commSetConnTimeout(clientConnection, Config.Timeout.request, timeoutCall);
 
-    // Disable the client read handler until CachePeer selection is complete
-    Comm::SetSelect(clientConnection->fd, COMM_SELECT_READ, NULL, NULL, 0);
-    Comm::SetSelect(clientConnection->fd, COMM_SELECT_READ, clientNegotiateSSL, this, 0);
     switchedToHttps_ = true;
+
+    auto ssl = fd_table[clientConnection->fd].ssl.get();
+    BIO *b = SSL_get_rbio(ssl);
+    Ssl::ClientBio *bio = static_cast<Ssl::ClientBio *>(b->ptr);
+    bio->setReadBufData(inBuf);
+    inBuf.clear();
+    clientNegotiateSSL(clientConnection->fd, this);
 }
 
 void
@@ -3118,19 +3126,67 @@ ConnStateData::switchToHttps(HttpRequest *request, Ssl::BumpMode bumpServerMode)
     if (bumpServerMode == Ssl::bumpServerFirst && !sslServerBump) {
         request->flags.sslPeek = true;
         sslServerBump = new Ssl::ServerBump(request);
-
-        // will call httpsPeeked() with certificate and connection, eventually
-        FwdState::fwdStart(clientConnection, sslServerBump->entry, sslServerBump->request.getRaw());
-        return;
     } else if (bumpServerMode == Ssl::bumpPeek || bumpServerMode == Ssl::bumpStare) {
         request->flags.sslPeek = true;
         sslServerBump = new Ssl::ServerBump(request, NULL, bumpServerMode);
-        startPeekAndSplice();
-        return;
     }
 
-    // otherwise, use sslConnectHostOrIp
-    getSslContextStart();
+    // commSetConnTimeout() was called for this request before we switched.
+    // Fix timeout to request_start_timeout
+    typedef CommCbMemFunT<ConnStateData, CommTimeoutCbParams> TimeoutDialer;
+    AsyncCall::Pointer timeoutCall =  JobCallback(33, 5,
+                                      TimeoutDialer, this, ConnStateData::requestTimeout);
+    commSetConnTimeout(clientConnection, Config.Timeout.request_start_timeout, timeoutCall);
+    // Also reset receivedFirstByte_ flag to allow this timeout work in the case we have
+    // a bumbed "connect" request on non transparent port.
+    receivedFirstByte_ = false;
+    // Get more data to peek at Tls
+    parsingTlsHandshake = true;
+    readSomeData();
+}
+
+void
+ConnStateData::parseTlsHandshake()
+{
+    Must(parsingTlsHandshake);
+
+    assert(!inBuf.isEmpty());
+    receivedFirstByte();
+    fd_note(clientConnection->fd, "Parsing TLS handshake");
+
+    bool unsupportedProtocol = false;
+    try {
+        if (!tlsParser.parseHello(inBuf)) {
+            // need more data to finish parsing
+            readSomeData();
+            return;
+        }
+    }
+    catch (const std::exception &ex) {
+        debugs(83, 2, "error on FD " << clientConnection->fd << ": " << ex.what());
+        unsupportedProtocol = true;
+    }
+
+    parsingTlsHandshake = false;
+
+    // Even if the parser failed, each TLS detail should either be set
+    // correctly or still be "unknown"; copying unknown detail is a no-op.
+    clientConnection->tlsNegotiations()->retrieveParsedInfo(tlsParser.details);
+
+    // We should disable read/write handlers
+    Comm::SetSelect(clientConnection->fd, COMM_SELECT_READ, NULL, NULL, 0);
+    Comm::SetSelect(clientConnection->fd, COMM_SELECT_WRITE, NULL, NULL, 0);
+
+    if (!sslServerBump) { // BumpClientFirst mode does not use this member
+        getSslContextStart();
+        return;
+    } else if (sslServerBump->act.step1 == Ssl::bumpServerFirst) {
+        // will call httpsPeeked() with certificate and connection, eventually
+        FwdState::fwdStart(clientConnection, sslServerBump->entry, sslServerBump->request.getRaw());
+    } else {
+        Must(sslServerBump->act.step1 == Ssl::bumpPeek || sslServerBump->act.step1 == Ssl::bumpStare);
+        startPeekAndSplice(unsupportedProtocol);
+    }
 }
 
 bool
@@ -3149,77 +3205,24 @@ ConnStateData::spliceOnError(const err_type err)
     return false;
 }
 
-/** negotiate an SSL connection */
-static void
-clientPeekAndSpliceSSL(int fd, void *data)
+void
+ConnStateData::startPeekAndSplice(const bool unsupportedProtocol)
 {
-    ConnStateData *conn = (ConnStateData *)data;
-    auto ssl = fd_table[fd].ssl.get();
-
-    debugs(83, 5, "Start peek and splice on FD " << fd);
-
-    int ret = 0;
-    if ((ret = Squid_SSL_accept(conn, clientPeekAndSpliceSSL)) < 0)
-        debugs(83, 2, "SSL_accept failed.");
-
-    BIO *b = SSL_get_rbio(ssl);
-    assert(b);
-    Ssl::ClientBio *bio = static_cast<Ssl::ClientBio *>(b->ptr);
-    if (ret < 0) {
-        const err_type err = bio->noSslClient() ? ERR_PROTOCOL_UNKNOWN : ERR_SECURE_ACCEPT_FAIL;
-        if (!conn->spliceOnError(err))
-            conn->clientConnection->close();
+    if (unsupportedProtocol) {
+        if (!spliceOnError(ERR_PROTOCOL_UNKNOWN))
+            clientConnection->close();
         return;
     }
 
-    if (bio->rBufData().contentSize() > 0)
-        conn->receivedFirstByte();
-
-    if (bio->gotHello()) {
-        if (conn->serverBump()) {
-            Ssl::Bio::sslFeatures const &features = bio->receivedHelloFeatures();
-            if (!features.serverName.isEmpty()) {
-                conn->serverBump()->clientSni = features.serverName;
-                conn->resetSslCommonName(features.serverName.c_str());
-            }
+    if (serverBump()) {
+        Security::TlsDetails::Pointer const &details = tlsParser.details;
+        if (details && !details->serverName.isEmpty()) {
+            serverBump()->clientSni = details->serverName;
+            resetSslCommonName(details->serverName.c_str());
         }
-
-        debugs(83, 5, "I got hello. Start forwarding the request!!! ");
-        Comm::SetSelect(fd, COMM_SELECT_READ, NULL, NULL, 0);
-        Comm::SetSelect(fd, COMM_SELECT_WRITE, NULL, NULL, 0);
-        conn->startPeekAndSpliceDone();
-        return;
     }
-}
 
-void ConnStateData::startPeekAndSplice()
-{
-    // will call httpsPeeked() with certificate and connection, eventually
-    auto unConfiguredCTX = Ssl::createSSLContext(port->signingCert, port->signPkey, *port);
-    fd_table[clientConnection->fd].dynamicSslContext = unConfiguredCTX;
-
-    if (!httpsCreate(clientConnection, unConfiguredCTX))
-        return;
-
-    // commSetConnTimeout() was called for this request before we switched.
-    // Fix timeout to request_start_timeout
-    typedef CommCbMemFunT<ConnStateData, CommTimeoutCbParams> TimeoutDialer;
-    AsyncCall::Pointer timeoutCall =  JobCallback(33, 5,
-                                      TimeoutDialer, this, ConnStateData::requestTimeout);
-    commSetConnTimeout(clientConnection, Config.Timeout.request_start_timeout, timeoutCall);
-    // Also reset receivedFirstByte_ flag to allow this timeout work in the case we have
-    // a bumbed "connect" request on non transparent port.
-    receivedFirstByte_ = false;
-
-    // Disable the client read handler until CachePeer selection is complete
-    Comm::SetSelect(clientConnection->fd, COMM_SELECT_READ, NULL, NULL, 0);
-    Comm::SetSelect(clientConnection->fd, COMM_SELECT_READ, clientPeekAndSpliceSSL, this, 0);
-    switchedToHttps_ = true;
-
-    auto ssl = fd_table[clientConnection->fd].ssl.get();
-    BIO *b = SSL_get_rbio(ssl);
-    Ssl::ClientBio *bio = static_cast<Ssl::ClientBio *>(b->ptr);
-    bio->hold(true);
+    startPeekAndSpliceDone();
 }
 
 void httpsSslBumpStep2AccessCheckDone(allow_t answer, void *data)
@@ -3253,34 +3256,23 @@ bool
 ConnStateData::splice()
 {
     // normally we can splice here, because we just got client hello message
-    auto ssl = fd_table[clientConnection->fd].ssl.get();
 
-    //retrieve received TLS client information
-    clientConnection->tlsNegotiations()->fillWith(ssl);
-
-    BIO *b = SSL_get_rbio(ssl);
-    Ssl::ClientBio *bio = static_cast<Ssl::ClientBio *>(b->ptr);
-    MemBuf const &rbuf = bio->rBufData();
-    debugs(83,5, "Bio for  " << clientConnection << " read " << rbuf.contentSize() << " helo bytes");
-    // Do splice:
-    fd_table[clientConnection->fd].read_method = &default_read_method;
-    fd_table[clientConnection->fd].write_method = &default_write_method;
+    if (fd_table[clientConnection->fd].ssl.get()) {
+        // Restore default read methods
+        fd_table[clientConnection->fd].read_method = &default_read_method;
+        fd_table[clientConnection->fd].write_method = &default_write_method;
+    }
 
     if (transparent()) {
         // set the current protocol to something sensible (was "HTTPS" for the bumping process)
         // we are sending a faked-up HTTP/1.1 message wrapper, so go with that.
         transferProtocol = Http::ProtocolVersion();
-        // XXX: copy from MemBuf reallocates, not a regression since old code did too
-        SBuf temp;
-        temp.append(rbuf.content(), rbuf.contentSize());
-        return fakeAConnectRequest("intercepted TLS spliced", temp);
+        return fakeAConnectRequest("intercepted TLS spliced", inBuf);
     } else {
         // XXX: assuming that there was an HTTP/1.1 CONNECT to begin with...
 
         // reset the current protocol to HTTP/1.1 (was "HTTPS" for the bumping process)
         transferProtocol = Http::ProtocolVersion();
-        // inBuf still has the "CONNECT ..." request data, reset it to SSL hello message
-        inBuf.append(rbuf.content(), rbuf.contentSize());
         Http::StreamPointer context = pipeline.front();
         ClientHttpRequest *http = context->http;
         tunnelStart(http);
@@ -3311,6 +3303,39 @@ ConnStateData::startPeekAndSpliceDone()
         return;
     }
 
+    // will call httpsPeeked() with certificate and connection, eventually
+    auto unConfiguredCTX = Ssl::createSSLContext(port->signingCert, port->signPkey, *port);
+    fd_table[clientConnection->fd].dynamicSslContext = unConfiguredCTX;
+
+    if (!httpsCreate(clientConnection, unConfiguredCTX))
+        return;
+
+    switchedToHttps_ = true;
+
+    auto ssl = fd_table[clientConnection->fd].ssl.get();
+    BIO *b = SSL_get_rbio(ssl);
+    Ssl::ClientBio *bio = static_cast<Ssl::ClientBio *>(b->ptr);
+    bio->setReadBufData(inBuf);
+    bio->hold(true);
+
+    // Here squid should have all of the client hello message so the
+    // Squid_SSL_accept should return 0;
+    // This block exist only to force openSSL parse client hello and detect
+    // ERR_SECURE_ACCEPT_FAIL error, which should be checked and splice if required.
+    int ret = 0;
+    if ((ret = Squid_SSL_accept(this, NULL)) < 0) {
+        debugs(83, 2, "SSL_accept failed.");
+        const err_type err = ERR_SECURE_ACCEPT_FAIL;
+        if (!spliceOnError(err))
+            clientConnection->close();
+        return;
+    }
+
+    // We need to reset inBuf here, to be used by incoming requests in the case
+    // of SSL bump
+    inBuf.clear();
+
+    debugs(83, 5, "Peek and splice at step2 done. Start forwarding the request!!! ");
     FwdState::Start(clientConnection, sslServerBump->entry, sslServerBump->request.getRaw(), http ? http->al : NULL);
 }
 
@@ -4001,5 +4026,38 @@ ConnStateData::unpinConnection(const bool andClose)
 
     /* NOTE: pinning.pinned should be kept. This combined with fd == -1 at the end of a request indicates that the host
      * connection has gone away */
+}
+
+void
+ConnStateData::checkLogging()
+{
+    // if we are parsing request body, its request is responsible for logging
+    if (bodyPipe)
+        return;
+
+    // a request currently using this connection is responsible for logging
+    if (!pipeline.empty() && pipeline.back()->mayUseConnection())
+        return;
+
+    /* Either we are waiting for the very first transaction, or
+     * we are done with the Nth transaction and are waiting for N+1st.
+     * XXX: We assume that if anything was added to inBuf, then it could
+     * only be consumed by actions already covered by the above checks.
+     */
+
+    // do not log connections that closed after a transaction (it is normal)
+    // TODO: access_log needs ACLs to match received-no-bytes connections
+    // XXX: TLS may return here even though we got no transactions yet
+    // XXX: PROXY protocol may return here even though we got no
+    // transactions yet
+    if (receivedFirstByte_ && inBuf.isEmpty())
+        return;
+
+    /* Create a temporary ClientHttpRequest object. Its destructor will log. */
+    ClientHttpRequest http(this);
+    http.req_sz = inBuf.length();
+    char const *uri = "error:transaction-end-before-headers";
+    http.uri = xstrdup(uri);
+    setLogUri(&http, uri);
 }
 

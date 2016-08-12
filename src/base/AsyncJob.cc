@@ -124,8 +124,9 @@ void AsyncJob::callStart(AsyncCall &call)
 }
 
 void
-AsyncJob::callException(const std::exception &)
+AsyncJob::callException(const std::exception &ex)
 {
+    debugs(93, 2, ex.what());
     // we must be called asynchronously and hence, the caller must lock us
     Must(cbdataReferenceValid(toCbdata()));
 
@@ -164,7 +165,7 @@ const char *AsyncJob::status() const
     if (stopReason != NULL) {
         buf.appendf("Stopped, reason:%s", stopReason);
     }
-    buf.appendf(" %s%u]", id.Prefix, id.value);
+    buf.appendf(" %s%u]", id.prefix(), id.value);
     buf.terminate();
 
     return buf.content();

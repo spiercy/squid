@@ -163,11 +163,17 @@ DOC_START
 	This option is not yet supported by Squid-3.
 DOC_END
 
-# Options removed in 3.6
+# Options removed in 4.x
 NAME: cache_peer_domain cache_host_domain
 TYPE: obsolete
 DOC_START
 	Replace with dstdomain ACLs and cache_peer_access.
+DOC_END
+
+NAME: ie_refresh
+TYPE: obsolete
+DOC_START
+	Remove this line. The behaviour enabled by this is no longer needed.
 DOC_END
 
 NAME: sslproxy_cafile
@@ -3302,7 +3308,7 @@ DOC_START
 	
 	==== SSL / HTTPS / TLS OPTIONS ====
 	
-	ssl		Encrypt connections to this peer with SSL/TLS.
+	tls		Encrypt connections to this peer with TLS.
 	
 	sslcert=/path/to/ssl/certificate
 			A client SSL certificate to use when connecting to
@@ -5889,30 +5895,6 @@ DOC_START
 	replies as required by RFC2616.
 DOC_END
 
-NAME: ie_refresh
-COMMENT: on|off
-TYPE: onoff
-LOC: Config.onoff.ie_refresh
-DEFAULT: off
-DOC_START
-	Microsoft Internet Explorer up until version 5.5 Service
-	Pack 1 has an issue with transparent proxies, wherein it
-	is impossible to force a refresh.  Turning this on provides
-	a partial fix to the problem, by causing all IMS-REFRESH
-	requests from older IE versions to check the origin server
-	for fresh content.  This reduces hit ratio by some amount
-	(~10% in my experience), but allows users to actually get
-	fresh content when they want it.  Note because Squid
-	cannot tell if the user is using 5.5 or 5.5SP1, the behavior
-	of 5.5 is unchanged from old versions of Squid (i.e. a
-	forced refresh is impossible).  Newer versions of IE will,
-	hopefully, continue to have the new behavior and will be
-	handled based on that assumption.  This option defaults to
-	the old Squid behavior, which is better for hit ratios but
-	worse for clients using IE, if they need to be able to
-	force fresh content.
-DOC_END
-
 NAME: vary_ignore_expire
 COMMENT: on|off
 TYPE: onoff
@@ -6218,13 +6200,29 @@ DOC_START
        potentially cachable requests for the same URI before Squid knows
        whether the response is going to be cachable.
 
-       This feature is disabled by default: Enabling collapsed forwarding
-       needlessly delays forwarding requests that look cachable (when they are
-       collapsed) but then need to be forwarded individually anyway because
-       they end up being for uncachable content. However, in some cases, such
-       as accelleration of highly cachable content with periodic or groupped
-       expiration times, the gains from collapsing [large volumes of
-       simultenous refresh requests] outweigh losses from such delays.
+       When enabled, instead of forwarding each concurrent request for
+       the same URL, Squid just sends the first of them. The other, so
+       called "collapsed" requests, wait for the response to the first
+       request and, if it happens to be cachable, use that response.
+       Here, "concurrent requests" means "received after the first
+       request headers were parsed and before the corresponding response
+       headers were parsed".
+
+       This feature is disabled by default: enabling collapsed
+       forwarding needlessly delays forwarding requests that look
+       cachable (when they are collapsed) but then need to be forwarded
+       individually anyway because they end up being for uncachable
+       content. However, in some cases, such as acceleration of highly
+       cachable content with periodic or grouped expiration times, the
+       gains from collapsing [large volumes of simultaneous refresh
+       requests] outweigh losses from such delays.
+
+       Squid collapses two kinds of requests: regular client requests
+       received on one of the listening ports and internal "cache
+       revalidation" requests which are triggered by those regular
+       requests hitting a stale cached object. Revalidation collapsing
+       is currently disabled for Squid instances containing SMP-aware
+       disk or memory caches and for Vary-controlled cached objects.
 DOC_END
 
 NAME: collapsed_forwarding_shared_entries_limit
@@ -7010,61 +7008,6 @@ DOC_START
 
 
 	See also client_delay_parameters and client_delay_pools.
-DOC_END
-
-COMMENT_START
- RESPONSE DELAY POOL PARAMETERS
- -----------------------------------------------------------------------------
-COMMENT_END
-
-NAME: response_delay_pool
-TYPE: response_delay_pool_parameters
-DEFAULT: none
-IFDEF: USE_DELAY_POOLS
-LOC: Config.MessageDelay
-DOC_START
-	This option configures client response bandwidth limits using the
-	following format:
-
-		response_delay_pool name bucket_speed_limit=... max_bucket_size=...
-			aggregate_speed_limit=... max_aggregate_size=... initial_fill_level=...
-
-		options:
-
-			name				the response delay pool name
-
-			bucket_speed_limit=...		the speed limit of an individual bucket(bytes/s)
-
-			max_bucket_size=...		the maximum size of a bucket
-
-			aggregate_speed_limit=...	the speed limit to the aggregate bucket(bytes/s)
-
-			max_aggregate_size=bytes=...	the maximum size of the aggregate bucket
-
-			initial_fill_level=...		the initial bucket size as a percentage of max_bucket_size
-
-		See also response_delay_pool_access.
-DOC_END
-
-NAME: response_delay_pool_access
-TYPE: response_delay_pool_access
-DEFAULT: none
-DEFAULT_DOC: Deny use of the pool, unless allow rules exist in squid.conf for the pool.
-IFDEF: USE_DELAY_POOLS
-LOC: Config.MessageDelay
-DOC_START
-	This option determines the response delay pool for the
-	request:
-
-		response_delay_pool_access pool_name allow|deny acl_name
-
-	All response_delay_pool_access options are checked in the order
-	they appear in this configuration file. The first rule with a
-	matching ACL wins. If (and only if) an "allow" rule won, Squid
-	assigns the response to the corresponding named delay pool.
-	This feature restricts Squid-to-client bandwidth only.
-	If no ACL matches or there are no response_delay_pool_access options,
-	the Squid-to-client bandwidth is not limited.
 DOC_END
 
 COMMENT_START

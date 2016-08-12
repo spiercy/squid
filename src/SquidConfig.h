@@ -17,7 +17,6 @@
 #include "helper/ChildConfig.h"
 #include "HttpHeaderTools.h"
 #include "ip/Address.h"
-#include "MessageDelayPools.h"
 #include "Notes.h"
 #include "security/forward.h"
 #include "SquidTime.h"
@@ -306,7 +305,6 @@ public:
         int digest_generation;
 #endif
 
-        int ie_refresh;
         int vary_ignore_expire;
         int surrogate_is_remote;
         int request_entities;
@@ -439,7 +437,6 @@ public:
 
     DelayConfig Delay;
     ClientDelayConfig ClientDelay;
-    MessageDelayConfig MessageDelay;
 #endif
 
     struct {

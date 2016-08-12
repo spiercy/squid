@@ -110,7 +110,7 @@ comm_empty_os_read_buffers(int fd)
 
     /* prevent those nasty RST packets */
     char buf[SQUID_TCP_SO_RCVBUF];
-    if (fd_table[fd].flags.nonblocking) {
+    if (fd_table[fd].flags.nonblocking && fd_table[fd].type != FD_MSGHDR) {
         while (FD_READ_METHOD(fd, buf, SQUID_TCP_SO_RCVBUF) > 0) {};
     }
 #endif
@@ -838,7 +838,7 @@ void
 comm_close_complete(const FdeCbParams &params)
 {
     fde *F = &fd_table[params.fd];
-    F->ssl.reset(nullptr);
+    F->ssl.resetWithoutLocking(nullptr);
 
 #if USE_OPENSSL
     if (F->dynamicSslContext) {
@@ -922,10 +922,7 @@ _comm_close(int fd, char const *file, int line)
     }
 
 #if USE_DELAY_POOLS
-    if (F->writeQuotaHandler != NULL) {
-        if (F->writeQuotaHandler->selectWaiting)
-            F->writeQuotaHandler->selectWaiting = false;
-    } else if (ClientInfo *clientInfo = F->clientInfo) {
+    if (ClientInfo *clientInfo = F->clientInfo) {
         if (clientInfo->selectWaiting) {
             clientInfo->selectWaiting = false;
             // kick queue or it will get stuck as commWriteHandle is not called
@@ -1602,17 +1599,7 @@ checkTimeouts(void)
             debugs(5, 5, "checkTimeouts: FD " << fd << " auto write timeout");
             Comm::SetSelect(fd, COMM_SELECT_WRITE, NULL, NULL, 0);
             COMMIO_FD_WRITECB(fd)->finish(Comm::COMM_ERROR, ETIMEDOUT);
-#if USE_DELAY_POOLS
-        } else if (F->writeQuotaHandler != NULL && COMMIO_FD_WRITECB(fd)->conn != NULL) {
-            F->writeQuotaHandler->refillBucket();
-            if (F->writeQuotaHandler->quota() && !F->writeQuotaHandler->selectWaiting && !F->closing()) {
-                F->writeQuotaHandler->selectWaiting = true;
-                Comm::SetSelect(fd, COMM_SELECT_WRITE, Comm::HandleWrite, COMMIO_FD_WRITECB(fd), 0);
-            }
-            continue;
-#endif
-        }
-        else if (AlreadyTimedOut(F))
+        } else if (AlreadyTimedOut(F))
             continue;
 
         debugs(5, 5, "checkTimeouts: FD " << fd << " Expired");
@@ -1787,7 +1774,7 @@ DeferredReadManager::popHead(CbDataListContainer<DeferredRead> &deferredReads)
     //       amount of time. We must re-validate that it is active and usable.
 
     // If the connection has been closed already. Cancel this read.
-    if (!Comm::IsConnOpen(read.theRead.conn)) {
+    if (!fd_table || !Comm::IsConnOpen(read.theRead.conn)) {
         if (read.closer != NULL) {
             read.closer->cancel("Connection closed before.");
             read.closer = NULL;

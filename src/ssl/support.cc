@@ -33,6 +33,9 @@
 
 #include <cerrno>
 
+// TODO: Move ssl_ex_index_* global variables from global.cc here.
+int ssl_ex_index_ssl_untrusted_chain = -1;
+
 Ipc::MemMap *Ssl::SessionCache = NULL;
 const char *Ssl::SessionCacheName = "ssl_session_cache";
 
@@ -135,7 +138,7 @@ ssl_temp_rsa_cb(SSL * ssl, int anInt, int keylen)
     }
 
     if (newkey) {
-        if (do_debug(83, 5))
+        if (Debug::Enabled(83, 5))
             PEM_write_RSAPrivateKey(debug_log, rsa, NULL, NULL, 0, NULL, NULL);
 
         debugs(83, DBG_IMPORTANT, "Generated ephemeral RSA key of length " << keylen);
@@ -315,7 +318,7 @@ ssl_verify_cb(int ok, X509_STORE_CTX * ctx)
                 }
                 delete filledCheck->sslErrors;
                 filledCheck->sslErrors = NULL;
-                filledCheck->serverCert.reset(NULL);
+                filledCheck->serverCert.reset();
             }
             // If the certificate validator is used then we need to allow all errors and
             // pass them to certficate validator for more processing
@@ -470,6 +473,7 @@ Ssl::Initialize(void)
     ssl_ex_index_ssl_errors =  SSL_get_ex_new_index(0, (void *) "ssl_errors", NULL, NULL, &ssl_free_SslErrors);
     ssl_ex_index_ssl_cert_chain = SSL_get_ex_new_index(0, (void *) "ssl_cert_chain", NULL, NULL, &ssl_free_CertChain);
     ssl_ex_index_ssl_validation_counter = SSL_get_ex_new_index(0, (void *) "ssl_validation_counter", NULL, NULL, &ssl_free_int);
+    ssl_ex_index_ssl_untrusted_chain = SSL_get_ex_new_index(0, (void *) "ssl_untrusted_chain", NULL, NULL, &ssl_free_CertChain);
 }
 
 #if defined(SSL3_FLAGS_NO_RENEGOTIATE_CIPHERS)
@@ -556,77 +560,69 @@ configureSslContext(Security::ContextPtr sslContext, AnyP::PortCfg &port)
     return true;
 }
 
-Security::ContextPtr
-sslCreateServerContext(AnyP::PortCfg &port)
+bool
+Ssl::InitServerContext(const Security::ContextPointer &ctx, AnyP::PortCfg &port)
 {
-    Security::ContextPtr sslContext(port.secure.createBlankContext());
-    if (!sslContext)
-        return nullptr;
+    if (!ctx)
+        return false;
 
-    if (!SSL_CTX_use_certificate(sslContext, port.signingCert.get())) {
+    if (!SSL_CTX_use_certificate(ctx.get(), port.signingCert.get())) {
         const int ssl_error = ERR_get_error();
         const auto &keys = port.secure.certs.front();
         debugs(83, DBG_CRITICAL, "ERROR: Failed to acquire TLS certificate '" << keys.certFile << "': " << ERR_error_string(ssl_error, NULL));
-        SSL_CTX_free(sslContext);
-        return NULL;
+        return false;
     }
 
-    if (!SSL_CTX_use_PrivateKey(sslContext, port.signPkey.get())) {
+    if (!SSL_CTX_use_PrivateKey(ctx.get(), port.signPkey.get())) {
         const int ssl_error = ERR_get_error();
         const auto &keys = port.secure.certs.front();
         debugs(83, DBG_CRITICAL, "ERROR: Failed to acquire TLS private key '" << keys.privateKeyFile << "': " << ERR_error_string(ssl_error, NULL));
-        SSL_CTX_free(sslContext);
-        return NULL;
+        return false;
     }
 
-    Ssl::addChainToSslContext(sslContext, port.certsToChain.get());
+    Ssl::addChainToSslContext(ctx.get(), port.certsToChain.get());
 
     /* Alternate code;
         debugs(83, DBG_IMPORTANT, "Using certificate in " << certfile);
 
-        if (!SSL_CTX_use_certificate_chain_file(sslContext, certfile)) {
+        if (!SSL_CTX_use_certificate_chain_file(ctx.get(), certfile)) {
             ssl_error = ERR_get_error();
             debugs(83, DBG_CRITICAL, "ERROR: Failed to acquire SSL certificate '" << certfile << "': " << ERR_error_string(ssl_error, NULL));
-            SSL_CTX_free(sslContext);
-            return NULL;
+            return false;
         }
 
         debugs(83, DBG_IMPORTANT, "Using private key in " << keyfile);
-        ssl_ask_password(sslContext, keyfile);
+        ssl_ask_password(ctx.get(), keyfile);
 
-        if (!SSL_CTX_use_PrivateKey_file(sslContext, keyfile, SSL_FILETYPE_PEM)) {
+        if (!SSL_CTX_use_PrivateKey_file(ctx.get(), keyfile, SSL_FILETYPE_PEM)) {
             ssl_error = ERR_get_error();
             debugs(83, DBG_CRITICAL, "ERROR: Failed to acquire SSL private key '" << keyfile << "': " << ERR_error_string(ssl_error, NULL));
-            SSL_CTX_free(sslContext);
-            return NULL;
+            return false;
         }
 
         debugs(83, 5, "Comparing private and public SSL keys.");
 
-        if (!SSL_CTX_check_private_key(sslContext)) {
+        if (!SSL_CTX_check_private_key(ctx.get())) {
             ssl_error = ERR_get_error();
             debugs(83, DBG_CRITICAL, "ERROR: SSL private key '" << certfile << "' does not match public key '" <<
                    keyfile << "': " << ERR_error_string(ssl_error, NULL));
-            SSL_CTX_free(sslContext);
-            return NULL;
+            return false;
         }
     */
 
-    if (!configureSslContext(sslContext, port)) {
+    if (!configureSslContext(ctx.get(), port)) {
         debugs(83, DBG_CRITICAL, "ERROR: Configuring static SSL context");
-        SSL_CTX_free(sslContext);
-        return NULL;
+        return false;
     }
 
-    return sslContext;
+    return true;
 }
 
-Security::ContextPtr
-sslCreateClientContext(Security::PeerOptions &peer, long options, long fl)
+bool
+Ssl::InitClientContext(Security::ContextPtr &sslContext, Security::PeerOptions &peer, long options, long fl)
 {
-    Security::ContextPtr sslContext(peer.createBlankContext());
     if (!sslContext)
-        return nullptr;
+        return false;
 
     SSL_CTX_set_options(sslContext, options);
 
@@ -689,7 +685,7 @@ sslCreateClientContext(Security::PeerOptions &peer, long options, long fl)
         SSL_CTX_set_verify(sslContext, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, ssl_verify_cb);
     }
 
-    return sslContext;
+    return true;
 }
 
 /// \ingroup ServerProtocolSSLInternal
@@ -1098,6 +1094,32 @@ void Ssl::addChainToSslContext(Security::ContextPtr sslContext, STACK_OF(X509) *
     }
 }
 
+static const char *
+hasAuthorityInfoAccessCaIssuers(X509 *cert)
+{
+    AUTHORITY_INFO_ACCESS *info;
+    if (!cert)
+        return nullptr;
+    info = static_cast<AUTHORITY_INFO_ACCESS *>(X509_get_ext_d2i(cert, NID_info_access, NULL, NULL));
+    if (!info)
+        return nullptr;
+
+    static char uri[MAX_URL];
+    uri[0] = '\0';
+
+    for (int i = 0; i < sk_ACCESS_DESCRIPTION_num(info); i++) {
+        ACCESS_DESCRIPTION *ad = sk_ACCESS_DESCRIPTION_value(info, i);
+        if (OBJ_obj2nid(ad->method) == NID_ad_ca_issuers) {
+            if (ad->location->type == GEN_URI) {
+                xstrncpy(uri, reinterpret_cast<char *>(ASN1_STRING_data(ad->location->d.uniformResourceIdentifier)), sizeof(uri));
+            }
+            break;
+        }
+    }
+    AUTHORITY_INFO_ACCESS_free(info);
+    return uri[0] != '\0' ? uri : nullptr;
+}
+
 bool
 Ssl::loadCerts(const char *certsFile, Ssl::CertsIndexedList &list)
 {
@@ -1118,9 +1140,10 @@ Ssl::loadCerts(const char *certsFile, Ssl::CertsIndexedList &list)
     return true;
 }
 
-/// quickly find a certificate with a given issuer in Ssl::CertsIndexedList.
+/// quickly find the issuer certificate of a certificate cert in the
+/// Ssl::CertsIndexedList list
 static X509 *
-findCertByIssuerFast(X509_STORE_CTX *ctx, Ssl::CertsIndexedList &list, X509 *cert)
+findCertIssuerFast(Ssl::CertsIndexedList &list, X509 *cert)
 {
     static char buffer[2048];
 
@@ -1132,21 +1155,80 @@ findCertByIssuerFast(X509_STORE_CTX *ctx, Ssl::CertsIndexedList &list, X509 *cer
     const auto ret = list.equal_range(SBuf(buffer));
     for (Ssl::CertsIndexedList::iterator it = ret.first; it != ret.second; ++it) {
         X509 *issuer = it->second;
-        if (ctx->check_issued(ctx, cert, issuer)) {
+        if (X509_check_issued(cert, issuer)) {
             return issuer;
         }
     }
     return NULL;
 }
 
-/// slowly find a certificate with a given issuer using linear search
-static X509 *
-findCertByIssuerSlowly(X509_STORE_CTX *ctx, STACK_OF(X509) *sk, X509 *cert)
+/// slowly find the issuer certificate of a given cert using linear search
+static bool
+findCertIssuer(Security::CertList const &list, X509 *cert)
 {
+    for (Security::CertList::const_iterator it = list.begin(); it != list.end(); ++it) {
+        if (X509_check_issued(it->get(), cert) == X509_V_OK)
+            return true;
+    }
+    return false;
+}
+
+const char *
+Ssl::uriOfIssuerIfMissing(X509 *cert, Security::CertList const &serverCertificates)
+{
+    if (!cert || !serverCertificates.size())
+        return nullptr;
+
+    if (!findCertIssuer(serverCertificates, cert)) {
+        //if issuer is missing
+        if (!findCertIssuerFast(SquidUntrustedCerts, cert)) {
+            // and issuer not found in local untrusted certificates database
+            if (const char *issuerUri = hasAuthorityInfoAccessCaIssuers(cert)) {
+                // There is a URI where we can download a certificate.
+                return issuerUri;
+            }
+        }
+    }
+    return nullptr;
+}
+
+void
+Ssl::missingChainCertificatesUrls(std::queue<SBuf> &URIs, Security::CertList const &serverCertificates)
+{
+    if (!serverCertificates.size())
+        return;
+
+    for (const auto &i : serverCertificates) {
+        if (const char *issuerUri = uriOfIssuerIfMissing(i.get(), serverCertificates))
+            URIs.push(SBuf(issuerUri));
+    }
+}
+
+void
+Ssl::SSL_add_untrusted_cert(SSL *ssl, X509 *cert)
+{
+    STACK_OF(X509) *untrustedStack = static_cast <STACK_OF(X509) *>(SSL_get_ex_data(ssl, ssl_ex_index_ssl_untrusted_chain));
+    if (!untrustedStack) {
+        untrustedStack = sk_X509_new_null();
+        if (!SSL_set_ex_data(ssl, ssl_ex_index_ssl_untrusted_chain, untrustedStack)) {
+            sk_X509_pop_free(untrustedStack, X509_free);
+            throw TextException("Failed to attach untrusted certificates chain");
+        }
+    }
+    sk_X509_push(untrustedStack, cert);
+}
+
+/// Search for the issuer certificate of cert in sk list.
+static X509 *
+sk_x509_findIssuer(STACK_OF(X509) *sk, X509 *cert)
+{
+    if (!sk)
+        return NULL;
+
     const int skItemsNum = sk_X509_num(sk);
     for (int i = 0; i < skItemsNum; ++i) {
         X509 *issuer = sk_X509_value(sk, i);
-        if (ctx->check_issued(ctx, cert, issuer))
+        if (X509_check_issued(issuer, cert) == X509_V_OK)
             return issuer;
     }
     return NULL;
@@ -1162,16 +1244,16 @@ completeIssuers(X509_STORE_CTX *ctx, STACK_OF(X509) *untrustedCerts)
     X509 *current = ctx->cert;
     int i = 0;
     for (i = 0; current && (i < depth); ++i) {
-        if (ctx->check_issued(ctx, current, current)) {
+        if (X509_check_issued(current, current)) {
             // either ctx->cert is itself self-signed or untrustedCerts
             // aready contain the self-signed current certificate
             break;
         }
 
         // untrustedCerts is short, not worth indexing
-        X509 *issuer = findCertByIssuerSlowly(ctx, untrustedCerts, current);
+        X509 *issuer = sk_x509_findIssuer(untrustedCerts, current);
         if (!issuer) {
-            if ((issuer = findCertByIssuerFast(ctx, SquidUntrustedCerts, current)))
+            if ((issuer = findCertIssuerFast(SquidUntrustedCerts, current)))
                 sk_X509_push(untrustedCerts, issuer);
         }
         current = issuer;
@@ -1187,12 +1269,25 @@ untrustedToStoreCtx_cb(X509_STORE_CTX *ctx,void *data)
 {
     debugs(83, 4,  "Try to use pre-downloaded intermediate certificates\n");
 
+    SSL *ssl = static_cast<SSL *>(X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx()));
+    STACK_OF(X509) *sslUntrustedStack = static_cast <STACK_OF(X509) *>(SSL_get_ex_data(ssl, ssl_ex_index_ssl_untrusted_chain));
+
     // OpenSSL already maintains ctx->untrusted but we cannot modify
     // internal OpenSSL list directly. We have to give OpenSSL our own
     // list, but it must include certificates on the OpenSSL ctx->untrusted
     STACK_OF(X509) *oldUntrusted = ctx->untrusted;
     STACK_OF(X509) *sk = sk_X509_dup(oldUntrusted); // oldUntrusted is always not NULL
-    completeIssuers(ctx, sk);
+
+    for (int i = 0; i < sk_X509_num(sslUntrustedStack); ++i) {
+        X509 *cert = sk_X509_value(sslUntrustedStack, i);
+        sk_X509_push(sk, cert);
+    }
+
+    // If the local untrusted certificates internal database is used
+    // run completeIssuers to add missing certificates if possible.
+    if (SquidUntrustedCerts.size() > 0)
+        completeIssuers(ctx, sk);
+
     X509_STORE_CTX_set_chain(ctx, sk); // No locking/unlocking, just sets ctx->untrusted
     int ret = X509_verify_cert(ctx);
     X509_STORE_CTX_set_chain(ctx, oldUntrusted); // Set back the old untrusted list
@@ -1203,10 +1298,7 @@ untrustedToStoreCtx_cb(X509_STORE_CTX *ctx,void *data)
 void
 Ssl::useSquidUntrusted(SSL_CTX *sslContext)
 {
-    if (SquidUntrustedCerts.size() > 0)
-        SSL_CTX_set_cert_verify_callback(sslContext, untrustedToStoreCtx_cb, NULL);
-    else
-        SSL_CTX_set_cert_verify_callback(sslContext, NULL, NULL);
+    SSL_CTX_set_cert_verify_callback(sslContext, untrustedToStoreCtx_cb, NULL);
 }
 
 bool
@@ -1275,11 +1367,11 @@ void Ssl::readCertChainAndPrivateKeyFromFiles(Security::CertPointer & cert, EVP_
     // XXX: ssl_ask_password_cb needs SSL_CTX_set_default_passwd_cb_userdata()
     // so this may not fully work iff Config.Program.ssl_password is set.
     pem_password_cb *cb = ::Config.Program.ssl_password ? &ssl_ask_password_cb : NULL;
-    pkey.reset(readSslPrivateKey(keyFilename, cb));
-    cert.reset(readSslX509CertificatesChain(certFilename, chain.get()));
+    pkey.resetWithoutLocking(readSslPrivateKey(keyFilename, cb));
+    cert.resetWithoutLocking(readSslX509CertificatesChain(certFilename, chain.get()));
     if (!pkey || !cert || !X509_check_private_key(cert.get(), pkey.get())) {
-        pkey.reset(NULL);
-        cert.reset(NULL);
+        pkey.reset();
+        cert.reset();
     }
 }
 
@@ -1306,26 +1398,27 @@ bool Ssl::generateUntrustedCert(Security::CertPointer &untrustedCert, EVP_PKEY_P
     return Ssl::generateSslCertificate(untrustedCert, untrustedPkey, certProperties);
 }
 
-SSL *
-SslCreate(Security::ContextPtr sslContext, const int fd, Ssl::Bio::Type type, const char *squidCtx)
+static bool
+SslCreate(Security::ContextPtr sslContext, const Comm::ConnectionPointer &conn, Ssl::Bio::Type type, const char *squidCtx)
 {
-    if (fd < 0) {
+    if (!Comm::IsConnOpen(conn)) {
         debugs(83, DBG_IMPORTANT, "Gone connection");
-        return NULL;
+        return false;
     }
 
     const char *errAction = NULL;
     int errCode = 0;
     if (auto ssl = SSL_new(sslContext)) {
+        const int fd = conn->fd;
         // without BIO, we would call SSL_set_fd(ssl, fd) instead
         if (BIO *bio = Ssl::Bio::Create(fd, type)) {
             Ssl::Bio::Link(ssl, bio); // cannot fail
 
-            fd_table[fd].ssl.reset(ssl);
+            fd_table[fd].ssl.resetWithoutLocking(ssl);
             fd_table[fd].read_method = &ssl_read_method;
             fd_table[fd].write_method = &ssl_write_method;
             fd_note(fd, squidCtx);
-            return ssl;
+            return true;
         }
         errCode = ERR_get_error();
         errAction = "failed to initialize I/O";
@@ -1337,19 +1430,19 @@ SslCreate(Security::ContextPtr sslContext, const int fd, Ssl::Bio::Type type, co
 
     debugs(83, DBG_IMPORTANT, "ERROR: " << squidCtx << ' ' << errAction <<
            ": " << ERR_error_string(errCode, NULL));
-    return NULL;
+    return false;
 }
 
-SSL *
-Ssl::CreateClient(Security::ContextPtr sslContext, const int fd, const char *squidCtx)
+bool
+Ssl::CreateClient(Security::ContextPtr sslContext, const Comm::ConnectionPointer &c, const char *squidCtx)
 {
-    return SslCreate(sslContext, fd, Ssl::Bio::BIO_TO_SERVER, squidCtx);
+    return SslCreate(sslContext, c, Ssl::Bio::BIO_TO_SERVER, squidCtx);
 }
 
-SSL *
-Ssl::CreateServer(Security::ContextPtr sslContext, const int fd, const char *squidCtx)
+bool
+Ssl::CreateServer(Security::ContextPtr sslContext, const Comm::ConnectionPointer &c, const char *squidCtx)
 {
-    return SslCreate(sslContext, fd, Ssl::Bio::BIO_TO_CLIENT, squidCtx);
+    return SslCreate(sslContext, c, Ssl::Bio::BIO_TO_CLIENT, squidCtx);
 }
 
 Ssl::CertError::CertError(ssl_error_t anErr, X509 *aCert, int aDepth): code(anErr), depth(aDepth)

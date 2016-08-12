@@ -24,10 +24,8 @@
 #include "auth/UserRequest.h"
 #endif
 #if USE_OPENSSL
+#include "security/Handshake.h"
 #include "ssl/support.h"
-#endif
-#if USE_DELAY_POOLS
-#include "MessageBucket.h"
 #endif
 
 class ClientHttpRequest;
@@ -205,7 +203,7 @@ public:
     void postHttpsAccept();
 
     /// Initializes and starts a peek-and-splice negotiation with the SSL client
-    void startPeekAndSplice();
+    void startPeekAndSplice(const bool unknownProtocol);
     /// Called when the initialization of peek-and-splice negotiation finidhed
     void startPeekAndSpliceDone();
     /// Called when a peek-and-splice step finished. For example after
@@ -237,6 +235,7 @@ public:
     void sslCrtdHandleReply(const Helper::Reply &reply);
 
     void switchToHttps(HttpRequest *request, Ssl::BumpMode bumpServerMode);
+    void parseTlsHandshake();
     bool switchedToHttps() const { return switchedToHttps_; }
     Ssl::ServerBump *serverBump() {return sslServerBump;}
     inline void setServerBump(Ssl::ServerBump *srvBump) {
@@ -258,6 +257,9 @@ public:
 
     Ssl::BumpMode sslBumpMode; ///< ssl_bump decision (Ssl::bumpEnd if n/a).
 
+    /// Tls parser to use for client HELLO messages parsing on bumped
+    /// connections.
+    Security::HandshakeParser tlsParser;
 #else
     bool switchedToHttps() const { return false; }
 #endif
@@ -327,6 +329,7 @@ protected:
 private:
     /* ::Server API */
     virtual bool connFinishedWithConn(int size);
+    virtual void checkLogging();
 
     void clientAfterReadingRequests();
     bool concurrentRequestQueueFilled() const;
@@ -353,6 +356,8 @@ private:
 
 #if USE_OPENSSL
     bool switchedToHttps_;
+    bool parsingTlsHandshake; ///< whether we are getting/parsing TLS Hello bytes
+
     /// The SSL server host name appears in CONNECT request or the server ip address for the intercepted requests
     String sslConnectHostOrIp; ///< The SSL server host name as passed in the CONNECT request
     SBuf sslCommonName_; ///< CN name for SSL certificate generation

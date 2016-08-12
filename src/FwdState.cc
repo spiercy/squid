@@ -45,9 +45,9 @@
 #include "pconn.h"
 #include "PeerPoolMgr.h"
 #include "PeerSelectState.h"
+#include "security/BlindPeerConnector.h"
 #include "SquidConfig.h"
 #include "SquidTime.h"
-#include "ssl/BlindPeerConnector.h"
 #include "ssl/PeekingPeerConnector.h"
 #include "Store.h"
 #include "StoreClient.h"
@@ -78,8 +78,7 @@ static int FwdReplyCodes[MAX_FWD_STATS_IDX + 1][Http::scInvalidHeader + 1];
 static PconnPool *fwdPconnPool = new PconnPool("server-peers", NULL);
 CBDATA_CLASS_INIT(FwdState);
 
-#if USE_OPENSSL
-class FwdStatePeerAnswerDialer: public CallDialer, public Ssl::PeerConnector::CbDialer
+class FwdStatePeerAnswerDialer: public CallDialer, public Security::PeerConnector::CbDialer
 {
 public:
     typedef void (FwdState::*Method)(Security::EncryptorAnswer &);
@@ -94,7 +93,7 @@ public:
         os << '(' << fwd_.get() << ", " << answer_ << ')';
     }
 
-    /* Ssl::PeerConnector::CbDialer API */
+    /* Security::PeerConnector::CbDialer API */
     virtual Security::EncryptorAnswer &answer() { return answer_; }
 
 private:
@@ -102,7 +101,6 @@ private:
     CbcPointer<FwdState> fwd_;
     Security::EncryptorAnswer answer_;
 };
-#endif
 
 void
 FwdState::abort(void* d)
@@ -684,7 +682,6 @@ FwdState::connectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, in
 
     closeHandler = comm_add_close_handler(serverConnection()->fd, fwdServerClosedWrapper, this);
 
-#if USE_OPENSSL
     if (!request->flags.pinned) {
         const CachePeer *p = serverConnection()->getPeer();
         const bool peerWantsTls = p && p->secure.encryptTransport;
@@ -700,16 +697,17 @@ FwdState::connectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, in
                                                     FwdStatePeerAnswerDialer(&FwdState::connectedToPeer, this));
             // Use positive timeout when less than one second is left.
             const time_t sslNegotiationTimeout = max(static_cast<time_t>(1), timeLeft());
-            Ssl::PeerConnector *connector = NULL;
+            Security::PeerConnector *connector = nullptr;
+#if USE_OPENSSL
             if (request->flags.sslPeek)
                 connector = new Ssl::PeekingPeerConnector(requestPointer, serverConnection(), clientConn, callback, al, sslNegotiationTimeout);
             else
-                connector = new Ssl::BlindPeerConnector(requestPointer, serverConnection(), callback, al, sslNegotiationTimeout);
+#endif
+                connector = new Security::BlindPeerConnector(requestPointer, serverConnection(), callback, al, sslNegotiationTimeout);
             AsyncJob::Start(connector); // will call our callback
             return;
         }
     }
-#endif
 
     // if not encrypting just run the post-connect actions
     Security::EncryptorAnswer nil;
@@ -849,27 +847,29 @@ FwdState::connectStart()
         ConnStateData *pinned_connection = request->pinnedConnection();
         debugs(17,7, "pinned peer connection: " << pinned_connection);
         // pinned_connection may become nil after a pconn race
-        if (pinned_connection)
+        if (pinned_connection) {
             serverConn = pinned_connection->borrowPinnedConnection(request, serverDestinations[0]->getPeer());
-        else
-            serverConn = NULL;
-        if (Comm::IsConnOpen(serverConn)) {
-            pinned_connection->stopPinnedConnectionMonitoring();
-            flags.connected_okay = true;
-            ++n_tries;
-            request->flags.pinned = true;
-            if (pinned_connection->pinnedAuth())
-                request->flags.auth = true;
+            if (Comm::IsConnOpen(serverConn)) {
+                pinned_connection->stopPinnedConnectionMonitoring();
+                flags.connected_okay = true;
+                ++n_tries;
+                request->flags.pinned = true;
+                if (pinned_connection->pinnedAuth())
+                    request->flags.auth = true;
 
-            closeHandler = comm_add_close_handler(serverConn->fd,  fwdServerClosedWrapper, this);
+                closeHandler = comm_add_close_handler(serverConn->fd,  fwdServerClosedWrapper, this);
 
-            syncWithServerConn(pinned_connection->pinning.host);
+                syncWithServerConn(pinned_connection->pinning.host);
 
-            // the server may close the pinned connection before this request
-            pconnRace = racePossible;
-            dispatch();
-            return;
-        }
+                // the server may close the pinned connection before this request
+                pconnRace = racePossible;
+                dispatch();
+                return;
+            }
+
+        } else
+            serverConn = nullptr;
+
         // Pinned connection failure.
         debugs(17,2,HERE << "Pinned connection failed: " << pinned_connection);
         ErrorState *anErr = new ErrorState(ERR_ZERO_SIZE_OBJECT, Http::scServiceUnavailable, request);
@@ -997,12 +997,10 @@ FwdState::dispatch()
         request->flags.auth_no_keytab = 0;
 
         switch (request->url.getScheme()) {
-#if USE_OPENSSL
 
         case AnyP::PROTO_HTTPS:
             httpStart(this);
             break;
-#endif
 
         case AnyP::PROTO_HTTP:
             httpStart(this);

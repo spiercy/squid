@@ -240,7 +240,7 @@ Security::PeerOptions::createBlankContext() const
     }
 
 #else
-    fatal("Failed to allocate TLS client context: No TLS library\n");
+    debugs(83, 1, "WARNING: Failed to allocate TLS client context: No TLS library");
 
 #endif
 
@@ -250,20 +250,14 @@ Security::PeerOptions::createBlankContext() const
 Security::ContextPtr
 Security::PeerOptions::createClientContext(bool setOptions)
 {
-    Security::ContextPtr t = nullptr;
-
     updateTlsVersionLimits();
 
-#if USE_OPENSSL
-    // XXX: temporary performance regression. c_str() data copies and prevents this being a const method
-    t = sslCreateClientContext(*this, (setOptions ? parsedOptions : 0), parsedFlags);
-
-#elif USE_GNUTLS && WHEN_READY_FOR_GNUTLS
-    t = createBlankContext();
-
-#endif
-
+    Security::ContextPtr t = createBlankContext();
     if (t) {
+#if USE_OPENSSL
+        // XXX: temporary performance regression. c_str() data copies and prevents this being a const method
+        Ssl::InitClientContext(t, *this, (setOptions ? parsedOptions : 0), parsedFlags);
+#endif
         updateContextNpn(t);
         updateContextCa(t);
         updateContextCrl(t);
@@ -573,14 +567,32 @@ Security::PeerOptions::updateContextNpn(Security::ContextPtr &ctx)
     //       it does support ALPN per-session, not per-context.
 }
 
+static const char *
+loadSystemTrustedCa(Security::ContextPtr &ctx)
+{
+#if USE_OPENSSL
+    if (SSL_CTX_set_default_verify_paths(ctx) == 0)
+        return ERR_error_string(ERR_get_error(), nullptr);
+
+#elif USE_GNUTLS
+    auto x = gnutls_certificate_set_x509_system_trust(ctx);
+    if (x < 0)
+        return gnutls_strerror(x);
+
+#endif
+    return nullptr;
+}
+
 void
 Security::PeerOptions::updateContextCa(Security::ContextPtr &ctx)
 {
     debugs(83, 8, "Setting CA certificate locations.");
-
+#if USE_OPENSSL
+    const char *path = caDir.isEmpty() ? nullptr : caDir.c_str();
+#endif
     for (auto i : caFiles) {
 #if USE_OPENSSL
-        if (!SSL_CTX_load_verify_locations(ctx, i.c_str(), caDir.c_str())) {
+        if (!SSL_CTX_load_verify_locations(ctx, i.c_str(), path)) {
             const int ssl_error = ERR_get_error();
             debugs(83, DBG_IMPORTANT, "WARNING: Ignoring error setting CA certificate locations: " << ERR_error_string(ssl_error, NULL));
         }
@@ -594,17 +606,9 @@ Security::PeerOptions::updateContextCa(Security::ContextPtr &ctx)
     if (!flags.tlsDefaultCa)
         return;
 
-#if USE_OPENSSL
-    if (!SSL_CTX_set_default_verify_paths(ctx)) {
-        const int ssl_error = ERR_get_error();
-        debugs(83, DBG_IMPORTANT, "WARNING: Ignoring error setting default trusted CA : "
-               << ERR_error_string(ssl_error, NULL));
+    if (const char *err = loadSystemTrustedCa(ctx)) {
+        debugs(83, DBG_IMPORTANT, "WARNING: Ignoring error setting default trusted CA : " << err);
     }
-#elif USE_GNUTLS
-    if (gnutls_certificate_set_x509_system_trust(ctx) != GNUTLS_E_SUCCESS) {
-        debugs(83, DBG_IMPORTANT, "WARNING: Ignoring error setting default trusted CA.");
-    }
-#endif
 }
 
 void
