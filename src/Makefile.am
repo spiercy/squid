@@ -101,6 +101,8 @@ DELAY_POOL_ALL_SOURCE = \
 	DelayPool.cc \
 	DelayPool.h \
 	DelayPools.h \
+	MessageDelayPools.h \
+	MessageDelayPools.cc \
 	DelaySpec.cc \
 	DelaySpec.h \
 	DelayTagged.cc \
@@ -109,6 +111,8 @@ DELAY_POOL_ALL_SOURCE = \
 	DelayUser.h \
 	DelayVector.cc \
 	DelayVector.h \
+	MessageBucket.cc \
+	MessageBucket.h \
 	NullDelayId.cc \
 	NullDelayId.h \
 	ClientDelayConfig.cc \
