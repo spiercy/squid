@@ -1222,7 +1222,8 @@ prepareAcceleratedURL(ConnStateData * conn, ClientHttpRequest *http, const Http1
         } // else nothing to alter port-wise.
         const int url_sz = hp->requestUri().length() + 32 + Config.appendDomainLen + strlen(host);
         http->uri = (char *)xcalloc(url_sz, 1);
-        snprintf(http->uri, url_sz, "%s://%s" SQUIDSBUFPH, AnyP::UriScheme(conn->transferProtocol.protocol).c_str(), host, SQUIDSBUFPRINT(url));
+        const SBuf &scheme = AnyP::UriScheme(conn->transferProtocol.protocol).image();
+        snprintf(http->uri, url_sz, SQUIDSBUFPH "://%s" SQUIDSBUFPH, SQUIDSBUFPRINT(scheme), host, SQUIDSBUFPRINT(url));
         debugs(33, 5, "ACCEL VHOST REWRITE: " << http->uri);
     } else if (conn->port->defaultsite /* && !vhost */) {
         debugs(33, 5, "ACCEL DEFAULTSITE REWRITE: defaultsite=" << conn->port->defaultsite << " + vport=" << vport);
@@ -1234,8 +1235,9 @@ prepareAcceleratedURL(ConnStateData * conn, ClientHttpRequest *http, const Http1
         if (vport > 0) {
             snprintf(vportStr, sizeof(vportStr),":%d",vport);
         }
-        snprintf(http->uri, url_sz, "%s://%s%s" SQUIDSBUFPH,
-                 AnyP::UriScheme(conn->transferProtocol.protocol).c_str(), conn->port->defaultsite, vportStr, SQUIDSBUFPRINT(url));
+        const SBuf &scheme = AnyP::UriScheme(conn->transferProtocol.protocol).image();
+        snprintf(http->uri, url_sz, SQUIDSBUFPH "://%s%s" SQUIDSBUFPH,
+                 SQUIDSBUFPRINT(scheme), conn->port->defaultsite, vportStr, SQUIDSBUFPRINT(url));
         debugs(33, 5, "ACCEL DEFAULTSITE REWRITE: " << http->uri);
     } else if (vport > 0 /* && (!vhost || no Host:) */) {
         debugs(33, 5, "ACCEL VPORT REWRITE: *_port IP + vport=" << vport);
@@ -1243,9 +1245,9 @@ prepareAcceleratedURL(ConnStateData * conn, ClientHttpRequest *http, const Http1
         const int url_sz = hp->requestUri().length() + 32 + Config.appendDomainLen;
         http->uri = (char *)xcalloc(url_sz, 1);
         http->getConn()->clientConnection->local.toHostStr(ipbuf,MAX_IPSTRLEN);
-        snprintf(http->uri, url_sz, "%s://%s:%d" SQUIDSBUFPH,
-                 AnyP::UriScheme(conn->transferProtocol.protocol).c_str(),
-                 ipbuf, vport, SQUIDSBUFPRINT(url));
+        const SBuf &scheme = AnyP::UriScheme(conn->transferProtocol.protocol).image();
+        snprintf(http->uri, url_sz, SQUIDSBUFPH "://%s:%d" SQUIDSBUFPH,
+                 SQUIDSBUFPRINT(scheme), ipbuf, vport, SQUIDSBUFPRINT(url));
         debugs(33, 5, "ACCEL VPORT REWRITE: " << http->uri);
     }
 }
@@ -1263,8 +1265,9 @@ prepareTransparentURL(ConnStateData * conn, ClientHttpRequest *http, const Http1
         const int url_sz = hp->requestUri().length() + 32 + Config.appendDomainLen +
                            strlen(host);
         http->uri = (char *)xcalloc(url_sz, 1);
-        snprintf(http->uri, url_sz, "%s://%s" SQUIDSBUFPH,
-                 AnyP::UriScheme(conn->transferProtocol.protocol).c_str(), host, SQUIDSBUFPRINT(hp->requestUri()));
+        const SBuf &scheme = AnyP::UriScheme(conn->transferProtocol.protocol).image();
+        snprintf(http->uri, url_sz, SQUIDSBUFPH "://%s" SQUIDSBUFPH,
+                 SQUIDSBUFPRINT(scheme), host, SQUIDSBUFPRINT(hp->requestUri()));
         debugs(33, 5, "TRANSPARENT HOST REWRITE: " << http->uri);
     } else {
         /* Put the local socket IP address as the hostname.  */
@@ -1272,8 +1275,9 @@ prepareTransparentURL(ConnStateData * conn, ClientHttpRequest *http, const Http1
         http->uri = (char *)xcalloc(url_sz, 1);
         static char ipbuf[MAX_IPSTRLEN];
         http->getConn()->clientConnection->local.toHostStr(ipbuf,MAX_IPSTRLEN);
-        snprintf(http->uri, url_sz, "%s://%s:%d" SQUIDSBUFPH,
-                 AnyP::UriScheme(http->getConn()->transferProtocol.protocol).c_str(),
+        const SBuf &scheme = AnyP::UriScheme(http->getConn()->transferProtocol.protocol).image();
+        snprintf(http->uri, url_sz, SQUIDSBUFPH "://%s:%d" SQUIDSBUFPH,
+                 SQUIDSBUFPRINT(scheme),
                  ipbuf, http->getConn()->clientConnection->local.port(), SQUIDSBUFPRINT(hp->requestUri()));
         debugs(33, 5, "TRANSPARENT REWRITE: " << http->uri);
     }
@@ -1310,10 +1314,14 @@ parseHttpRequest(ConnStateData *csd, const Http1::RequestParserPointer &hp)
         }
 
         if (!parsedOk) {
-            if (hp->parseStatusCode == Http::scRequestHeaderFieldsTooLarge || hp->parseStatusCode == Http::scUriTooLong)
-                return csd->abortRequestParsing("error:request-too-large");
-
-            return csd->abortRequestParsing("error:invalid-request");
+            const bool tooBig =
+                hp->parseStatusCode == Http::scRequestHeaderFieldsTooLarge ||
+                hp->parseStatusCode == Http::scUriTooLong;
+            auto result = csd->abortRequestParsing(
+                              tooBig ? "error:request-too-large" : "error:invalid-request");
+            // assume that remaining leftovers belong to this bad request
+            csd->consumeInput(csd->inBuf.length());
+            return result;
         }
     }
 
@@ -1680,7 +1688,7 @@ clientProcessRequest(ConnStateData *conn, const Http1::RequestParserPointer &hp,
             http->flags.internal = true;
         } else if (Config.onoff.global_internal_static && internalStaticCheck(request->url.path())) {
             debugs(33, 2, "internal URL found: " << request->url.getScheme() << "://" << request->url.authority(true) << " (global_internal_static on)");
-            request->url.setScheme(AnyP::PROTO_HTTP);
+            request->url.setScheme(AnyP::PROTO_HTTP, "http");
             request->url.host(internalHostname());
             request->url.port(getMyPort());
             http->flags.internal = true;
@@ -2978,10 +2986,14 @@ void ConnStateData::buildSslCertGenerationParams(Ssl::CertificateProperties &cer
 void
 ConnStateData::getSslContextStart()
 {
-    // XXX starting SSL with a pipeline of requests still waiting for non-SSL replies?
-    assert(pipeline.count() < 2); // the CONNECT is okay for now. Anything else is a bug.
-    pipeline.terminateAll(0);
-    /* careful: terminateAll(0) above frees request, host, etc. */
+    // If we are called, then CONNECT has succeeded. Finalize it.
+    if (auto xact = pipeline.front()) {
+        if (xact->http && xact->http->request && xact->http->request->method == Http::METHOD_CONNECT)
+            xact->finished();
+        // cannot proceed with encryption if requests wait for plain responses
+        Must(pipeline.empty());
+    }
+    /* careful: finished() above frees request, host, etc. */
 
     if (port->generateHostCertificates) {
         Ssl::CertificateProperties certProperties;
@@ -3446,7 +3458,7 @@ static void
 clientHttpConnectionsOpen(void)
 {
     for (AnyP::PortCfgPointer s = HttpPortList; s != NULL; s = s->next) {
-        const char *scheme = AnyP::UriScheme(s->transport.protocol).c_str();
+        const SBuf &scheme = AnyP::UriScheme(s->transport.protocol).image();
 
         if (MAXTCPLISTENPORTS == NHttpSockets) {
             debugs(1, DBG_IMPORTANT, "WARNING: You have too many '" << scheme << "_port' lines.");

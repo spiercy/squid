@@ -170,7 +170,7 @@ public:
         halfClosedReader = NULL;
         read_method = NULL;
         write_method = NULL;
-        ssl.resetWithoutLocking(nullptr);
+        ssl.reset();
         dynamicSslContext = NULL;
 #if _SQUID_WINDOWS_
         win32.handle = (long)NULL;

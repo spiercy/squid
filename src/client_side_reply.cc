@@ -1262,13 +1262,6 @@ clientReplyContext::replyStatus()
         debugs(88, 5, "clientReplyStatus: transfer is DONE: " << done << flags.complete);
         /* Ok we're finished, but how? */
 
-        const int64_t expectedBodySize =
-            http->storeEntry()->getReply()->bodySize(http->request->method);
-        if (!http->request->flags.proxyKeepalive && expectedBodySize < 0) {
-            debugs(88, 5, "clientReplyStatus: closing, content_length < 0");
-            return STREAM_FAILED;
-        }
-
         if (EBIT_TEST(http->storeEntry()->flags, ENTRY_BAD_LENGTH)) {
             debugs(88, 5, "clientReplyStatus: truncated response body");
             return STREAM_UNPLANNED_COMPLETE;
@@ -1279,6 +1272,8 @@ clientReplyContext::replyStatus()
             return STREAM_FAILED;
         }
 
+        const int64_t expectedBodySize =
+            http->storeEntry()->getReply()->bodySize(http->request->method);
         if (expectedBodySize >= 0 && !http->gotEnough()) {
             debugs(88, 5, "clientReplyStatus: client didn't get all it expected");
             return STREAM_UNPLANNED_COMPLETE;
@@ -1359,8 +1354,14 @@ clientReplyContext::buildReplyHeader()
 
     // if there is not configured a peer proxy with login=PASS or login=PASSTHRU option enabled
     // remove the Proxy-Authenticate header
-    if ( !request->peer_login || (strcmp(request->peer_login,"PASS") != 0 && strcmp(request->peer_login,"PASSTHRU") != 0))
-        reply->header.delById(Http::HdrType::PROXY_AUTHENTICATE);
+    if ( !request->peer_login || (strcmp(request->peer_login,"PASS") != 0 && strcmp(request->peer_login,"PASSTHRU") != 0)) {
+#if USE_ADAPTATION
+        // but allow adaptation services to authenticate clients
+        // via request satisfaction
+        if (!http->requestSatisfactionMode())
+#endif
+            reply->header.delById(Http::HdrType::PROXY_AUTHENTICATE);
+    }
 
     reply->header.removeHopByHopEntries();
 
@@ -2253,7 +2254,7 @@ clientReplyContext::createStoreEntry(const HttpRequestMethod& m, RequestFlags re
      */
 
     if (http->request == NULL) {
-        http->request = new HttpRequest(m, AnyP::PROTO_NONE, null_string);
+        http->request = new HttpRequest(m, AnyP::PROTO_NONE, "http", null_string);
         HTTPMSGLOCK(http->request);
     }
 
