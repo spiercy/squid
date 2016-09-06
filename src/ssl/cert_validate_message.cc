@@ -201,6 +201,7 @@ Ssl::CertValidationResponse::RecvdError::RecvdError(const RecvdError &old)
     error_no = old.error_no;
     error_reason = old.error_reason;
     setCert(old.cert.get());
+    error_depth = old.error_depth;
 }
 
 Ssl::CertValidationResponse::RecvdError & Ssl::CertValidationResponse::RecvdError::operator = (const RecvdError &old)
@@ -209,6 +210,7 @@ Ssl::CertValidationResponse::RecvdError & Ssl::CertValidationResponse::RecvdErro
     error_no = old.error_no;
     error_reason = old.error_reason;
     setCert(old.cert.get());
+    error_depth = old.error_depth;
     return *this;
 }
 
