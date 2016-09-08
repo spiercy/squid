@@ -18,6 +18,8 @@
 #include "dlink.h"
 #include "helper/ChildConfig.h"
 #include "helper/forward.h"
+#include "helper/Request.h"
+#include "helper/Reply.h"
 #include "ip/Address.h"
 
 class helper
@@ -71,6 +73,20 @@ public:
 private:
     CBDATA_CLASS2(statefulhelper);
 };
+
+namespace Helper
+{
+/// Holds the  required data to serve a helper request.
+class Xaction {
+public:
+    Xaction(HLPCB *c, void *d, const char *b): request(c, d, b) {}
+    Helper::Request request;
+    Helper::Reply reply;
+
+    MEMPROXY_CLASS(Helper::Xaction);
+};
+MEMPROXY_CLASS_INLINE(Helper::Xaction);
+}
 
 /**
  * Fields shared between stateless and stateful helper servers.
@@ -137,7 +153,16 @@ public:
     MemBuf *writebuf;
 
     helper *parent;
-    Helper::Request **requests;
+    Helper::Xaction **requests;
+
+    /// The helper request Xaction object for the current reply .
+    /// A helper reply may be distributed to more than one of the retrieved
+    /// packets from helper. This member stores the Xaction object as long as
+    /// the end-of-message for current reply is not retrieved.
+    Helper::Xaction *replyXaction;
+
+    /// Whether to ignore current message
+    bool ignoreToEom;
 
 private:
     CBDATA_CLASS2(helper_server);
@@ -150,7 +175,7 @@ public:
     /* MemBuf writebuf; */
 
     statefulhelper *parent;
-    Helper::Request *request;
+    Helper::Xaction *request;
 
     void *data;         /* State data used by the calling routines */
 

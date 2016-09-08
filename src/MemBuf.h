@@ -87,7 +87,7 @@ public:
     void reset();
 
     /** unfirtunate hack to test if the buffer has been Init()ialized */
-    int isNull();
+    int isNull() const;
 
     /**
      * calls snprintf, extends buffer if needed

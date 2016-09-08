@@ -227,6 +227,9 @@ sslCrtvdHandleReplyWrapper(void *data, const ::Helper::Reply &reply)
     if (reply.result == ::Helper::BrokenHelper) {
         debugs(83, DBG_IMPORTANT, "\"ssl_crtvd\" helper error response: " << reply.other().content());
         validationResponse->resultCode = ::Helper::BrokenHelper;
+    } else if (!reply.other().hasContent()) {
+        debugs(83, DBG_IMPORTANT, "\"ssl_crtvd\" helper returned NULL response");
+        validationResponse->resultCode = ::Helper::BrokenHelper;
     } else if (replyMsg.parse(reply.other().content(), reply.other().contentSize()) != Ssl::CrtdMessage::OK ||
                !replyMsg.parseResponse(*validationResponse, peerCerts, error) ) {
         debugs(83, DBG_IMPORTANT, "WARNING: Reply from ssl_crtvd for " << " is incorrect");
