@@ -9,6 +9,7 @@
 #ifndef SQUID_SRC_SECURITY_FORWARD_H
 #define SQUID_SRC_SECURITY_FORWARD_H
 
+#include "base/CbDataList.h"
 #include "security/Context.h"
 #include "security/Session.h"
 
@@ -18,6 +19,7 @@
 #endif
 #endif
 #include <list>
+#include <unordered_set>
 
 #if USE_OPENSSL
 // Macro to be used to define the C++ wrapper functor of the sk_*_pop_free
@@ -41,6 +43,10 @@
 /// Network/connection security abstraction layer
 namespace Security
 {
+
+class CertError;
+/// Holds a list of X.509 certificate errors
+typedef CbDataList<Security::CertError> CertErrors;
 
 #if USE_OPENSSL
 CtoCpp1(X509_free, X509 *)
@@ -74,6 +80,14 @@ typedef void *DhePointer;
 #endif
 
 class EncryptorAnswer;
+
+/// Squid defined error code (<0), an error code returned by X.509 API, or SSL_ERROR_NONE
+typedef int ErrorCode;
+
+/// set of Squid defined TLS error codes
+/// \note using std::unordered_set ensures values are unique, with fast lookup
+typedef std::unordered_set<Security::ErrorCode> Errors;
+
 class KeyData;
 class PeerConnector;
 class PeerOptions;

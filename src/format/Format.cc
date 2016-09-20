@@ -21,6 +21,7 @@
 #include "HttpRequest.h"
 #include "MemBuf.h"
 #include "rfc1738.h"
+#include "security/CertError.h"
 #include "security/NegotiationHistory.h"
 #include "SquidTime.h"
 #include "Store.h"
@@ -322,12 +323,44 @@ log_quoted_string(const char *str, char *out)
 
 #if USE_OPENSSL
 static char *
-sslErrorName(Ssl::ssl_error_t err, char *buf, size_t size)
+sslErrorName(Security::ErrorCode err, char *buf, size_t size)
 {
     snprintf(buf, size, "SSL_ERR=%d", err);
     return buf;
 }
 #endif
+
+/// XXX: Misnamed. TODO: Split <h (and this function) to distinguish received
+/// headers from sent headers rather than failing to distinguish requests from responses.
+/// \retval HttpReply sent to the HTTP client (access.log and default context).
+/// \retval HttpReply received (encapsulated) from the ICAP server (icap.log context).
+/// \retval HttpRequest received (encapsulated) from the ICAP server (icap.log context).
+static const HttpMsg *
+actualReplyHeader(const AccessLogEntry::Pointer &al)
+{
+    const HttpMsg *msg = al->reply;
+#if USE_ADAPTATION
+    // al->icap.reqMethod is methodNone in access.log context
+    if (!msg && al->icap.reqMethod == Adaptation::methodReqmod)
+        msg = al->adapted_request;
+#endif
+    return msg;
+}
+
+/// XXX: Misnamed. See actualReplyHeader().
+/// \return HttpRequest or HttpReply for %http::>h.
+static const HttpMsg *
+actualRequestHeader(const AccessLogEntry::Pointer &al)
+{
+#if USE_ADAPTATION
+    // al->icap.reqMethod is methodNone in access.log context
+    if (al->icap.reqMethod == Adaptation::methodRespmod) {
+        // XXX: for now AccessLogEntry lacks virgin response headers
+        return nullptr;
+    }
+#endif
+    return al->request;
+}
 
 void
 Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logSequenceNumber) const
@@ -592,9 +625,8 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             break;
 
         case LFT_REQUEST_HEADER:
-
-            if (al->request)
-                sb = al->request->header.getByName(fmt->data.header.header);
+            if (const HttpMsg *msg = actualRequestHeader(al))
+                sb = msg->header.getByName(fmt->data.header.header);
 
             out = sb.termedBuf();
 
@@ -613,15 +645,15 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
 
             break;
 
-        case LFT_REPLY_HEADER:
-            if (al->reply)
-                sb = al->reply->header.getByName(fmt->data.header.header);
+        case LFT_REPLY_HEADER: {
+            if (const HttpMsg *msg = actualReplyHeader(al))
+                sb = msg->header.getByName(fmt->data.header.header);
 
             out = sb.termedBuf();
 
             quote = 1;
-
-            break;
+        }
+        break;
 
 #if USE_ADAPTATION
         case LFT_ADAPTATION_SUM_XACT_TIMES:
@@ -803,8 +835,8 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             break;
 #endif
         case LFT_REQUEST_HEADER_ELEM:
-            if (al->request)
-                sb = al->request->header.getByNameListMember(fmt->data.header.header, fmt->data.header.element, fmt->data.header.separator);
+            if (const HttpMsg *msg = actualRequestHeader(al))
+                sb = msg->header.getByNameListMember(fmt->data.header.header, fmt->data.header.element, fmt->data.header.separator);
 
             out = sb.termedBuf();
 
@@ -822,18 +854,27 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
 
             break;
 
-        case LFT_REPLY_HEADER_ELEM:
-            if (al->reply)
-                sb = al->reply->header.getByNameListMember(fmt->data.header.header, fmt->data.header.element, fmt->data.header.separator);
+        case LFT_REPLY_HEADER_ELEM: {
+            if (const HttpMsg *msg = actualReplyHeader(al))
+                sb = msg->header.getByNameListMember(fmt->data.header.header, fmt->data.header.element, fmt->data.header.separator);
 
             out = sb.termedBuf();
 
             quote = 1;
-
-            break;
+        }
+        break;
 
         case LFT_REQUEST_ALL_HEADERS:
-            out = al->headers.request;
+#if USE_ADAPTATION
+            if (al->icap.reqMethod == Adaptation::methodRespmod) {
+                // XXX: since AccessLogEntry::Headers lacks virgin response
+                // headers, do nothing for now
+                out = nullptr;
+            } else
+#endif
+            {
+                out = al->headers.request;
+            }
 
             quote = 1;
 
@@ -848,6 +889,10 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
 
         case LFT_REPLY_ALL_HEADERS:
             out = al->headers.reply;
+#if USE_ADAPTATION
+            if (!out && al->icap.reqMethod == Adaptation::methodReqmod)
+                out = al->headers.adapted_request;
+#endif
 
             quote = 1;
 
@@ -1261,7 +1306,7 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             if (al->request && al->request->clientConnectionManager.valid()) {
                 if (Ssl::ServerBump * srvBump = al->request->clientConnectionManager->serverBump()) {
                     const char *separator = fmt->data.string ? fmt->data.string : ":";
-                    for (Ssl::CertErrors const *sslError = srvBump->sslErrors(); sslError != NULL;  sslError = sslError->next) {
+                    for (const Security::CertErrors *sslError = srvBump->sslErrors(); sslError != nullptr; sslError = sslError->next) {
                         if (sb.size())
                             sb.append(separator);
                         if (const char *errorName = Ssl::GetErrorName(sslError->element.code))

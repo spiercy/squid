@@ -27,7 +27,7 @@ class CertValidationRequest
 {
 public:
     SSL *ssl;
-    CertErrors *errors; ///< The list of errors detected
+    Security::CertErrors *errors; ///< The list of errors detected
     std::string domainName; ///< The server name
     CertValidationRequest() : ssl(NULL), errors(NULL) {}
 };
@@ -53,7 +53,7 @@ public:
         RecvdError & operator =(const RecvdError &);
         void setCert(X509 *);  ///< Sets cert to the given certificate
         int id; ///<  The id of the error
-        ssl_error_t error_no; ///< The OpenSSL error code
+        Security::ErrorCode error_no; ///< The OpenSSL error code
         std::string error_reason; ///< A string describing the error
         Security::CertPointer cert; ///< The broken certificate
         int error_depth; ///< The error depth

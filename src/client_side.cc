@@ -363,8 +363,6 @@ prepareLogWithRequestDetails(HttpRequest * request, AccessLogEntry::Pointer &aLo
     aLogEntry->http.method = request->method;
     aLogEntry->http.version = request->http_ver;
     aLogEntry->hier = request->hier;
-    if (request->content_length > 0) // negative when no body or unknown length
-        aLogEntry->http.clientRequestSz.payloadData += request->content_length; // XXX: actually adaptedRequest payload size ??
     aLogEntry->cache.extuser = request->extacl_user.termedBuf();
 
     // Adapted request, if any, inherits and then collects all the stats, but
@@ -401,6 +399,9 @@ ClientHttpRequest::logRequest()
         al->cache.objectSize = loggingEntry()->contentLen(); // payload duplicate ?? with or without TE ?
 
     al->http.clientRequestSz.header = req_sz;
+    // the virgin request is saved to al->request
+    if (al->request && al->request->body_pipe)
+        al->http.clientRequestSz.payloadData = al->request->body_pipe->producedSize();
     al->http.clientReplySz.header = out.headers_sz;
     // XXX: calculate without payload encoding or headers !!
     al->http.clientReplySz.payloadData = out.size - out.headers_sz; // pretend its all un-encoded data for now.
@@ -588,7 +589,6 @@ ConnStateData::swanSong()
     checkLogging();
 
     flags.readMore = false;
-    DeregisterRunner(this);
     clientdbEstablished(clientConnection->remote, -1);  /* decrement */
     pipeline.terminateAll(0);
 
@@ -1044,10 +1044,6 @@ ConnStateData::endingShutdown()
     // swanSong() in the close handler will cleanup.
     if (Comm::IsConnOpen(clientConnection))
         clientConnection->close();
-
-    // deregister now to ensure finalShutdown() does not kill us prematurely.
-    // fd_table purge will cleanup if close handler was not fast enough.
-    DeregisterRunner(this);
 }
 
 char *
@@ -1514,16 +1510,16 @@ bool ConnStateData::serveDelayedError(Http::Stream *context)
     // In bump-server-first mode, we have not necessarily seen the intended
     // server name at certificate-peeking time. Check for domain mismatch now,
     // when we can extract the intended name from the bumped HTTP request.
-    if (X509 *srvCert = sslServerBump->serverCert.get()) {
+    if (const Security::CertPointer &srvCert = sslServerBump->serverCert) {
         HttpRequest *request = http->request;
-        if (!Ssl::checkX509ServerValidity(srvCert, request->url.host())) {
+        if (!Ssl::checkX509ServerValidity(srvCert.get(), request->url.host())) {
             debugs(33, 2, "SQUID_X509_V_ERR_DOMAIN_MISMATCH: Certificate " <<
                    "does not match domainname " << request->url.host());
 
             bool allowDomainMismatch = false;
             if (Config.ssl_client.cert_error) {
                 ACLFilledChecklist check(Config.ssl_client.cert_error, request, dash_str);
-                check.sslErrors = new Ssl::CertErrors(Ssl::CertError(SQUID_X509_V_ERR_DOMAIN_MISMATCH, srvCert));
+                check.sslErrors = new Security::CertErrors(Security::CertError(SQUID_X509_V_ERR_DOMAIN_MISMATCH, srvCert));
                 allowDomainMismatch = (check.fastCheck() == ACCESS_ALLOWED);
                 delete check.sslErrors;
                 check.sslErrors = NULL;
@@ -1545,7 +1541,7 @@ bool ConnStateData::serveDelayedError(Http::Stream *context)
                 err->src_addr = clientConnection->remote;
                 Ssl::ErrorDetail *errDetail = new Ssl::ErrorDetail(
                     SQUID_X509_V_ERR_DOMAIN_MISMATCH,
-                    srvCert, NULL);
+                    srvCert.get(), nullptr);
                 err->detail = errDetail;
                 // Save the original request for logging purposes.
                 if (!context->http->al->request) {
@@ -2454,7 +2450,7 @@ ConnStateData::ConnStateData(const MasterXaction::Pointer &xact) :
 
     // register to receive notice of Squid signal events
     // which may affect long persisting client connections
-    RegisterRunner(this);
+    registerRunner();
 }
 
 void
@@ -2664,7 +2660,7 @@ clientNegotiateSSL(int fd, void *data)
         return;
     }
 
-    if (SSL_session_reused(ssl)) {
+    if (Security::SessionIsResumed(fd_table[fd].ssl)) {
         debugs(83, 2, "clientNegotiateSSL: Session " << SSL_get_session(ssl) <<
                " reused on FD " << fd << " (" << fd_table[fd].ipaddr << ":" << (int)fd_table[fd].remote_port << ")");
     } else {

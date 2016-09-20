@@ -69,11 +69,6 @@ namespace Ssl
 /// call before generating any SSL context
 void Initialize();
 
-/// Squid defined error code (<0),  an error code returned by SSL X509 api, or SSL_ERROR_NONE
-typedef int ssl_error_t;
-
-typedef CbDataList<Ssl::ssl_error_t> Errors;
-
 class ErrorDetail;
 class CertValidationResponse;
 typedef RefCount<CertValidationResponse> CertValidationResponsePointer;
@@ -85,29 +80,6 @@ bool CreateClient(Security::ContextPtr sslContext, const Comm::ConnectionPointer
 /// Creates SSL Server connection structure and initializes SSL I/O (Comm and BIO).
 /// On errors, emits DBG_IMPORTANT with details and returns false.
 bool CreateServer(Security::ContextPtr sslContext, const Comm::ConnectionPointer &, const char *squidCtx);
-
-/// An SSL certificate-related error.
-/// Pairs an error code with the certificate experiencing the error.
-class CertError
-{
-public:
-    ssl_error_t code; ///< certificate error code
-    Security::CertPointer cert; ///< certificate with the above error code
-    /**
-     * Absolute cert position in the final certificate chain that may include
-     * intermediate certificates. Chain positions start with zero and increase
-     * towards the root certificate. Negative if unknown.
-     */
-    int depth;
-    CertError(ssl_error_t anErr, X509 *aCert, int depth = -1);
-    CertError(CertError const &err);
-    CertError & operator = (const CertError &old);
-    bool operator == (const CertError &ce) const;
-    bool operator != (const CertError &ce) const;
-};
-
-/// Holds a list of certificate SSL errors
-typedef CbDataList<Ssl::CertError> CertErrors;
 
 void SetSessionCallbacks(Security::ContextPtr);
 extern Ipc::MemMap *SessionCache;
