@@ -186,13 +186,8 @@ refreshStaleness(const StoreEntry * entry, time_t check_time, const time_t age, 
     }
 
     // 3. If there is a Last-Modified header, try the last-modified factor algorithm.
-    if (entry->lastmod > -1 && entry->timestamp > entry->lastmod) {
-
-        /* lastmod_delta is the difference between the last-modified date of the response
-         * and the time we cached it. It's how "old" the response was when we got it.
-         */
-        time_t lastmod_delta = entry->timestamp - entry->lastmod;
-
+    const time_t lastmod_delta = entry->timestamp - entry->lastModified();
+    if (lastmod_delta > 0) {
         /* stale_age is the age of the response when it became/becomes stale according to
          * the last-modified factor algorithm. It's how long we can consider the response
          * fresh from the time we cached it.
@@ -356,12 +351,15 @@ refreshCheck(const StoreEntry * entry, HttpRequest * request, time_t delta)
      *   Cache-Control: proxy-revalidate
      * the spec says the response must always be revalidated if stale.
      */
-    if (EBIT_TEST(entry->flags, ENTRY_REVALIDATE) && staleness > -1
+    const bool revalidateAlways = EBIT_TEST(entry->flags, ENTRY_REVALIDATE_ALWAYS);
+    bool revalidateStale = staleness > -1 && EBIT_TEST(entry->flags, ENTRY_REVALIDATE_STALE);
 #if USE_HTTP_VIOLATIONS
-            && !R->flags.ignore_must_revalidate
+    revalidateStale = revalidateStale && !R->flags.ignore_must_revalidate;
 #endif
-       ) {
-        debugs(22, 3, "YES: Must revalidate stale object (origin set must-revalidate or proxy-revalidate)");
+    if (revalidateAlways || revalidateStale) {
+        debugs(22, 3, "YES: Must revalidate stale object (origin set " <<
+               (revalidateAlways ? "no-cache or private" :
+                "must-revalidate, proxy-revalidate or s-maxage") << ")");
         if (request)
             request->flags.failOnValidationError = true;
         return STALE_MUST_REVALIDATE;
@@ -550,8 +548,8 @@ refreshIsCachable(const StoreEntry * entry)
         /* Does not need refresh. This is certainly cachable */
         return true;
 
-    if (entry->lastmod < 0)
-        /* Last modified is needed to do a refresh */
+    if (entry->lastModified() < 0)
+        /* We should know entry's modification time to do a refresh */
         return false;
 
     if (entry->mem_obj == NULL)

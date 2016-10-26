@@ -1237,7 +1237,7 @@ clientIfRangeMatch(ClientHttpRequest * http, HttpReply * rep)
 
     /* got modification time? */
     if (spec.time >= 0) {
-        return http->storeEntry()->lastmod <= spec.time;
+        return !http->storeEntry()->modifiedSince(spec.time);
     }
 
     assert(0);          /* should not happen */
@@ -2352,26 +2352,24 @@ parseHttpRequest(ConnStateData *csd, HttpParser *hp, HttpRequestMethod * method_
     return result;
 }
 
-bool
+/// Prepare inBuf for I/O. This method balances several conflicting desires:
+/// 1. Do not read too few bytes at a time.
+/// 2. Do not waste too much buffer space.
+/// 3. Do not [re]allocate or memmove the buffer too much.
+/// 4. Obey Config.maxRequestBufferSize limit.
+void
 ConnStateData::In::maybeMakeSpaceAvailable()
 {
-    if (buf.spaceSize() < 2) {
-        const SBuf::size_type haveCapacity = buf.length() + buf.spaceSize();
-        if (haveCapacity >= Config.maxRequestBufferSize) {
-            debugs(33, 4, "request buffer full: client_request_buffer_max_size=" << Config.maxRequestBufferSize);
-            return false;
-        }
-        if (haveCapacity == 0) {
-            // haveCapacity is based on the SBuf visible window of the MemBlob buffer, which may fill up.
-            // at which point bump the buffer back to default. This allocates a new MemBlob with any un-parsed bytes.
-            buf.reserveCapacity(CLIENT_REQ_BUF_SZ);
-        } else {
-            const SBuf::size_type wantCapacity = min(static_cast<SBuf::size_type>(Config.maxRequestBufferSize), haveCapacity*2);
-            buf.reserveCapacity(wantCapacity);
-        }
-        debugs(33, 2, "growing request buffer: available=" << buf.spaceSize() << " used=" << buf.length());
-    }
-    return (buf.spaceSize() >= 2);
+    // The hard-coded parameters are arbitrary but seem reasonable.
+    // A careful study of Squid I/O and parsing patterns is needed to tune them.
+    SBufReservationRequirements requirements;
+    requirements.minSpace = 1024; // smaller I/Os are not worth their overhead
+    requirements.idealSpace = CLIENT_REQ_BUF_SZ; // we expect few larger I/Os
+    requirements.maxCapacity = Config.maxRequestBufferSize;
+    requirements.allowShared = true; // allow because inBuf is used immediately
+    buf.reserve(requirements);
+    if (!buf.spaceSize())
+        debugs(33, 4, "request buffer full: client_request_buffer_max_size=" << Config.maxRequestBufferSize);
 }
 
 void
@@ -2661,6 +2659,20 @@ clientProcessRequest(ConnStateData *conn, HttpParser *hp, ClientSocketContext *c
             connNoteUseOfBuffer(conn, http->req_sz);
             clientProcessRequestFinished(conn, request);
             return;
+        }
+
+        // when absolute-URI is provided Host header should be ignored. However
+        // some code still uses Host directly so normalize it.
+        // For now preserve the case where Host is completely absent. That matters.
+        if (request->header.has(HDR_HOST)) {
+            const char *host = request->header.getStr(HDR_HOST);
+            SBuf authority(request->GetHost());
+            if (request->port != urlDefaultPort(request->url.getScheme()))
+                authority.appendf(":%d", request->port);
+            debugs(33, 5, "URL domain " << authority << " overrides header Host: " << host);
+            // URL authority overrides Host header
+            request->header.delById(HDR_HOST);
+            request->header.putStr(HDR_HOST, authority.c_str());
         }
     }
 
@@ -3766,7 +3778,7 @@ clientNegotiateSSL(int fd, void *data)
         debugs(83, 2, "clientNegotiateSSL: Session " << SSL_get_session(ssl) <<
                " reused on FD " << fd << " (" << fd_table[fd].ipaddr << ":" << (int)fd_table[fd].remote_port << ")");
     } else {
-        if (do_debug(83, 4)) {
+        if (Debug::Enabled(83, 4)) {
             /* Write out the SSL session details.. actually the call below, but
              * OpenSSL headers do strange typecasts confusing GCC.. */
             /* PEM_write_SSL_SESSION(debug_log, SSL_get_session(ssl)); */

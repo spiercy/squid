@@ -141,16 +141,18 @@ ClientHttpRequest::ClientHttpRequest(ConnStateData * aConn) :
     setConn(aConn);
     al = new AccessLogEntry;
     al->cache.start_time = current_time;
-    al->tcpClient = clientConnection = aConn->clientConnection;
-    al->cache.port = aConn->port;
-    al->cache.caddr = aConn->log_addr;
+    if (aConn) {
+        al->tcpClient = clientConnection = aConn->clientConnection;
+        al->cache.port = aConn->port;
+        al->cache.caddr = aConn->log_addr;
 
 #if USE_OPENSSL
-    if (aConn->clientConnection != NULL && aConn->clientConnection->isOpen()) {
-        if (SSL *ssl = fd_table[aConn->clientConnection->fd].ssl)
-            al->cache.sslClientCert.reset(SSL_get_peer_certificate(ssl));
-    }
+        if (aConn->clientConnection != NULL && aConn->clientConnection->isOpen()) {
+            if (SSL *ssl = fd_table[aConn->clientConnection->fd].ssl)
+                al->cache.sslClientCert.reset(SSL_get_peer_certificate(ssl));
+        }
 #endif
+    }
     dlinkAdd(this, &active, &ClientActiveRequests);
 #if USE_ADAPTATION
     request_satisfaction_mode = false;
@@ -334,7 +336,7 @@ clientBeginRequest(const HttpRequestMethod& method, char const *url, CSCB * stre
      * correctness.
      */
     if (header)
-        request->header.update(header, NULL);
+        request->header.update(header);
 
     http->log_uri = xstrdup(urlCanonicalClean(request));
 
@@ -1807,7 +1809,7 @@ ClientHttpRequest::doCallouts()
             repContext->setReplyToStoreEntry(e, "immediate SslBump error");
             errorAppendEntry(e, calloutContext->error);
             calloutContext->error = NULL;
-            if (calloutContext->readNextRequest)
+            if (calloutContext->readNextRequest && getConn())
                 getConn()->flags.readMore = true; // resume any pipeline reads.
             node = (clientStreamNode *)client_stream.tail->data;
             clientStreamRead(node, this, node->readBuffer);

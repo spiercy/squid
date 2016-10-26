@@ -1259,8 +1259,8 @@ void prepareLogWithRequestDetails(HttpRequest *, AccessLogEntry::Pointer &);
 
 void Adaptation::Icap::ModXact::finalizeLogInfo()
 {
-    HttpRequest *adapted_request_ = nullptr;
-    HttpReply *adapted_reply_ = nullptr;
+    HttpRequest *adapted_request_ = NULL;
+    HttpReply *adapted_reply_ = NULL;
     HttpRequest *virgin_request_ = const_cast<HttpRequest*>(&virginRequest());
     if (!(adapted_request_ = dynamic_cast<HttpRequest*>(adapted.header))) {
         // if the request was not adapted, use virgin request to simplify

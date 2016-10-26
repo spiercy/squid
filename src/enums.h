@@ -95,11 +95,11 @@ typedef enum {
  */
 enum {
     ENTRY_SPECIAL,
-    ENTRY_REVALIDATE,
+    ENTRY_REVALIDATE_ALWAYS,
     DELAY_SENDING,
     RELEASE_REQUEST,
     REFRESH_REQUEST,
-    ENTRY_CACHABLE_RESERVED_FOR_FUTURE_USE,
+    ENTRY_REVALIDATE_STALE,
     ENTRY_DISPATCHED,
     KEY_PRIVATE,
     ENTRY_FWD_HDR_WAIT,
@@ -170,7 +170,6 @@ typedef enum {
     MEM_DONTFREE,
     // following pools are initialized late by their component if needed (or never)
     MEM_FQDNCACHE_ENTRY,
-    MEM_FWD_SERVER,
     MEM_IDNS_QUERY,
     MEM_IPCACHE_ENTRY,
     MEM_MAX

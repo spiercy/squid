@@ -335,7 +335,7 @@ actualRequestHeader(const AccessLogEntry::Pointer &al)
     // al->icap.reqMethod is methodNone in access.log context
     if (al->icap.reqMethod == Adaptation::methodRespmod) {
         // XXX: for now AccessLogEntry lacks virgin response headers
-        return nullptr;
+        return NULL;
     }
 #endif
     return al->request;
@@ -823,7 +823,7 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             if (al->icap.reqMethod == Adaptation::methodRespmod) {
                 // XXX: since AccessLogEntry::Headers lacks virgin response
                 // headers, do nothing for now
-                out = nullptr;
+                out = NULL;
             } else
 #endif
             {

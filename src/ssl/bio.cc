@@ -800,17 +800,17 @@ Ssl::Bio::sslFeatures::parseMsgHead(const MemBuf &buf)
     int currentPos = 0;
     do {
         const unsigned char *currentRecord = head + currentPos;
-        // Check for Alert Protocol records before hello mesage. RFC5246 section-7.2
+        // Check for Alert Protocol records before hello message. RFC5246 section-7.2
         if (currentRecord[0] == 0x15) {
             int recordSize = (currentRecord[3] << 8) + currentRecord[4];
             // We need at least 5 bytes for each record.
-            if ((currentPos + recordSize + 5) > headSize )
+            if ((currentPos + recordSize + 5) > headSize)
                 return 0; // Not enough bytes;
             // Check for fatal Alert and abort if found
             if (currentRecord[5] > 1)
                 return -1;
             currentPos += recordSize + 5;
-        } else if (currentRecord[0] == 0x16) { 
+        } else if (currentRecord[0] == 0x16) {
             // SSLPlaintext/TLSPlaintext record
             // RFC6101 section 5.2.1, RFC5246 section 6.2.1
             debugs(83, 7, "SSL version 3 handshake message");

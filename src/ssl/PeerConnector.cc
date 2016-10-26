@@ -605,7 +605,7 @@ Ssl::PeerConnector::handleNegotiateError(const int ret)
 
     case SSL_ERROR_WANT_WRITE:
         if ((srvBio->bumpMode() == Ssl::bumpPeek || srvBio->bumpMode() == Ssl::bumpStare) && srvBio->holdWrite()) {
-            debugs(81, DBG_IMPORTANT, "hold write on SSL connection on FD " << fd);
+            debugs(81, 3, "hold write on SSL connection on FD " << fd);
             checkForPeekAndSplice();
             return;
         }
@@ -781,7 +781,7 @@ Ssl::PeerConnector::status() const
     }
     if (serverConn != NULL)
         buf.Printf(" FD %d", serverConn->fd);
-    buf.Printf(" %s%u]", id.Prefix, id.value);
+    buf.Printf(" %s%u]", id.prefix(), id.value);
     buf.terminate();
 
     return buf.content();
