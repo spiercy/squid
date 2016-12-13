@@ -1648,7 +1648,7 @@ parse_delay_pool_access(DelayConfig * cfg)
 static void
 free_client_delay_pool_count(ClientDelayConfig * cfg)
 {
-    cfg->freePoolCount();
+    cfg->freePools();
 }
 
 static void
@@ -1680,9 +1680,14 @@ parse_client_delay_pool_access(ClientDelayConfig * cfg)
 #include "MessageDelayPools.h"
 
 #define free_response_delay_pool_access(X)
-#define free_response_delay_pool_parameters(X)
 #define dump_response_delay_pool_access(X, Y, Z)
 #define dump_response_delay_pool_parameters(X, Y, Z)
+
+static void
+free_response_delay_pool_parameters(MessageDelayConfig * cfg)
+{
+    cfg->freePools();
+}
 
 static void
 parse_response_delay_pool_parameters(MessageDelayConfig * cfg)

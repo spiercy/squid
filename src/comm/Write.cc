@@ -71,55 +71,13 @@ Comm::HandleWrite(int fd, void *data)
     nleft = state->size - state->offset;
 
 #if USE_DELAY_POOLS
-    MessageBucket *quotaHandler = fd_table[fd].writeQuotaHandler.getRaw();
-    //XXX: Call BandwidthBucket::quota() instead of this and clientInfo quota calculation code
-    if (quotaHandler) {
-        assert(quotaHandler->selectWaiting);
-        quotaHandler->selectWaiting = false;
-        if (nleft > 0) {
-            const int quota = quotaHandler->quota();
-            if (!quota) {
-                PROF_stop(commHandleWrite);
-                return;
-            }
-            const int nleft_corrected = min(nleft, quota);
-            if (nleft != nleft_corrected) {
-                debugs(5, 5, HERE << state->conn << " MessageBucket limits to " <<
-                       nleft_corrected << " out of " << nleft);
-                nleft = nleft_corrected;
-            }
-        }
-    }
-
-    ClientInfo * clientInfo=fd_table[fd].clientInfo;
-
-    if ((clientInfo && !clientInfo->writeLimitingActive) || quotaHandler)
-        clientInfo = NULL; // we only care about quota limits here
-
-    if (clientInfo) {
-        assert(clientInfo->selectWaiting);
-        clientInfo->selectWaiting = false;
-
-        assert(clientInfo->hasQueue());
-        assert(clientInfo->quotaPeekFd() == fd);
-        clientInfo->quotaDequeue(); // we will write or requeue below
-
-        if (nleft > 0) {
-            const int quota = clientInfo->quotaForDequed();
-            if (!quota) {  // if no write quota left, queue this fd
-                state->quotaQueueReserv = clientInfo->quotaEnqueue(fd);
-                clientInfo->kickQuotaQueue();
-                PROF_stop(commHandleWrite);
-                return;
-            }
-
-            const int nleft_corrected = min(nleft, quota);
-            if (nleft != nleft_corrected) {
-                debugs(5, 5, HERE << state->conn << " writes only " <<
-                       nleft_corrected << " out of " << nleft);
-                nleft = nleft_corrected;
-            }
-
+    BandwidthBucket *bucket = BandwidthBucket::SelectBucket(&fd_table[fd]);
+    if (bucket) {
+        assert(bucket->selectWaiting);
+        bucket->selectWaiting = false;
+        if (nleft > 0 && !bucket->applyQuota(nleft, state)) {
+            PROF_stop(commHandleWrite);
+            return;
         }
     }
 #endif /* USE_DELAY_POOLS */
@@ -131,22 +89,10 @@ Comm::HandleWrite(int fd, void *data)
     debugs(5, 5, HERE << "write() returns " << len);
 
 #if USE_DELAY_POOLS
-    if (clientInfo) {
-        if (len > 0) {
-            /* we wrote data - drain them from bucket */
-            clientInfo->bucketSize -= len;
-            if (clientInfo->bucketSize < 0.0) {
-                debugs(5, DBG_IMPORTANT, HERE << "drained too much"); // should not happen
-                clientInfo->bucketSize = 0;
-            }
-        }
-
-        // even if we wrote nothing, we were served; give others a chance
-        clientInfo->kickQuotaQueue();
+    if (bucket) {
+        /* we wrote data - drain them from bucket */
+        bucket->reduceBucket(len);
     }
-    /// XXX: Call BandwidthBucket::reduceBucket(len) insead of this and ClientInfo code
-    if (quotaHandler && len > 0)
-        quotaHandler->bytesIn(len);
 #endif /* USE_DELAY_POOLS */
 
     fd_bytes(fd, len, FD_WRITE);
