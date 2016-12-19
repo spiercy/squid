@@ -1190,7 +1190,7 @@ Ftp::Gateway::start()
 
     checkUrlpath();
     buildTitleUrl();
-    debugs(9, 5, HERE << "FD " << (ctrl.conn != NULL ? ctrl.conn->fd : -1) << " : host=" << request->GetHost() <<
+    debugs(9, 5, "FD " << (ctrl.conn != NULL ? ctrl.conn->fd : -1) << " : host=" << request->GetHost() <<
            ", path=" << request->urlpath << ", user=" << user << ", passwd=" << password);
     state = BEGIN;
     Ftp::Client::start();
