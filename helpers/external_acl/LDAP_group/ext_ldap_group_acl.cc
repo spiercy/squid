@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2017 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -587,7 +587,7 @@ recover:
             if (searchResult == 0) {
                 found = 1;
                 break;
-            } else if (searchResult < 0){
+            } else if (searchResult < 0) {
                 if (tryagain) {
                     tryagain = 0;
                     ldap_unbind(ld);
