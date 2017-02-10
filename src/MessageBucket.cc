@@ -22,20 +22,6 @@ MessageBucket::MessageBucket(const int aWriteSpeedLimit, const double anInitialB
     bucketSizeLimit(aHighWatermark),
     theAggregate(pool) {}
 
-void *
-MessageBucket::operator new(size_t size)
-{
-    DelayPools::MemoryUsed += sizeof (MessageBucket);
-    return ::operator new (size);
-}
-
-void
-MessageBucket::operator delete (void *address)
-{
-    DelayPools::MemoryUsed -= sizeof (MessageBucket);
-    ::operator delete (address);
-}
-
 int
 MessageBucket::quota()
 {

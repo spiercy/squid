@@ -19,14 +19,13 @@ class MessageDelayPool;
 
 class MessageBucket : public RefCountable
 {
+    MEMPROXY_CLASS(MessageBucket);
 
 public:
     typedef RefCount<MessageBucket> Pointer;
 
     MessageBucket(const int aWriteSpeedLimit, const double anInitialBurst, const double aHighWatermark, MessageDelayPool *pool);
 
-    void *operator new(size_t);
-    void operator delete (void *);
     void refillBucket();
     int quota();
     void bytesIn(int qty);
