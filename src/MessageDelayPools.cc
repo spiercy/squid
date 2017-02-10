@@ -16,21 +16,14 @@
 #include "ConfigParser.h"
 #include "DelaySpec.h"
 #include "event.h"
+#include "MessageBucket.h"
 #include "MessageDelayPools.h"
 #include "Parsing.h"
 #include "SquidTime.h"
 
-MessageDelayPools::MessageDelayPools(): LastUpdate(squid_curtime)
-{
-    eventAdd("MessageDelayPools::Update", MessageDelayPools::Update, NULL, 1.0, 1);
-}
-
 MessageDelayPools::~MessageDelayPools()
 {
-    eventDelete(MessageDelayPools::Update, NULL);
-    for (auto &p: pools)
-        delete p;
-    pools.clear();
+    freePools();
 }
 
 MessageDelayPools *
@@ -40,55 +33,11 @@ MessageDelayPools::Instance()
     return &pools;
 }
 
-void
-MessageDelayPools::Update(void *)
-{
-    MessageDelayPools *pools = MessageDelayPools::Instance();
-    if (!pools->pools.size())
-        return;
-
-    eventAdd("MessageDelayPools::Update", MessageDelayPools::Update, NULL, 1.0, 1);
-
-    int incr = squid_curtime - pools->LastUpdate;
-    if (incr < 1)
-        return;
-
-    pools->LastUpdate = squid_curtime;
-
-    for (auto &p: pools->toUpdate)
-        p->update(incr);
-}
-
-// XXX: duplicates DelayPools::deregisterForUpdates()
-void
-MessageDelayPools::deregisterForUpdates(Updateable *anObject)
-{
-    std::vector<Updateable *>::iterator pos = toUpdate.begin();
-
-    while (pos != toUpdate.end() && *pos != anObject) {
-        ++pos;
-    }
-
-    if (pos != toUpdate.end()) {
-        /* move all objects down one */
-        std::vector<Updateable *>::iterator temp = pos;
-        ++pos;
-
-        while (pos != toUpdate.end()) {
-            *temp = *pos;
-            ++temp;
-            ++pos;
-        }
-
-        toUpdate.pop_back();
-    }
-}
-
-MessageDelayPool *
+MessageDelayPool::Pointer
 MessageDelayPools::pool(const SBuf &name)
 {
     auto it = std::find_if(pools.begin(), pools.end(),
-    [&name](const MessageDelayPool *p) { return p->poolName == name; });
+    [&name](const MessageDelayPool::Pointer p) { return p->poolName == name; });
     return it == pools.end() ? 0 : *it;
 }
 
@@ -96,13 +45,18 @@ void
 MessageDelayPools::add(MessageDelayPool *p)
 {
     const auto it = std::find_if(pools.begin(), pools.end(),
-    [&p](const MessageDelayPool *mp) { return mp->poolName == p->poolName; });
+    [&p](const MessageDelayPool::Pointer mp) { return mp->poolName == p->poolName; });
     if (it != pools.end()) {
         debugs(3, DBG_CRITICAL, "Ignoring duplicate " << p->poolName << " response delay pool");
         return;
     }
     pools.push_back(p);
-    registerForUpdates(p);
+}
+
+void
+MessageDelayPools::freePools()
+{
+    pools.clear();
 }
 
 MessageDelayPool::MessageDelayPool(const SBuf &name, uint64_t bucketSpeed, uint64_t bucketSize,
@@ -113,15 +67,29 @@ MessageDelayPool::MessageDelayPool(const SBuf &name, uint64_t bucketSpeed, uint6
     maxBucketSize(bucketSize),
     aggregateSpeedLimit(aggregateSpeed),
     maxAggregateSize(aggregateSize),
-    initialFillLevel(initial) {}
+    initialFillLevel(initial),
+    lastUpdate(squid_curtime)
+{
+    theBucket.level() = maxAggregateSize;
+}
+
+MessageDelayPool::~MessageDelayPool()
+{
+    if (access)
+        aclDestroyAccessList(&access);
+}
 
 void
-MessageDelayPool::update(int incr)
+MessageDelayPool::refillBucket()
 {
-    DelaySpec spec;
-    spec.restore_bps = aggregateSpeedLimit;
-    spec.max_bytes = maxAggregateSize;
-    theBucket.update(spec, incr);
+    const int incr = squid_curtime - lastUpdate;
+    if (incr >= 1) {
+        lastUpdate = squid_curtime;
+        DelaySpec spec;
+        spec.restore_bps = aggregateSpeedLimit;
+        spec.max_bytes = maxAggregateSize;
+        theBucket.update(spec, incr);
+    }
 }
 
 MessageBucket::Pointer
@@ -184,9 +152,15 @@ MessageDelayConfig::parseResponseDelayPoolAccess(ConfigParser &parser) {
         debugs(3, DBG_CRITICAL, "ERROR: required pool_name option missing");
         return;
     }
-    MessageDelayPool *pool = MessageDelayPools::Instance()->pool(SBuf(token));
+    MessageDelayPool::Pointer pool = MessageDelayPools::Instance()->pool(SBuf(token));
     if (pool)
         aclParseAccessLine("response_delay_pool_access", parser, &pool->access);
+}
+
+void
+MessageDelayConfig::freePools()
+{
+    MessageDelayPools::Instance()->freePools();
 }
 
 #endif

@@ -104,7 +104,7 @@ public:
 
 #if USE_DELAY_POOLS
     ClientInfo * clientInfo;/* pointer to client info used in client write limiter or NULL if not present */
-    MessageBucket::Pointer writeQuotaHandler;
+    MessageBucket::Pointer writeQuotaHandler; ///< response write limiter, if configured
 #endif
     unsigned epoll_state;
 

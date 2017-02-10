@@ -24,13 +24,17 @@ class ClientDelayPool
 public:
     ClientDelayPool()
         :   access(NULL), rate(0), highwatermark(0) {}
+    ~ClientDelayPool();
+    ClientDelayPool(const ClientDelayPool &) = delete;
+    ClientDelayPool &operator=(const ClientDelayPool &) = delete;
+
     void dump (StoreEntry * entry, unsigned int poolNumberMinusOne) const;
     acl_access *access;
     int rate;
     int64_t highwatermark;
 };
 
-typedef std::vector<ClientDelayPool> ClientDelayPools;
+typedef std::vector<ClientDelayPool*> ClientDelayPools;
 
 /* represents configuration of client write limiting delay pools */
 class ClientDelayConfig
@@ -38,7 +42,11 @@ class ClientDelayConfig
 public:
     ClientDelayConfig()
         :   initial(50) {}
-    void freePoolCount();
+    ~ClientDelayConfig();
+    ClientDelayConfig(const ClientDelayConfig &) = delete;
+    ClientDelayConfig &operator=(const ClientDelayConfig &) = delete;
+
+    void freePools();
     void dumpPoolCount(StoreEntry * entry, const char *name) const;
     /* parsing of client_delay_pools - number of pools */
     void parsePoolCount();
@@ -52,8 +60,6 @@ public:
     /* initial bucket level, how fill bucket at startup */
     unsigned short initial;
     ClientDelayPools pools;
-private:
-    void clean();
 };
 
 #endif // SQUID_CLIENTDELAYCONFIG_H

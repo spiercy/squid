@@ -111,6 +111,8 @@ DELAY_POOL_ALL_SOURCE = \
 	DelayUser.h \
 	DelayVector.cc \
 	DelayVector.h \
+	BandwidthBucket.cc \
+	BandwidthBucket.h \
 	MessageBucket.cc \
 	MessageBucket.h \
 	NullDelayId.h \
@@ -973,6 +975,7 @@ tests_testHttpReply_SOURCES=\
 	cache_cf.h \
 	tests/stub_cache_cf.cc \
 	tests/stub_cache_manager.cc \
+	tests/stub_ClientDelayConfig.cc \
 	tests/stub_comm.cc \
 	tests/stub_debug.cc \
 	tests/stub_errorpage.cc \
@@ -1086,6 +1089,7 @@ tests_testACLMaxUserIP_SOURCES= \
 	tests/stub_access_log.cc \
 	cache_cf.h \
 	tests/stub_cache_cf.cc \
+	tests/stub_ClientDelayConfig.cc \
 	tests/stub_client_side.cc \
 	tests/stub_debug.cc \
 	tests/stub_DelayId.cc \
@@ -2362,6 +2366,7 @@ tests_testHttp1Parser_SOURCES = \
 	tests/stub_SBufDetailedStats.cc \
 	tests/stub_cache_cf.cc \
 	tests/stub_cache_manager.cc \
+	tests/stub_ClientDelayConfig.cc \
 	tests/stub_comm.cc \
 	tests/stub_cbdata.cc \
 	tests/stub_debug.cc \
