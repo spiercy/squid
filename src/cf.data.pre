@@ -7084,11 +7084,6 @@ DOC_START
 	See also client_delay_parameters and client_delay_pools.
 DOC_END
 
-COMMENT_START
- RESPONSE DELAY POOL PARAMETERS
- -----------------------------------------------------------------------------
-COMMENT_END
-
 NAME: response_delay_pool
 TYPE: response_delay_pool_parameters
 DEFAULT: none
@@ -7104,31 +7099,40 @@ DOC_START
 
 	available options:
 
-		bucket_speed_limit	the speed limit of an individual
-					bucket(bytes/s)
+		individual-restore	The speed limit of an individual
+					bucket(bytes/s). To be used in conjunction
+					with 'individual-maximum'.
 
-		max_bucket_size  	the maximum size of a bucket
+		individual-maximum	The maximum number of bytes which can
+					be placed into the individual bucket. To be used
+					in conjunction with 'individual-restore'.
 
-		aggregate_speed_limit	the speed limit to the aggregate
-					bucket(bytes/s)
+		aggregate-restore	The speed limit for the aggregate
+					bucket(bytes/s). To be used in conjunction with
+					'aggregate-maximum'.
 
-		max_aggregate_size	the maximum size of the aggregate bucket
+		aggregate-maximum	The maximum number of bytes which can
+	   				be placed into the aggregate bucket. To be used
+					in conjunction with 'aggregate-restore'.
 
-		initial_fill_level	the initial bucket size as a percentage
-					of max_bucket_size
+		initial-bucket-level	The initial bucket size as a percentage
+					of individual-maximum.
 
-	See also response_delay_pool_access.
+	Individual and(or) aggregate bucket options may not be specified,
+   	meaning no individual and(or) aggregate speed limitation.
+	See also response_delay_pool_access and delay_parameters for
+	terminology details.
 DOC_END
 
 NAME: response_delay_pool_access
 TYPE: response_delay_pool_access
 DEFAULT: none
-DEFAULT_DOC: Deny use of the pool, unless allow rules exist in squid.conffor the pool.
+DEFAULT_DOC: Deny use of the pool, unless allow rules exist in squid.conf for the pool.
 IFDEF: USE_DELAY_POOLS
 LOC: Config.MessageDelay
 DOC_START
-	This option determines the response delay pool for the
-	request:
+	Determines whether a specific named response delay pool is used
+	for the transaction. The syntax for this directive is:
 
 	response_delay_pool_access pool_name allow|deny acl_name
 
@@ -7136,9 +7140,6 @@ DOC_START
 	they appear in this configuration file. The first rule with a
 	matching ACL wins. If (and only if) an "allow" rule won, Squid
 	assigns the response to the corresponding named delay pool.
-	This feature restricts Squid-to-client bandwidth only. If no
-	ACL matches or there are no response_delay_pool_access options,
-	the Squid-to-client bandwidth is not limited.
 DOC_END
 
 COMMENT_START

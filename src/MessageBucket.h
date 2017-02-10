@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2017 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -17,12 +17,6 @@
 
 #include "MessageDelayPools.h"
 
-namespace Comm
-{
-extern PF HandleWrite;
-extern void SetSelect(int, unsigned int, PF *, void *, time_t);
-}
-
 /// Limits Squid-to-client bandwidth for each matching response
 class MessageBucket : public RefCountable, public BandwidthBucket
 {
@@ -31,7 +25,7 @@ class MessageBucket : public RefCountable, public BandwidthBucket
 public:
     typedef RefCount<MessageBucket> Pointer;
 
-    MessageBucket(const int aWriteSpeedLimit, const double anInitialBurst, const double aHighWatermark, MessageDelayPool::Pointer pool);
+    MessageBucket(const int speed, const int initialLevelPercent, const double sizeLimit, MessageDelayPool::Pointer pool);
 
     /* BandwidthBucket API */
     virtual int quota() override;

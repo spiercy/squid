@@ -2488,7 +2488,7 @@ ConnStateData::start()
     if (Config.onoff.client_db) {
         /* it was said several times that client write limiter does not work if client_db is disabled */
 
-        ClientDelayPools& pools(Config.ClientDelay.pools);
+        auto &pools = ClientDelayPools::Instance()->pools;
         ACLFilledChecklist ch(NULL, NULL, NULL);
 
         // TODO: we check early to limit error response bandwith but we

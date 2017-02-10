@@ -1347,7 +1347,7 @@ ClientInfo::kickQuotaQueue()
 {
     if (!eventWaiting && !selectWaiting && hasQueue()) {
         // wait at least a second if the bucket is empty
-        const double delay = (bucketSize < 1.0) ? 1.0 : 0.0;
+        const double delay = (bucketLevel < 1.0) ? 1.0 : 0.0;
         eventAdd("commHandleWriteHelper", &commHandleWriteHelper,
                  quotaQueue, delay, 0, true);
         eventWaiting = true;
@@ -1372,7 +1372,7 @@ ClientInfo::quota()
 
         // Rounding errors do not accumulate here, but we round down to avoid
         // negative bucket sizes after write with rationedCount=1.
-        rationedQuota = static_cast<int>(floor(bucketSize/rationedCount));
+        rationedQuota = static_cast<int>(floor(bucketLevel/rationedCount));
         debugs(77,5, HERE << "new rationedQuota: " << rationedQuota <<
                '*' << rationedCount);
     }
@@ -1446,7 +1446,7 @@ ClientInfo::setWriteLimiter(const int aWriteSpeedLimit, const double anInitialBu
         assert(!quotaQueue);
         quotaQueue = new CommQuotaQueue(this);
 
-        bucketSize = anInitialBurst;
+        bucketLevel = anInitialBurst;
         prevTime = current_dtime;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2017 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -19,14 +19,14 @@ class fde;
 class BandwidthBucket
 {
 public:
-    BandwidthBucket(const int aWriteSpeedLimit, const double anInitialBurst,
-                    const double aHighWatermark);
+    BandwidthBucket(const int speed, const int initialLevelPercent, const double sizeLimit);
     virtual ~BandwidthBucket() {}
 
     static BandwidthBucket *SelectBucket(fde *f);
 
     /// \returns the number of bytes this bucket allows to write,
-    /// also considering aggregates, if any.
+    /// also considering aggregates, if any. Negative quota means
+    /// no limitations by this bucket.
     virtual int quota() = 0;
     /// Adjusts nleft to not exceed the current bucket quota value,
     /// if needed.
@@ -37,19 +37,21 @@ public:
     virtual void onFdClosed() { selectWaiting = false; }
     /// Decreases the bucket level.
     virtual void reduceBucket(const int len);
+    /// Whether this bucket will not do bandwidth limiting.
+    bool noLimit() const { return writeSpeedLimit < 0; }
 
 protected:
     /// Increases the bucket level with the writeSpeedLimit speed.
     void refillBucket();
 
 public:
-    double bucketSize; ///< how much can be written now
+    double bucketLevel; ///< how much can be written now
     bool selectWaiting; ///< is between commSetSelect and commHandleWrite
 
 protected:
     double prevTime; ///< previous time when we checked
-    double writeSpeedLimit;///< Write speed limit in bytes per second, can be less than 1, if too close to zero this could result in timeouts from client
-    double bucketSizeLimit;  ///< maximum bucket size
+    double writeSpeedLimit; ///< Write speed limit in bytes per second.
+    double bucketSizeLimit; ///< maximum bucket size
 };
 
 #endif /* USE_DELAY_POOLS */

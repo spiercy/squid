@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2017 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -14,9 +14,9 @@
 #include "fde.h"
 #include "MessageBucket.h"
 
-MessageBucket::MessageBucket(const int aWriteSpeedLimit, const double anInitialBurst,
-                             const double aHighWatermark, MessageDelayPool::Pointer pool) :
-    BandwidthBucket(aWriteSpeedLimit, anInitialBurst, aHighWatermark),
+MessageBucket::MessageBucket(const int speed, const int initialLevelPercent,
+                             const double sizeLimit, MessageDelayPool::Pointer pool) :
+    BandwidthBucket(speed, initialLevelPercent, sizeLimit),
     theAggregate(pool) {}
 
 int
@@ -24,7 +24,12 @@ MessageBucket::quota()
 {
     refillBucket();
     theAggregate->refillBucket();
-    return min(bucketSize, static_cast<double>(theAggregate->level()));
+    if (theAggregate->noLimit())
+        return bucketLevel;
+    else if (noLimit())
+        return theAggregate->level();
+    else
+        return min(bucketLevel, static_cast<double>(theAggregate->level()));
 }
 
 void

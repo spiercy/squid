@@ -40,6 +40,7 @@
 #include "log/Config.h"
 #include "log/CustomLog.h"
 #include "MemBuf.h"
+#include "MessageDelayPools.h"
 #include "mgr/ActionPasswordList.h"
 #include "mgr/Registration.h"
 #include "neighbors.h"
@@ -1672,32 +1673,6 @@ static void
 parse_client_delay_pool_access(ClientDelayConfig * cfg)
 {
     cfg->parsePoolAccess(LegacyParser);
-}
-#endif
-
-#if USE_DELAY_POOLS
-#include "MessageDelayPools.h"
-
-#define free_response_delay_pool_access(X)
-#define dump_response_delay_pool_access(X, Y, Z)
-#define dump_response_delay_pool_parameters(X, Y, Z)
-
-static void
-free_response_delay_pool_parameters(MessageDelayConfig * cfg)
-{
-    cfg->freePools();
-}
-
-static void
-parse_response_delay_pool_parameters(MessageDelayConfig * cfg)
-{
-    cfg->parseResponseDelayPool();
-}
-
-static void
-parse_response_delay_pool_access(MessageDelayConfig * cfg)
-{
-    cfg->parseResponseDelayPoolAccess(LegacyParser);
 }
 #endif
 

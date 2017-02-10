@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2017 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -27,34 +27,38 @@ class MessageDelayPool : public RefCountable
 public:
     typedef RefCount<MessageDelayPool> Pointer;
 
-    MessageDelayPool(const SBuf &name, uint64_t bucketSpeed, uint64_t bucketSize,
-                     uint64_t aggregateSpeed, uint64_t aggregateSize, uint16_t initial);
+    MessageDelayPool(const SBuf &name, int64_t bucketSpeed, int64_t bucketSize,
+                     int64_t aggregateSpeed, int64_t aggregateSize, uint16_t initialBucketPercent);
     ~MessageDelayPool();
     MessageDelayPool(const MessageDelayPool &) = delete;
     MessageDelayPool &operator=(const MessageDelayPool &) = delete;
 
-    /// Increases the aggregate bucket level with the aggregateSpeedLimit speed.
+    /// Increases the aggregate bucket level with the aggregateRestore speed.
     void refillBucket();
     /// decreases the aggregate level
-    void bytesIn(int qty) { theBucket.bytesIn(qty); }
+    void bytesIn(int qty) { if (!noLimit()) theBucket.bytesIn(qty); }
     /// current aggregate level
     int level() { return theBucket.level(); }
     /// creates an individual response bucket
     MessageBucketPointer createBucket();
+    /// whether the aggregate bucket has no limit
+    bool noLimit () const { return aggregateRestore < 0; }
+
+    void dump (StoreEntry * entry) const;
 
     acl_access *access;
     /// the response delay pool name
     SBuf poolName;
     /// the speed limit of an individual bucket (bytes/s)
-    uint64_t bucketSpeedLimit;
+    int64_t individualRestore;
     /// the maximum size of an individual bucket
-    uint64_t maxBucketSize;
+    int64_t individualMaximum;
     /// the speed limit of the aggregate bucket (bytes/s)
-    uint64_t aggregateSpeedLimit;
+    int64_t aggregateRestore;
     /// the maximum size of the aggregate bucket
-    uint64_t maxAggregateSize;
-    /// the initial bucket size as a percentage of maxBucketSize
-    uint16_t initialFillLevel;
+    int64_t aggregateMaximum;
+    /// the initial bucket size as a percentage of individualMaximum
+    uint16_t initialBucketLevel;
     /// the aggregate bucket
     DelayBucket theBucket;
 
@@ -83,7 +87,7 @@ public:
     std::vector<MessageDelayPool::Pointer> pools;
 
 private:
-    MessageDelayPools(){}
+    MessageDelayPools() {}
     ~MessageDelayPools();
     void Stats() { } // TODO
 };
@@ -93,9 +97,37 @@ class MessageDelayConfig
 {
 public:
     void parseResponseDelayPool();
-    void parseResponseDelayPoolAccess(ConfigParser &parser);
+    void dumpResponseDelayPoolParameters(StoreEntry *e, const char *name);
+    void parseResponseDelayPoolAccess();
     void freePools();
 };
+
+#define free_response_delay_pool_access(X)
+#define dump_response_delay_pool_access(X, Y, Z)
+
+inline void
+free_response_delay_pool_parameters(MessageDelayConfig * cfg)
+{
+    cfg->freePools();
+}
+
+inline void
+dump_response_delay_pool_parameters(StoreEntry *entry, const char *name, MessageDelayConfig &cfg)
+{
+    cfg.dumpResponseDelayPoolParameters(entry, name);
+}
+
+inline void
+parse_response_delay_pool_parameters(MessageDelayConfig * cfg)
+{
+    cfg->parseResponseDelayPool();
+}
+
+inline void
+parse_response_delay_pool_access(MessageDelayConfig * cfg)
+{
+    cfg->parseResponseDelayPoolAccess();
+}
 
 #endif
 #endif
