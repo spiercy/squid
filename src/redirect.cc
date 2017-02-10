@@ -395,13 +395,11 @@ redirectInit(void)
     }
 
     if (Config.redirector_extras) {
-        delete redirectorExtrasFmt;
         redirectorExtrasFmt = new ::Format::Format("url_rewrite_extras");
         (void)redirectorExtrasFmt->parse(Config.redirector_extras);
     }
 
     if (Config.storeId_extras) {
-        delete storeIdExtrasFmt;
         storeIdExtrasFmt = new ::Format::Format("store_id_extras");
         (void)storeIdExtrasFmt->parse(Config.storeId_extras);
     }
@@ -416,6 +414,9 @@ redirectShutdown(void)
      * When and if needed for more helpers a separated shutdown
      * method will be added for each of them.
      */
+    if (!storeIds && !redirectors)
+        return;
+
     if (redirectors)
         helperShutdown(redirectors);
 

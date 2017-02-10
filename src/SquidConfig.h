@@ -12,16 +12,12 @@
 #include "acl/forward.h"
 #include "base/RefCount.h"
 #include "base/YesNoNone.h"
-#if USE_DELAY_POOLS
 #include "ClientDelayConfig.h"
 #include "DelayConfig.h"
-#endif
 #include "helper/ChildConfig.h"
 #include "HttpHeaderTools.h"
 #include "ip/Address.h"
-#if USE_DELAY_POOLS
 #include "MessageDelayPools.h"
-#endif
 #include "Notes.h"
 #include "security/forward.h"
 #include "SquidTime.h"
@@ -553,15 +549,11 @@ extern SquidConfig Config;
 class SquidConfig2
 {
 public:
-    void clear() {
-        *this = SquidConfig2();
-    }
-
     struct {
-        int enable_purge = 0;
+        int enable_purge;
     } onoff;
-    uid_t effectiveUserID = 0;
-    gid_t effectiveGroupID = 0;
+    uid_t effectiveUserID;
+    gid_t effectiveGroupID;
 };
 
 extern SquidConfig2 Config2;

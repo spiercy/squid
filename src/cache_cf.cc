@@ -613,7 +613,7 @@ parseConfigFile(const char *file_name)
 static void
 configDoConfigure(void)
 {
-    Config2.clear();
+    memset(&Config2, '\0', sizeof(SquidConfig2));
     /* init memory as early as possible */
     memConfigure();
     /* Sanity checks */
@@ -836,7 +836,7 @@ configDoConfigure(void)
             if (pwd->pw_dir && *pwd->pw_dir) {
                 // putenv() leaks by design; avoid leaks when nothing changes
                 static SBuf lastDir;
-                if (lastDir.isEmpty() || lastDir.cmp(pwd->pw_dir) != 0) {
+                if (lastDir.isEmpty() || !lastDir.cmp(pwd->pw_dir)) {
                     lastDir = pwd->pw_dir;
                     int len = strlen(pwd->pw_dir) + 6;
                     char *env_str = (char *)xcalloc(len, 1);
@@ -1487,7 +1487,7 @@ static void
 free_acl_tos(acl_tos ** head)
 {
     delete *head;
-    *head = NULL;
+    head = NULL;
 }
 
 #if SO_MARK && USE_LIBCAP
@@ -1540,7 +1540,7 @@ static void
 free_acl_nfmark(acl_nfmark ** head)
 {
     delete *head;
-    *head = NULL;
+    head = NULL;
 }
 #endif /* SO_MARK */
 
@@ -1648,7 +1648,7 @@ parse_delay_pool_access(DelayConfig * cfg)
 static void
 free_client_delay_pool_count(ClientDelayConfig * cfg)
 {
-    cfg->freePools();
+    cfg->freePoolCount();
 }
 
 static void
@@ -1680,14 +1680,9 @@ parse_client_delay_pool_access(ClientDelayConfig * cfg)
 #include "MessageDelayPools.h"
 
 #define free_response_delay_pool_access(X)
+#define free_response_delay_pool_parameters(X)
 #define dump_response_delay_pool_access(X, Y, Z)
 #define dump_response_delay_pool_parameters(X, Y, Z)
-
-static void
-free_response_delay_pool_parameters(MessageDelayConfig * cfg)
-{
-    cfg->freePools();
-}
 
 static void
 parse_response_delay_pool_parameters(MessageDelayConfig * cfg)

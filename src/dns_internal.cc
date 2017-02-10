@@ -10,7 +10,6 @@
 
 #include "squid.h"
 #include "base/InstanceId.h"
-#include "base/RunnersRegistry.h"
 #include "comm.h"
 #include "comm/Connection.h"
 #include "comm/ConnOpener.h"
@@ -209,22 +208,6 @@ struct _ns {
     bool mDNSResolver;
     nsvc *vc;
 };
-
-namespace Dns
-{
-
-/// manage DNS internal component
-class ConfigRr : public RegisteredRunner
-{
-public:
-    /* RegisteredRunner API */
-    virtual void startReconfigure() override;
-    virtual void endingShutdown() override;
-};
-
-RunnerRegistrationEntry(ConfigRr);
-
-} // namespace Dns
 
 struct _sp {
     char domain[NS_MAXDNAME];
@@ -920,7 +903,7 @@ nsvc::~nsvc()
 {
     delete queue;
     delete msg;
-    if (ns < nns) // XXX: idnsShutdownAndFreeState may have freed nameservers[]
+    if (ns < nns) // XXX: Dns::Shutdown may have freed nameservers[]
         nameservers[ns].vc = NULL;
 }
 
@@ -979,13 +962,6 @@ idnsSendQueryVC(idns_query * q, int nsn)
 static void
 idnsSendQuery(idns_query * q)
 {
-    // XXX: DNS sockets get closed during reconfigure produces a race between
-    // any already active connections (or ones received between closing DNS
-    // sockets and server listening sockets) and the reconfigure completing
-    // (Runner syncConfig() being run). Transactions which loose this race will
-    // produce DNS timeouts (or whatever the caller set) as their queries never
-    // get queued to be re-tried after the DNS socekts are re-opened.
-
     if (DnsSocketA < 0 && DnsSocketB < 0) {
         debugs(78, DBG_IMPORTANT, "WARNING: idnsSendQuery: Can't send query, no DNS socket!");
         return;
@@ -1665,13 +1641,11 @@ Dns::Init(void)
     Mgr::RegisterAction("idns", "Internal DNS Statistics", idnsStats, 0, 1);
 }
 
-static void
-idnsShutdownAndFreeState(const char *reason)
+void
+Dns::Shutdown(void)
 {
     if (DnsSocketA < 0 && DnsSocketB < 0)
         return;
-
-    debugs(78, 2, reason << ": Closing DNS sockets");
 
     if (DnsSocketA >= 0 ) {
         comm_close(DnsSocketA);
@@ -1693,18 +1667,6 @@ idnsShutdownAndFreeState(const char *reason)
     // XXX: vcs are not closed/freed yet and may try to access nameservers[]
     idnsFreeNameservers();
     idnsFreeSearchpath();
-}
-
-void
-Dns::ConfigRr::endingShutdown()
-{
-    idnsShutdownAndFreeState("Shutdown");
-}
-
-void
-Dns::ConfigRr::startReconfigure()
-{
-    idnsShutdownAndFreeState("Reconfigure");
 }
 
 static int

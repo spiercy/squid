@@ -405,7 +405,7 @@ Fs::Ufs::UFSStoreState::drainWriteQueue()
     if (flags.write_draining)
         return;
 
-    if (!theFile || !theFile->canWrite())
+    if (!theFile->canWrite())
         return;
 
     flags.write_draining = true;

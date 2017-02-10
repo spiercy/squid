@@ -184,7 +184,6 @@ Rock::HeaderUpdater::startWriting()
         Must(freshSwapHeader);
         writer->write(freshSwapHeader, freshSwapHeaderSize, 0, nullptr);
         offset += freshSwapHeaderSize;
-        xfree(freshSwapHeader);
     }
 
     {

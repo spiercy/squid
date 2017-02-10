@@ -11,21 +11,15 @@
 
 #if USE_DELAY_POOLS
 
-#include "BandwidthBucket.h"
 #include "base/RefCount.h"
+#include "comm/Connection.h"
 #include "comm/forward.h"
 
 class MessageDelayPool;
 
-namespace Comm
+class MessageBucket : public RefCountable
 {
-extern PF HandleWrite;
-extern void SetSelect(int, unsigned int, PF *, void *, time_t);
-}
 
-/// Limits Squid-to-client bandwidth for each matching response
-class MessageBucket : public RefCountable, public BandwidthBucket
-{
 public:
     typedef RefCount<MessageBucket> Pointer;
 
@@ -33,17 +27,20 @@ public:
 
     void *operator new(size_t);
     void operator delete (void *);
+    void refillBucket();
+    int quota();
+    void bytesIn(int qty);
 
-    /* BandwidthBucket API */
-    virtual int quota() override;
-    virtual void scheduleWrite(Comm::IoCallback *state) override;
-    virtual void reduceBucket(int len);
+    double bucketSize; ///< how much can be written now
+    bool selectWaiting; ///< is between commSetSelect and commHandleWrite
 
 private:
+    double prevTime; ///< previous time when we checked
+    double writeSpeedLimit;///< Write speed limit in bytes per second, can be less than 1, if too close to zero this could result in timeouts from client
+    double bucketSizeLimit;  ///< maximum bucket size
     MessageDelayPool *theAggregate;
 };
 
-#endif /* USE_DELAY_POOLS */
-
+#endif
 #endif
 

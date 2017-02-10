@@ -456,7 +456,7 @@ MemStore::anchorEntry(StoreEntry &e, const sfileno index, const Ipc::StoreMapAnc
     e.lastref = basics.lastref;
     e.timestamp = basics.timestamp;
     e.expires = basics.expires;
-    e.lastModified(basics.lastmod);
+    e.lastmod = basics.lastmod;
     e.refcount = basics.refcount;
     e.flags = basics.flags;
 

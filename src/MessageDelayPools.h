@@ -25,9 +25,6 @@ class MessageDelayPool : public Updateable
 public:
     MessageDelayPool(const SBuf &name, uint64_t bucketSpeed, uint64_t bucketSize,
                      uint64_t aggregateSpeed, uint64_t aggregateSize, uint16_t initial);
-    ~MessageDelayPool();
-    MessageDelayPool(const MessageDelayPool &) = delete;
-    MessageDelayPool &operator=(const MessageDelayPool &) = delete;
 
     virtual void update(int incr) override;
     void bytesIn(int qty) { theBucket.bytesIn(qty); }
@@ -49,26 +46,25 @@ public:
 class MessageDelayPools
 {
 public:
-    MessageDelayPools(const MessageDelayPools &) = delete;
-    MessageDelayPools &operator=(const MessageDelayPools &) = delete;
-
     static MessageDelayPools *Instance();
     static void Update(void *);
 
+    void registerForUpdates(Updateable *obj) { toUpdate.push_back(obj); }
+    void deregisterForUpdates (Updateable *);
     MessageDelayPool *pool(const SBuf &name);
     void add(MessageDelayPool *pool);
-    void freePools();
 
     std::vector<MessageDelayPool*> pools;
 
 private:
     MessageDelayPools();
+    MessageDelayPools(const MessageDelayPools &);
+    MessageDelayPools &operator=(const MessageDelayPools &);
     ~MessageDelayPools();
-    void planUpdate();
-    void unplanUpdate();
     void Stats() { } // TODO
 
     time_t LastUpdate;
+    std::vector<Updateable *> toUpdate;
 };
 
 /// represents configuration for response delay pools
@@ -77,7 +73,6 @@ class MessageDelayConfig
 public:
     void parseResponseDelayPool();
     void parseResponseDelayPoolAccess(ConfigParser &parser);
-    void freePools();
 };
 
 #endif

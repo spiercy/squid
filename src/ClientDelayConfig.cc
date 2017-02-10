@@ -14,12 +14,6 @@
 #include "Parsing.h"
 #include "Store.h"
 
-ClientDelayPool::~ClientDelayPool()
-{
-    if (access)
-        aclDestroyAccessList(&access);
-}
-
 void ClientDelayPool::dump(StoreEntry * entry, unsigned int poolNumberMinusOne) const
 {
     LOCAL_ARRAY(char, nom, 32);
@@ -34,7 +28,7 @@ ClientDelayConfig::finalize()
 {
     for (unsigned int i = 0; i < pools.size(); ++i) {
         /* pools require explicit 'allow' to assign a client into them */
-        if (!pools[i]->access) {
+        if (!pools[i].access) {
             debugs(77, DBG_IMPORTANT, "client_delay_pool #" << (i+1) <<
                    " has no client_delay_access configured. " <<
                    "No client will ever use it.");
@@ -42,9 +36,9 @@ ClientDelayConfig::finalize()
     }
 }
 
-ClientDelayConfig::~ClientDelayConfig()
+void ClientDelayConfig::freePoolCount()
 {
-    freePools();
+    pools.clear();
 }
 
 void ClientDelayConfig::dumpPoolCount(StoreEntry * entry, const char *name) const
@@ -52,16 +46,7 @@ void ClientDelayConfig::dumpPoolCount(StoreEntry * entry, const char *name) cons
     if (pools.size()) {
         storeAppendPrintf(entry, "%s %d\n", name, (int)pools.size());
         for (unsigned int i = 0; i < pools.size(); ++i)
-            pools[i]->dump(entry, i);
-    }
-}
-
-void ClientDelayConfig::freePools()
-{
-    if (!pools.empty()) {
-        for (auto p: pools)
-            delete p;
-        pools.clear();
+            pools[i].dump(entry, i);
     }
 }
 
@@ -69,12 +54,12 @@ void ClientDelayConfig::parsePoolCount()
 {
     if (pools.size()) {
         debugs(3, DBG_CRITICAL, "parse_client_delay_pool_count: multiple client_delay_pools lines, aborting all previous client_delay_pools config");
-        freePools();
+        clean();
     }
     unsigned short pools_;
     ConfigParser::ParseUShort(&pools_);
     for (int i = 0; i < pools_; ++i) {
-        pools.push_back(new ClientDelayPool());
+        pools.push_back(ClientDelayPool());
     }
 }
 
@@ -90,8 +75,8 @@ void ClientDelayConfig::parsePoolRates()
 
     --pool;
 
-    pools[pool]->rate = GetInteger();
-    pools[pool]->highwatermark = GetInteger64();
+    pools[pool].rate = GetInteger();
+    pools[pool].highwatermark = GetInteger64();
 }
 
 void ClientDelayConfig::parsePoolAccess(ConfigParser &parser)
@@ -106,6 +91,13 @@ void ClientDelayConfig::parsePoolAccess(ConfigParser &parser)
     }
 
     --pool;
-    aclParseAccessLine("client_delay_access", parser, &pools[pool]->access);
+    aclParseAccessLine("client_delay_access", parser, &pools[pool].access);
+}
+
+void ClientDelayConfig::clean()
+{
+    for (unsigned int i = 0; i < pools.size(); ++i) {
+        aclDestroyAccessList(&pools[i].access);
+    }
 }
 

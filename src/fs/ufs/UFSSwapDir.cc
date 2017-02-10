@@ -88,7 +88,7 @@ UFSCleanLog::write(StoreEntry const &e)
     s.timestamp = e.timestamp;
     s.lastref = e.lastref;
     s.expires = e.expires;
-    s.lastmod = e.lastModified();
+    s.lastmod = e.lastmod;
     s.swap_file_sz = e.swap_file_sz;
     s.refcount = e.refcount;
     s.flags = e.flags;
@@ -317,8 +317,7 @@ Fs::Ufs::UFSSwapDir::UFSSwapDir(char const *aType, const char *anIOType) :
     currentIOOptions(new ConfigOptionVector()),
     ioType(xstrdup(anIOType)),
     cur_size(0),
-    n_disk_objects(0),
-    rebuilding_(false)
+    n_disk_objects(0)
 {
     /* modulename is only set to disk modules that are built, by configure,
      * so the Find call should never return NULL here.
@@ -726,15 +725,6 @@ Fs::Ufs::UFSSwapDir::logFile(char const *ext) const
 void
 Fs::Ufs::UFSSwapDir::openLog()
 {
-    assert(NumberOfUFSDirs || !UFSDirToGlobalDirMapping);
-    ++NumberOfUFSDirs;
-    assert(NumberOfUFSDirs <= Config.cacheSwap.n_configured);
-
-    if (rebuilding_) { // we did not close the temporary log used for rebuilding
-        assert(swaplog_fd >= 0);
-        return;
-    }
-
     char *logPath;
     logPath = logFile();
     swaplog_fd = file_open(logPath, O_WRONLY | O_CREAT | O_BINARY);
@@ -746,6 +736,13 @@ Fs::Ufs::UFSSwapDir::openLog()
     }
 
     debugs(50, 3, HERE << "Cache Dir #" << index << " log opened on FD " << swaplog_fd);
+
+    if (0 == NumberOfUFSDirs)
+        assert(NULL == UFSDirToGlobalDirMapping);
+
+    ++NumberOfUFSDirs;
+
+    assert(NumberOfUFSDirs <= Config.cacheSwap.n_configured);
 }
 
 void
@@ -754,19 +751,18 @@ Fs::Ufs::UFSSwapDir::closeLog()
     if (swaplog_fd < 0) /* not open */
         return;
 
-    --NumberOfUFSDirs;
-    assert(NumberOfUFSDirs >= 0);
-    if (!NumberOfUFSDirs)
-        safe_free(UFSDirToGlobalDirMapping);
-
-    if (rebuilding_) // we cannot close the temporary log used for rebuilding
-        return;
-
     file_close(swaplog_fd);
 
     debugs(47, 3, "Cache Dir #" << index << " log closed on FD " << swaplog_fd);
 
     swaplog_fd = -1;
+
+    --NumberOfUFSDirs;
+
+    assert(NumberOfUFSDirs >= 0);
+
+    if (0 == NumberOfUFSDirs)
+        safe_free(UFSDirToGlobalDirMapping);
 }
 
 bool
@@ -808,7 +804,7 @@ Fs::Ufs::UFSSwapDir::addDiskRestore(const cache_key * key,
     e->lastref = lastref;
     e->timestamp = timestamp;
     e->expires = expires;
-    e->lastModified(lastmod);
+    e->lastmod = lastmod;
     e->refcount = refcount;
     e->flags = newFlags;
     EBIT_CLR(e->flags, RELEASE_REQUEST);
@@ -846,9 +842,6 @@ Fs::Ufs::UFSSwapDir::rebuild()
 void
 Fs::Ufs::UFSSwapDir::closeTmpSwapLog()
 {
-    assert(rebuilding_);
-    rebuilding_ = false;
-
     char *swaplog_path = xstrdup(logFile(NULL)); // where the swaplog should be
     char *tmp_path = xstrdup(logFile(".new")); // the temporary file we have generated
     int fd;
@@ -875,8 +868,6 @@ Fs::Ufs::UFSSwapDir::closeTmpSwapLog()
 FILE *
 Fs::Ufs::UFSSwapDir::openTmpSwapLog(int *clean_flag, int *zero_flag)
 {
-    assert(!rebuilding_);
-
     char *swaplog_path = xstrdup(logFile(NULL));
     char *clean_path = xstrdup(logFile(".last-clean"));
     char *new_path = xstrdup(logFile(".new"));
@@ -911,7 +902,6 @@ Fs::Ufs::UFSSwapDir::openTmpSwapLog(int *clean_flag, int *zero_flag)
     }
 
     swaplog_fd = fd;
-    rebuilding_ = true;
 
     {
         const StoreSwapLogHeader header;
@@ -1070,17 +1060,18 @@ Fs::Ufs::UFSSwapDir::writeCleanDone()
     cleanLog = NULL;
 }
 
-/// safely cleans a few unused files if possible
-int
-Fs::Ufs::UFSSwapDir::HandleCleanEvent()
+void
+Fs::Ufs::UFSSwapDir::CleanEvent(void *)
 {
     static int swap_index = 0;
     int i;
     int j = 0;
     int n = 0;
-
-    if (!NumberOfUFSDirs)
-        return 0; // probably in the middle of reconfiguration
+    /*
+     * Assert that there are UFS cache_dirs configured, otherwise
+     * we should never be called.
+     */
+    assert(NumberOfUFSDirs);
 
     if (NULL == UFSDirToGlobalDirMapping) {
         SwapDir *sd;
@@ -1124,13 +1115,6 @@ Fs::Ufs::UFSSwapDir::HandleCleanEvent()
         ++swap_index;
     }
 
-    return n;
-}
-
-void
-Fs::Ufs::UFSSwapDir::CleanEvent(void *)
-{
-    const int n = HandleCleanEvent();
     eventAdd("storeDirClean", CleanEvent, NULL,
              15.0 * exp(-0.25 * n), 1);
 }
@@ -1300,18 +1284,13 @@ Fs::Ufs::UFSSwapDir::swappedOut(const StoreEntry &e)
 void
 Fs::Ufs::UFSSwapDir::logEntry(const StoreEntry & e, int op) const
 {
-    if (swaplog_fd < 0) {
-        debugs(36, 5, "cannot log " << e << " in the middle of reconfiguration");
-        return;
-    }
-
     StoreSwapLogData *s = new StoreSwapLogData;
     s->op = (char) op;
     s->swap_filen = e.swap_filen;
     s->timestamp = e.timestamp;
     s->lastref = e.lastref;
     s->expires = e.expires;
-    s->lastmod = e.lastModified();
+    s->lastmod = e.lastmod;
     s->swap_file_sz = e.swap_file_sz;
     s->refcount = e.refcount;
     s->flags = e.flags;

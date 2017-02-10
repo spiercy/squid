@@ -23,7 +23,7 @@
 SQUIDCEXTERN int debug_enabled;
 
 /* the macro overload style is really a gcc-ism */
-#if defined(__GNUC__) || defined(__SUNPRO_CC)
+#ifdef __GNUC__
 
 #define debug(X...) \
                      if (debug_enabled) { \
@@ -37,7 +37,7 @@ SQUIDCEXTERN int debug_enabled;
         << content << std::endl; \
     } else (void)0
 
-#else /* __GNUC__ || __SUNPRO_CC */
+#else /* __GNUC__ */
 
 /* non-GCC compilers can't do the above macro define yet. */
 void debug(const char *format,...);

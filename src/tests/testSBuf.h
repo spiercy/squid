@@ -45,6 +45,7 @@ class testSBuf : public CPPUNIT_NS::TestFixture
     CPPUNIT_TEST( testFindFirstOf );
     CPPUNIT_TEST( testFindFirstNotOf );
     CPPUNIT_TEST( testPrintf );
+    CPPUNIT_TEST( testScanf );
     CPPUNIT_TEST( testCopy );
     CPPUNIT_TEST( testStringOps );
     CPPUNIT_TEST( testGrow );
@@ -66,6 +67,7 @@ protected:
     void testAppendStdString();
     void testAppendf();
     void testPrintf();
+    void testScanf();
     void testSubscriptOp();
     void testSubscriptOpFail();
     void testDumpStats();

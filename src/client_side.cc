@@ -230,7 +230,6 @@ clientUpdateStatHistCounters(const LogTags &logType, int svc_time)
         statCounter.client_http.nearHitSvcTime.count(svc_time);
         break;
 
-    case LOG_TCP_INM_HIT:
     case LOG_TCP_IMS_HIT:
         statCounter.client_http.nearMissSvcTime.count(svc_time);
         break;
@@ -2521,8 +2520,8 @@ ConnStateData::start()
         for (unsigned int pool = 0; pool < pools.size(); ++pool) {
 
             /* pools require explicit 'allow' to assign a client into them */
-            if (pools[pool]->access) {
-                ch.changeAcl(pools[pool]->access);
+            if (pools[pool].access) {
+                ch.changeAcl(pools[pool].access);
                 allow_t answer = ch.fastCheck();
                 if (answer == ACCESS_ALLOWED) {
 
@@ -2536,8 +2535,8 @@ ConnStateData::start()
 
                     /* setup write limiter for this request */
                     const double burst = floor(0.5 +
-                                               (pools[pool]->highwatermark * Config.ClientDelay.initial)/100.0);
-                    cli->setWriteLimiter(pools[pool]->rate, burst, pools[pool]->highwatermark);
+                                               (pools[pool].highwatermark * Config.ClientDelay.initial)/100.0);
+                    cli->setWriteLimiter(pools[pool].rate, burst, pools[pool].highwatermark);
                     break;
                 } else {
                     debugs(83, 4, HERE << "Delay pool " << pool << " skipped because ACL " << answer);
@@ -2717,6 +2716,14 @@ clientNegotiateSSL(int fd, void *data)
         debugs(83, 5, "clientNegotiateSSL: FD " << fd <<
                " has no certificate.");
     }
+
+#if defined(TLSEXT_NAMETYPE_host_name)
+    if (!conn->serverBump()) {
+        // when in bumpClientFirst mode, get the server name from SNI
+        if (const char *server = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name))
+            conn->resetSslCommonName(server);
+    }
+#endif
 
     conn->readSomeData();
 }
@@ -3173,13 +3180,7 @@ ConnStateData::parseTlsHandshake()
 
     // Even if the parser failed, each TLS detail should either be set
     // correctly or still be "unknown"; copying unknown detail is a no-op.
-    Security::TlsDetails::Pointer const &details = tlsParser.details;
-    clientConnection->tlsNegotiations()->retrieveParsedInfo(details);
-    if (details && !details->serverName.isEmpty()) {
-        resetSslCommonName(details->serverName.c_str());
-        if (sslServerBump)
-            sslServerBump->clientSni = details->serverName;
-    }
+    clientConnection->tlsNegotiations()->retrieveParsedInfo(tlsParser.details);
 
     // We should disable read/write handlers
     Comm::SetSelect(clientConnection->fd, COMM_SELECT_READ, NULL, NULL, 0);
@@ -3220,6 +3221,14 @@ ConnStateData::startPeekAndSplice(const bool unsupportedProtocol)
         if (!spliceOnError(ERR_PROTOCOL_UNKNOWN))
             clientConnection->close();
         return;
+    }
+
+    if (serverBump()) {
+        Security::TlsDetails::Pointer const &details = tlsParser.details;
+        if (details && !details->serverName.isEmpty()) {
+            serverBump()->clientSni = details->serverName;
+            resetSslCommonName(details->serverName.c_str());
+        }
     }
 
     startPeekAndSpliceDone();

@@ -9,19 +9,23 @@
 #ifndef _SQUID_SRC_DNS_FORWARD_H
 #define _SQUID_SRC_DNS_FORWARD_H
 
-#include "ip/forward.h"
+namespace Ip
+{
+class Address;
+}
 
 class rfc1035_rr;
 
 typedef void IDNSCB(void *, const rfc1035_rr *, int, const char *);
 
-/// generic DNS API
+// generic DNS API
 namespace Dns
 {
 
 class LookupDetails;
 
 void Init(void);
+void Shutdown(void);
 
 } // namespace Dns
 
