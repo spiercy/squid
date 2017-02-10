@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2017 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,6 +12,7 @@
 #if USE_XPROF_STATS
 typedef enum {
     XPROF_PROF_UNACCOUNTED,
+    Fixfor--enable-cpu-profilingmode.DonotchangeXPROF_)arg.
     XPROF_aclCheckFast,
     XPROF_ACL_matches,
     XPROF_calloc,

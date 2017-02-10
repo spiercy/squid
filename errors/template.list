@@ -8,44 +8,128 @@
 
 ERROR_TEMPLATES= \
     templates/ERR_ACCESS_DENIED \
+    templates/ERR_ACCESS_DENIED.~1~ \
+    templates/ERR_ACCESS_DENIED.~2~ \
     templates/ERR_ACL_TIME_QUOTA_EXCEEDED \
+    templates/ERR_ACL_TIME_QUOTA_EXCEEDED.~1~ \
+    templates/ERR_ACL_TIME_QUOTA_EXCEEDED.~2~ \
     templates/ERR_AGENT_CONFIGURE \
+    templates/ERR_AGENT_CONFIGURE.~1~ \
+    templates/ERR_AGENT_CONFIGURE.~2~ \
     templates/ERR_AGENT_WPAD \
+    templates/ERR_AGENT_WPAD.~1~ \
+    templates/ERR_AGENT_WPAD.~2~ \
     templates/ERR_CACHE_ACCESS_DENIED \
+    templates/ERR_CACHE_ACCESS_DENIED.~1~ \
+    templates/ERR_CACHE_ACCESS_DENIED.~2~ \
     templates/ERR_CACHE_MGR_ACCESS_DENIED \
+    templates/ERR_CACHE_MGR_ACCESS_DENIED.~1~ \
+    templates/ERR_CACHE_MGR_ACCESS_DENIED.~2~ \
     templates/ERR_CANNOT_FORWARD \
+    templates/ERR_CANNOT_FORWARD.~1~ \
+    templates/ERR_CANNOT_FORWARD.~2~ \
     templates/ERR_CONFLICT_HOST \
+    templates/ERR_CONFLICT_HOST.~1~ \
+    templates/ERR_CONFLICT_HOST.~2~ \
     templates/ERR_CONNECT_FAIL \
+    templates/ERR_CONNECT_FAIL.~1~ \
+    templates/ERR_CONNECT_FAIL.~2~ \
     templates/ERR_DIR_LISTING \
+    templates/ERR_DIR_LISTING.~1~ \
+    templates/ERR_DIR_LISTING.~2~ \
     templates/ERR_DNS_FAIL \
+    templates/ERR_DNS_FAIL.~1~ \
+    templates/ERR_DNS_FAIL.~2~ \
     templates/ERR_ESI \
+    templates/ERR_ESI.~1~ \
+    templates/ERR_ESI.~2~ \
     templates/ERR_FORWARDING_DENIED \
+    templates/ERR_FORWARDING_DENIED.~1~ \
+    templates/ERR_FORWARDING_DENIED.~2~ \
     templates/ERR_FTP_DISABLED \
+    templates/ERR_FTP_DISABLED.~1~ \
+    templates/ERR_FTP_DISABLED.~2~ \
     templates/ERR_FTP_FAILURE \
+    templates/ERR_FTP_FAILURE.~1~ \
+    templates/ERR_FTP_FAILURE.~2~ \
     templates/ERR_FTP_FORBIDDEN \
+    templates/ERR_FTP_FORBIDDEN.~1~ \
+    templates/ERR_FTP_FORBIDDEN.~2~ \
     templates/ERR_FTP_NOT_FOUND \
+    templates/ERR_FTP_NOT_FOUND.~1~ \
+    templates/ERR_FTP_NOT_FOUND.~2~ \
     templates/ERR_FTP_PUT_CREATED \
+    templates/ERR_FTP_PUT_CREATED.~1~ \
+    templates/ERR_FTP_PUT_CREATED.~2~ \
     templates/ERR_FTP_PUT_ERROR \
+    templates/ERR_FTP_PUT_ERROR.~1~ \
+    templates/ERR_FTP_PUT_ERROR.~2~ \
     templates/ERR_FTP_PUT_MODIFIED \
+    templates/ERR_FTP_PUT_MODIFIED.~1~ \
+    templates/ERR_FTP_PUT_MODIFIED.~2~ \
     templates/ERR_FTP_UNAVAILABLE \
+    templates/ERR_FTP_UNAVAILABLE.~1~ \
+    templates/ERR_FTP_UNAVAILABLE.~2~ \
     templates/ERR_GATEWAY_FAILURE \
+    templates/ERR_GATEWAY_FAILURE.~1~ \
+    templates/ERR_GATEWAY_FAILURE.~2~ \
     templates/ERR_ICAP_FAILURE \
+    templates/ERR_ICAP_FAILURE.~1~ \
+    templates/ERR_ICAP_FAILURE.~2~ \
     templates/ERR_INVALID_REQ \
+    templates/ERR_INVALID_REQ.~1~ \
+    templates/ERR_INVALID_REQ.~2~ \
     templates/ERR_INVALID_RESP \
+    templates/ERR_INVALID_RESP.~1~ \
+    templates/ERR_INVALID_RESP.~2~ \
     templates/ERR_INVALID_URL \
+    templates/ERR_INVALID_URL.~1~ \
+    templates/ERR_INVALID_URL.~2~ \
     templates/ERR_LIFETIME_EXP \
+    templates/ERR_LIFETIME_EXP.~1~ \
+    templates/ERR_LIFETIME_EXP.~2~ \
     templates/ERR_NO_RELAY \
+    templates/ERR_NO_RELAY.~1~ \
+    templates/ERR_NO_RELAY.~2~ \
     templates/ERR_ONLY_IF_CACHED_MISS \
+    templates/ERR_ONLY_IF_CACHED_MISS.~1~ \
+    templates/ERR_ONLY_IF_CACHED_MISS.~2~ \
     templates/ERR_PRECONDITION_FAILED \
+    templates/ERR_PRECONDITION_FAILED.~1~ \
+    templates/ERR_PRECONDITION_FAILED.~2~ \
     templates/ERR_PROTOCOL_UNKNOWN \
+    templates/ERR_PROTOCOL_UNKNOWN.~1~ \
+    templates/ERR_PROTOCOL_UNKNOWN.~2~ \
     templates/ERR_READ_ERROR \
+    templates/ERR_READ_ERROR.~1~ \
+    templates/ERR_READ_ERROR.~2~ \
     templates/ERR_READ_TIMEOUT \
+    templates/ERR_READ_TIMEOUT.~1~ \
+    templates/ERR_READ_TIMEOUT.~2~ \
     templates/ERR_SECURE_CONNECT_FAIL \
+    templates/ERR_SECURE_CONNECT_FAIL.~1~ \
+    templates/ERR_SECURE_CONNECT_FAIL.~2~ \
     templates/ERR_SHUTTING_DOWN \
+    templates/ERR_SHUTTING_DOWN.~1~ \
+    templates/ERR_SHUTTING_DOWN.~2~ \
     templates/ERR_SOCKET_FAILURE \
+    templates/ERR_SOCKET_FAILURE.~1~ \
+    templates/ERR_SOCKET_FAILURE.~2~ \
     templates/ERR_TOO_BIG \
+    templates/ERR_TOO_BIG.~1~ \
+    templates/ERR_TOO_BIG.~2~ \
     templates/ERR_UNSUP_HTTPVERSION \
+    templates/ERR_UNSUP_HTTPVERSION.~1~ \
+    templates/ERR_UNSUP_HTTPVERSION.~2~ \
     templates/ERR_UNSUP_REQ \
+    templates/ERR_UNSUP_REQ.~1~ \
+    templates/ERR_UNSUP_REQ.~2~ \
     templates/ERR_URN_RESOLVE \
+    templates/ERR_URN_RESOLVE.~1~ \
+    templates/ERR_URN_RESOLVE.~2~ \
     templates/ERR_WRITE_ERROR \
-    templates/ERR_ZERO_SIZE_OBJECT 
+    templates/ERR_WRITE_ERROR.~1~ \
+    templates/ERR_WRITE_ERROR.~2~ \
+    templates/ERR_ZERO_SIZE_OBJECT \
+    templates/ERR_ZERO_SIZE_OBJECT.~1~ \
+    templates/ERR_ZERO_SIZE_OBJECT.~2~ 
