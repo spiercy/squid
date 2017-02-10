@@ -41,7 +41,6 @@
 #include "HttpHeaderTools.h"
 #include "HttpReply.h"
 #include "HttpRequest.h"
-#include "HttpStateFlags.h"
 #include "log/access_log.h"
 #include "MemBuf.h"
 #include "MemObject.h"
@@ -82,7 +81,7 @@ static const char *const crlf = "\r\n";
 
 static void httpMaybeRemovePublic(StoreEntry *, Http::StatusCode);
 static void copyOneHeaderFromClientsideRequestToUpstreamRequest(const HttpHeaderEntry *e, const String strConnection, const HttpRequest * request,
-        HttpHeader * hdr_out, const int we_do_ranges, const HttpStateFlags &);
+        HttpHeader * hdr_out, const int we_do_ranges, const Http::StateFlags &);
 
 HttpStateData::HttpStateData(FwdState *theFwdState) :
     AsyncJob("HttpStateData"),
@@ -90,7 +89,8 @@ HttpStateData::HttpStateData(FwdState *theFwdState) :
     lastChunk(0),
     httpChunkDecoder(NULL),
     payloadSeen(0),
-    payloadTruncated(0)
+    payloadTruncated(0),
+    sawDateGoBack(false)
 {
     debugs(11,5,HERE << "HttpStateData " << this << " created");
     ignoreCacheControl = false;
@@ -168,6 +168,14 @@ HttpStateData::httpTimeout(const CommTimeoutCbParams &)
     mustStop("HttpStateData::httpTimeout");
 }
 
+static StoreEntry *
+findPreviouslyCachedEntry(StoreEntry *newEntry) {
+    assert(newEntry->mem_obj);
+    return newEntry->mem_obj->request ?
+           storeGetPublicByRequest(newEntry->mem_obj->request) :
+           storeGetPublic(newEntry->mem_obj->storeId(), newEntry->mem_obj->method);
+}
+
 /// Remove an existing public store entry if the incoming response (to be
 /// stored in a currently private entry) is going to invalidate it.
 static void
@@ -175,11 +183,16 @@ httpMaybeRemovePublic(StoreEntry * e, Http::StatusCode status)
 {
     int remove = 0;
     int forbidden = 0;
-    StoreEntry *pe;
 
     // If the incoming response already goes into a public entry, then there is
     // nothing to remove. This protects ready-for-collapsing entries as well.
     if (!EBIT_TEST(e->flags, KEY_PRIVATE))
+        return;
+
+    // If the new/incoming response cannot be stored, then it does not
+    // compete with the old stored response for the public key, and the
+    // old stored response should be left as is.
+    if (e->mem_obj->request && !e->mem_obj->request->flags.cachable)
         return;
 
     switch (status) {
@@ -193,6 +206,8 @@ httpMaybeRemovePublic(StoreEntry * e, Http::StatusCode status)
     case Http::scMovedPermanently:
 
     case Http::scFound:
+
+    case Http::scSeeOther:
 
     case Http::scGone:
 
@@ -234,12 +249,7 @@ httpMaybeRemovePublic(StoreEntry * e, Http::StatusCode status)
     if (!remove && !forbidden)
         return;
 
-    assert(e->mem_obj);
-
-    if (e->mem_obj->request)
-        pe = storeGetPublicByRequest(e->mem_obj->request);
-    else
-        pe = storeGetPublic(e->mem_obj->storeId(), e->mem_obj->method);
+    StoreEntry *pe = findPreviouslyCachedEntry(e);
 
     if (pe != NULL) {
         assert(e != pe);
@@ -327,6 +337,13 @@ HttpStateData::cacheableReply()
 
     if (EBIT_TEST(entry->flags, RELEASE_REQUEST)) {
         debugs(22, 3, "NO because " << *entry << " has been released.");
+        return 0;
+    }
+
+    // RFC 7234 section 4: a cache MUST use the most recent response
+    // (as determined by the Date header field)
+    if (sawDateGoBack) {
+        debugs(22, 3, "NO because " << *entry << " has an older date header.");
         return 0;
     }
 
@@ -583,7 +600,7 @@ assembleVaryKey(String &vary, SBuf &vstr, const HttpRequest &request)
     while (strListGetItem(&vary, ',', &item, &ilen, &pos)) {
         SBuf name(item, ilen);
         if (name == asterisk) {
-            vstr.clear();
+            vstr = asterisk;
             break;
         }
         name.toLower();
@@ -916,7 +933,10 @@ HttpStateData::haveParsedReplyHeaders()
     /* Check if object is cacheable or not based on reply code */
     debugs(11, 3, "HTTP CODE: " << rep->sline.status());
 
-    if (neighbors_do_private_keys)
+    if (const StoreEntry *oldEntry = findPreviouslyCachedEntry(entry))
+        sawDateGoBack = rep->olderThan(oldEntry->getReply());
+
+    if (neighbors_do_private_keys && !sawDateGoBack)
         httpMaybeRemovePublic(entry, rep->sline.status());
 
     bool varyFailure = false;
@@ -934,6 +954,12 @@ HttpStateData::haveParsedReplyHeaders()
             varyFailure = true;
         } else {
             entry->mem_obj->vary_headers = vary;
+
+            // RFC 7231 section 7.1.4
+            // Vary:* can be cached, but has mandatory revalidation
+            static const SBuf asterisk("*");
+            if (vary == asterisk)
+                EBIT_SET(entry->flags, ENTRY_REVALIDATE_ALWAYS);
         }
     }
 
@@ -1641,7 +1667,7 @@ HttpStateData::doneWithServer() const
  * Fixup authentication request headers for special cases
  */
 static void
-httpFixupAuthentication(HttpRequest * request, const HttpHeader * hdr_in, HttpHeader * hdr_out, const HttpStateFlags &flags)
+httpFixupAuthentication(HttpRequest * request, const HttpHeader * hdr_in, HttpHeader * hdr_out, const Http::StateFlags &flags)
 {
     Http::HdrType header = flags.originpeer ? Http::HdrType::AUTHORIZATION : Http::HdrType::PROXY_AUTHORIZATION;
 
@@ -1747,7 +1773,7 @@ HttpStateData::httpBuildRequestHeader(HttpRequest * request,
                                       StoreEntry * entry,
                                       const AccessLogEntryPointer &al,
                                       HttpHeader * hdr_out,
-                                      const HttpStateFlags &flags)
+                                      const Http::StateFlags &flags)
 {
     /* building buffer for complex strings */
 #define BBUF_SZ (MAX_URL+32)
@@ -1937,7 +1963,7 @@ HttpStateData::httpBuildRequestHeader(HttpRequest * request,
  * to our outgoing fetch request.
  */
 void
-copyOneHeaderFromClientsideRequestToUpstreamRequest(const HttpHeaderEntry *e, const String strConnection, const HttpRequest * request, HttpHeader * hdr_out, const int we_do_ranges, const HttpStateFlags &flags)
+copyOneHeaderFromClientsideRequestToUpstreamRequest(const HttpHeaderEntry *e, const String strConnection, const HttpRequest * request, HttpHeader * hdr_out, const int we_do_ranges, const Http::StateFlags &flags)
 {
     debugs(11, 5, "httpBuildRequestHeader: " << e->name << ": " << e->value );
 

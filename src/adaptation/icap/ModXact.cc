@@ -1267,7 +1267,7 @@ void Adaptation::Icap::ModXact::finalizeLogInfo()
 {
     HttpRequest *adapted_request_ = nullptr;
     HttpReply *adapted_reply_ = nullptr;
-    HttpRequest *virgin_request_ = (virgin.cause ? virgin.cause : dynamic_cast<HttpRequest*>(virgin.header));
+    HttpRequest *virgin_request_ = const_cast<HttpRequest*>(&virginRequest());
     if (!(adapted_request_ = dynamic_cast<HttpRequest*>(adapted.header))) {
         // if the request was not adapted, use virgin request to simplify
         // the code further below
@@ -1275,7 +1275,7 @@ void Adaptation::Icap::ModXact::finalizeLogInfo()
         adapted_reply_ = dynamic_cast<HttpReply*>(adapted.header);
     }
 
-    Adaptation::Icap::History::Pointer h = (virgin_request_ ? virgin_request_->icapHistory() : NULL);
+    Adaptation::Icap::History::Pointer h = virgin_request_->icapHistory();
     Must(h != NULL); // ICAPXaction::maybeLog calls only if there is a log
     al.icp.opcode = ICP_INVALID;
     al.url = h->log_uri.termedBuf();
@@ -1309,7 +1309,8 @@ void Adaptation::Icap::ModXact::finalizeLogInfo()
         virgin_msg = virgin_request_;
     assert(virgin_msg != virgin.cause);
     al.http.clientRequestSz.header = virgin_msg->hdr_sz;
-    al.http.clientRequestSz.payloadData = virgin_msg->body_pipe->producedSize();
+    if (virgin_msg->body_pipe != NULL)
+        al.http.clientRequestSz.payloadData = virgin_msg->body_pipe->producedSize();
 
     // leave al.icap.bodyBytesRead negative if no body
     if (replyHttpHeaderSize >= 0 || replyHttpBodySize >= 0) {

@@ -63,9 +63,9 @@ Ssl::PeekingPeerConnector::checkForPeekAndSplice()
     acl_checklist->banAction(allow_t(ACCESS_ALLOWED, Ssl::bumpStare));
     acl_checklist->banAction(allow_t(ACCESS_ALLOWED, Ssl::bumpClientFirst));
     acl_checklist->banAction(allow_t(ACCESS_ALLOWED, Ssl::bumpServerFirst));
-    Security::SessionPtr ssl = fd_table[serverConn->fd].ssl.get();
-    BIO *b = SSL_get_rbio(ssl);
-    Ssl::ServerBio *srvBio = static_cast<Ssl::ServerBio *>(b->ptr);
+    Security::SessionPointer session(fd_table[serverConn->fd].ssl);
+    BIO *b = SSL_get_rbio(session.get());
+    Ssl::ServerBio *srvBio = static_cast<Ssl::ServerBio *>(BIO_get_data(b));
     if (!srvBio->canSplice())
         acl_checklist->banAction(allow_t(ACCESS_ALLOWED, Ssl::bumpSplice));
     if (!srvBio->canBump())
@@ -76,9 +76,9 @@ Ssl::PeekingPeerConnector::checkForPeekAndSplice()
 void
 Ssl::PeekingPeerConnector::checkForPeekAndSpliceMatched(const Ssl::BumpMode action)
 {
-    Security::SessionPtr ssl = fd_table[serverConn->fd].ssl.get();
-    BIO *b = SSL_get_rbio(ssl);
-    Ssl::ServerBio *srvBio = static_cast<Ssl::ServerBio *>(b->ptr);
+    Security::SessionPointer session(fd_table[serverConn->fd].ssl);
+    BIO *b = SSL_get_rbio(session.get());
+    Ssl::ServerBio *srvBio = static_cast<Ssl::ServerBio *>(BIO_get_data(b));
     debugs(83,5, "Will check for peek and splice on FD " << serverConn->fd);
 
     Ssl::BumpMode finalAction = action;
@@ -126,10 +126,9 @@ Ssl::PeekingPeerConnector::checkForPeekAndSpliceGuess() const
     return Ssl::bumpSplice;
 }
 
-Security::ContextPtr
-Ssl::PeekingPeerConnector::getSslContext()
+Security::ContextPointer
+Ssl::PeekingPeerConnector::getTlsContext()
 {
-    // XXX: locate a per-server context in Security:: instead
     return ::Config.ssl_client.sslContext;
 }
 
@@ -170,14 +169,14 @@ Ssl::PeekingPeerConnector::initialize(Security::SessionPointer &serverSession)
             auto clientSession = fd_table[clientConn->fd].ssl.get();
             Must(clientSession);
             BIO *bc = SSL_get_rbio(clientSession);
-            Ssl::ClientBio *cltBio = static_cast<Ssl::ClientBio *>(bc->ptr);
+            Ssl::ClientBio *cltBio = static_cast<Ssl::ClientBio *>(BIO_get_data(bc));
             Must(cltBio);
             if (details && details->tlsVersion.protocol != AnyP::PROTO_NONE) {
                 applyTlsDetailsToSSL(serverSession.get(), details, csd->sslBumpMode);
                 // Should we allow it for all protocols?
                 if (details->tlsVersion.protocol == AnyP::PROTO_TLS || details->tlsVersion == AnyP::ProtocolVersion(AnyP::PROTO_SSL, 3, 0)) {
                     BIO *b = SSL_get_rbio(serverSession.get());
-                    Ssl::ServerBio *srvBio = static_cast<Ssl::ServerBio *>(b->ptr);
+                    Ssl::ServerBio *srvBio = static_cast<Ssl::ServerBio *>(BIO_get_data(b));
                     // Inherite client features, like SSL version, SNI and other
                     srvBio->setClientFeatures(details, cltBio->rBufData());
                     srvBio->recordInput(true);
@@ -202,10 +201,10 @@ Ssl::PeekingPeerConnector::initialize(Security::SessionPointer &serverSession)
         }
 
         if (Ssl::ServerBump *serverBump = csd->serverBump()) {
-            serverBump->attachServerSSL(serverSession.get());
+            serverBump->attachServerSession(serverSession);
             // store peeked cert to check SQUID_X509_V_ERR_CERT_CHANGE
             if (X509 *peeked_cert = serverBump->serverCert.get()) {
-                CRYPTO_add(&(peeked_cert->references),1,CRYPTO_LOCK_X509);
+                X509_up_ref(peeked_cert);
                 SSL_set_ex_data(serverSession.get(), ssl_ex_index_ssl_peeked_cert, peeked_cert);
             }
         }
@@ -217,10 +216,8 @@ Ssl::PeekingPeerConnector::initialize(Security::SessionPointer &serverSession)
 void
 Ssl::PeekingPeerConnector::noteNegotiationDone(ErrorState *error)
 {
-    Security::SessionPtr ssl = fd_table[serverConnection()->fd].ssl.get();
-
     // Check the list error with
-    if (!request->clientConnectionManager.valid() || ! ssl)
+    if (!request->clientConnectionManager.valid() || !fd_table[serverConnection()->fd].ssl)
         return;
 
     // remember the server certificate from the ErrorDetail object
@@ -263,9 +260,9 @@ void
 Ssl::PeekingPeerConnector::noteWantWrite()
 {
     const int fd = serverConnection()->fd;
-    Security::SessionPtr ssl = fd_table[fd].ssl.get();
-    BIO *b = SSL_get_rbio(ssl);
-    Ssl::ServerBio *srvBio = static_cast<Ssl::ServerBio *>(b->ptr);
+    Security::SessionPointer session(fd_table[fd].ssl);
+    BIO *b = SSL_get_rbio(session.get());
+    Ssl::ServerBio *srvBio = static_cast<Ssl::ServerBio *>(BIO_get_data(b));
 
     if ((srvBio->bumpMode() == Ssl::bumpPeek || srvBio->bumpMode() == Ssl::bumpStare) && srvBio->holdWrite()) {
         debugs(81, 3, "hold write on SSL connection on FD " << fd);
@@ -280,9 +277,9 @@ void
 Ssl::PeekingPeerConnector::noteNegotiationError(const int result, const int ssl_error, const int ssl_lib_error)
 {
     const int fd = serverConnection()->fd;
-    Security::SessionPtr ssl = fd_table[fd].ssl.get();
-    BIO *b = SSL_get_rbio(ssl);
-    Ssl::ServerBio *srvBio = static_cast<Ssl::ServerBio *>(b->ptr);
+    Security::SessionPointer session(fd_table[fd].ssl);
+    BIO *b = SSL_get_rbio(session.get());
+    Ssl::ServerBio *srvBio = static_cast<Ssl::ServerBio *>(BIO_get_data(b));
 
     // In Peek mode, the ClientHello message sent to the server. If the
     // server resuming a previous (spliced) SSL session with the client,
@@ -307,11 +304,11 @@ Ssl::PeekingPeerConnector::noteNegotiationError(const int result, const int ssl_
     // thus hiding them.
     // Abort if no certificate found probably because of malformed or
     // unsupported server Hello message (TODO: make configurable).
-    if (!SSL_get_ex_data(ssl, ssl_ex_index_ssl_error_detail) &&
+    if (!SSL_get_ex_data(session.get(), ssl_ex_index_ssl_error_detail) &&
             (srvBio->bumpMode() == Ssl::bumpPeek  || srvBio->bumpMode() == Ssl::bumpStare) && srvBio->holdWrite()) {
-        Security::CertPointer serverCert(SSL_get_peer_certificate(ssl));
-        if (serverCert.get()) {
-            debugs(81, 3, "Error ("  << ERR_error_string(ssl_lib_error, NULL) <<  ") but, hold write on SSL connection on FD " << fd);
+        Security::CertPointer serverCert(SSL_get_peer_certificate(session.get()));
+        if (serverCert) {
+            debugs(81, 3, "Error ("  << Security::ErrorString(ssl_lib_error) <<  ") but, hold write on SSL connection on FD " << fd);
             checkForPeekAndSplice();
             return;
         }
@@ -329,9 +326,9 @@ Ssl::PeekingPeerConnector::handleServerCertificate()
 
     if (ConnStateData *csd = request->clientConnectionManager.valid()) {
         const int fd = serverConnection()->fd;
-        Security::SessionPtr ssl = fd_table[fd].ssl.get();
-        Security::CertPointer serverCert(SSL_get_peer_certificate(ssl));
-        if (!serverCert.get())
+        Security::SessionPointer session(fd_table[fd].ssl);
+        Security::CertPointer serverCert(SSL_get_peer_certificate(session.get()));
+        if (!serverCert)
             return;
 
         serverCertificateHandled = true;
@@ -352,10 +349,10 @@ Ssl::PeekingPeerConnector::serverCertificateVerified()
             serverCert.resetAndLock(serverBump->serverCert.get());
         else {
             const int fd = serverConnection()->fd;
-            Security::SessionPtr ssl = fd_table[fd].ssl.get();
-            serverCert.resetWithoutLocking(SSL_get_peer_certificate(ssl));
+            Security::SessionPointer session(fd_table[fd].ssl);
+            serverCert.resetWithoutLocking(SSL_get_peer_certificate(session.get()));
         }
-        if (serverCert.get()) {
+        if (serverCert) {
             csd->resetSslCommonName(Ssl::CommonHostName(serverCert.get()));
             debugs(83, 5, "HTTPS server CN: " << csd->sslCommonName() <<
                    " bumped: " << *serverConnection());

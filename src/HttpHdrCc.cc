@@ -40,6 +40,7 @@ static LookupTable<HttpHdrCcType>::Record CcAttrs[] = {
     {"min-fresh", HttpHdrCcType::CC_MIN_FRESH},
     {"only-if-cached", HttpHdrCcType::CC_ONLY_IF_CACHED},
     {"stale-if-error", HttpHdrCcType::CC_STALE_IF_ERROR},
+    {"immutable", HttpHdrCcType::CC_IMMUTABLE},
     {"Other,", HttpHdrCcType::CC_OTHER}, /* ',' will protect from matches */
     {nullptr, HttpHdrCcType::CC_ENUM_END}
 };
@@ -202,6 +203,9 @@ HttpHdrCc::parse(const String & str)
         case HttpHdrCcType::CC_ONLY_IF_CACHED:
             onlyIfCached(true);
             break;
+        case HttpHdrCcType::CC_IMMUTABLE:
+            Immutable(true);
+            break;
 
         case HttpHdrCcType::CC_OTHER:
             if (other.size())
@@ -277,6 +281,8 @@ HttpHdrCc::packInto(Packable * p) const
             case HttpHdrCcType::CC_STALE_IF_ERROR:
                 p->appendf("=%d", staleIfError());
                 break;
+            case HttpHdrCcType::CC_IMMUTABLE:
+                break;
             case HttpHdrCcType::CC_OTHER:
             case HttpHdrCcType::CC_ENUM_END:
                 // done below after the loop
@@ -306,7 +312,7 @@ httpHdrCcStatDumper(StoreEntry * sentry, int, double val, double, int count)
 {
     extern const HttpHeaderStat *dump_stat; /* argh! */
     const int id = static_cast<int>(val);
-    const bool valid_id = id < HttpHdrCcType::CC_ENUM_END;
+    const bool valid_id = id >= 0 && id < static_cast<int>(HttpHdrCcType::CC_ENUM_END);
     const char *name = valid_id ? CcAttrs[id].name : "INVALID";
 
     if (count || valid_id)

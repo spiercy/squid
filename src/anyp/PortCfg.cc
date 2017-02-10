@@ -44,8 +44,8 @@ AnyP::PortCfg::PortCfg() :
     ,
     clientca(NULL),
     sslContextSessionId(NULL),
-    generateHostCertificates(false),
-    dynamicCertMemCacheSize(std::numeric_limits<size_t>::max()),
+    generateHostCertificates(true),
+    dynamicCertMemCacheSize(4*1024*1024), // 4 MB
     signingCert(),
     signPkey(),
     certsToChain(),
@@ -103,7 +103,7 @@ AnyP::PortCfg::clone() const
 #if 0
     // TODO: AYJ: 2015-01-15: for now SSL does not clone the context object.
     // cloning should only be done before the PortCfg is post-configure initialized and opened
-    Security::ContextPtr sslContext;
+    Security::ContextPointer sslContext;
 #endif
 
 #endif /*0*/

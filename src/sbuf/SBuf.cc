@@ -139,7 +139,8 @@ SBuf::reserve(const SBufReservationRequirements &req)
     if (!mustRealloc && len_ >= req.maxCapacity)
         return spaceSize(); // but we cannot reallocate
 
-    const size_type newSpace = std::min(req.idealSpace, maxSize - len_);
+    const size_type desiredSpace = std::max(req.minSpace, req.idealSpace);
+    const size_type newSpace = std::min(desiredSpace, maxSize - len_);
     reserveCapacity(std::min(len_ + newSpace, req.maxCapacity));
     debugs(24, 7, id << " now: " << off_ << '+' << len_ << '+' << spaceSize() <<
            '=' << store_->capacity);
@@ -187,6 +188,9 @@ SBuf::clear()
 SBuf&
 SBuf::append(const SBuf &S)
 {
+    if (isEmpty() && store_ == GetStorePrototype())
+        return (*this = S); // optimization: avoid needless copying
+
     const Locker blobKeeper(this, S.buf());
     return lowAppend(S.buf(), S.length());
 }
@@ -825,27 +829,6 @@ SBuf::findLastNotOf(const CharacterSet &set, size_type endPos) const
     }
     debugs(24, 7, "not found");
     return npos;
-}
-
-/*
- * TODO: borrow a sscanf implementation from Linux or similar?
- * we'd really need a vsnscanf(3)... ? As an alternative, a
- * light-regexp-like domain-specific syntax might be an idea.
- */
-int
-SBuf::scanf(const char *format, ...)
-{
-    // with the format or an arg might be a dangerous char*
-    // that gets invalidated by c_str()
-    const Locker blobKeeper(this, buf());
-
-    va_list arg;
-    int rv;
-    ++stats.scanf;
-    va_start(arg, format);
-    rv = vsscanf(c_str(), format, arg);
-    va_end(arg);
-    return rv;
 }
 
 void

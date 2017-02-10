@@ -19,13 +19,12 @@
 
 CBDATA_NAMESPACED_CLASS_INIT(Security, BlindPeerConnector);
 
-Security::ContextPtr
-Security::BlindPeerConnector::getSslContext()
+Security::ContextPointer
+Security::BlindPeerConnector::getTlsContext()
 {
     if (const CachePeer *peer = serverConnection()->getPeer()) {
         assert(peer->secure.encryptTransport);
-        Security::ContextPtr sslContext(peer->sslContext);
-        return sslContext;
+        return peer->sslContext;
     }
     return ::Config.ssl_client.sslContext;
 }

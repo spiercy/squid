@@ -20,8 +20,9 @@ ErrorLevel() {
     return Config.onoff.relaxed_header_parser < 0 ? DBG_IMPORTANT : 5;
 }
 
-Http::One::RequestParser::RequestParser() :
-    Parser()
+Http::One::RequestParser::RequestParser(bool preserveParsed) :
+    Parser(),
+    preserveParsed_(preserveParsed)
 {}
 
 Http1::Parser::size_type
@@ -185,14 +186,36 @@ Http::One::RequestParser::parseUriField(Http1::Tokenizer &tok)
 bool
 Http::One::RequestParser::parseHttpVersionField(Http1::Tokenizer &tok)
 {
+    static const SBuf http1p0("HTTP/1.0");
+    static const SBuf http1p1("HTTP/1.1");
     const auto savedTok = tok;
 
-    SBuf digit;
-    // Searching for Http1magic precludes detecting HTTP/2+ versions.
-    // Rewrite if we ever _need_ to return 505 (Version Not Supported) errors.
-    if (tok.suffix(digit, CharacterSet::DIGIT) && tok.skipSuffix(Http1magic)) {
-        msgProtocol_ = Http::ProtocolVersion(1, (*digit.rawContent() - '0'));
+    // Optimization: Expect (and quickly parse) HTTP/1.1 or HTTP/1.0 in
+    // the vast majority of cases.
+    if (tok.skipSuffix(http1p1)) {
+        msgProtocol_ = Http::ProtocolVersion(1, 1);
         return true;
+    } else if (tok.skipSuffix(http1p0)) {
+        msgProtocol_ = Http::ProtocolVersion(1, 0);
+        return true;
+    } else {
+        // RFC 7230 section 2.6:
+        // HTTP-version  = HTTP-name "/" DIGIT "." DIGIT
+        static const CharacterSet period("Decimal point", ".");
+        static const SBuf proto("HTTP/");
+        SBuf majorDigit;
+        SBuf minorDigit;
+        if (tok.suffix(minorDigit, CharacterSet::DIGIT) &&
+                tok.skipOneTrailing(period) &&
+                tok.suffix(majorDigit, CharacterSet::DIGIT) &&
+                tok.skipSuffix(proto)) {
+            const bool multiDigits = majorDigit.length() > 1 || minorDigit.length() > 1;
+            // use '0.0' for unsupported multiple digit version numbers
+            const unsigned int major = multiDigits ? 0 : (*majorDigit.rawContent() - '0');
+            const unsigned int minor = multiDigits ? 0 : (*minorDigit.rawContent() - '0');
+            msgProtocol_ = Http::ProtocolVersion(major, minor);
+            return true;
+        }
     }
 
     // A GET request might use HTTP/0.9 syntax
@@ -324,6 +347,19 @@ Http::One::RequestParser::parseRequestFirstLine()
 
 bool
 Http::One::RequestParser::parse(const SBuf &aBuf)
+{
+    const bool result = doParse(aBuf);
+    if (preserveParsed_) {
+        assert(aBuf.length() >= remaining().length());
+        parsed_.append(aBuf.substr(0, aBuf.length() - remaining().length())); // newly parsed bytes
+    }
+
+    return result;
+}
+
+// raw is not a reference because a reference might point back to our own buf_ or parsed_
+bool
+Http::One::RequestParser::doParse(const SBuf &aBuf)
 {
     buf_ = aBuf;
     debugs(74, DBG_DATA, "Parse buf={length=" << aBuf.length() << ", data='" << aBuf << "'}");

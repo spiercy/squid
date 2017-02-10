@@ -19,7 +19,7 @@ CBDATA_NAMESPACED_CLASS_INIT(Security, BlindPeerConnector);
 namespace Security
 {
 bool BlindPeerConnector::initialize(Security::SessionPointer &) STUB_RETVAL(false)
-Security::ContextPtr BlindPeerConnector::getSslContext() STUB_RETVAL(nullptr)
+Security::ContextPointer BlindPeerConnector::getTlsContext() STUB_RETVAL(Security::ContextPointer())
 void BlindPeerConnector::noteNegotiationDone(ErrorState *) STUB
 }
 
@@ -33,7 +33,7 @@ bool Security::HandshakeParser::parseHello(const SBuf &) STUB_RETVAL(false)
 
 #include "security/NegotiationHistory.h"
 Security::NegotiationHistory::NegotiationHistory() STUB
-void Security::NegotiationHistory::retrieveNegotiatedInfo(Security::SessionPtr) STUB
+void Security::NegotiationHistory::retrieveNegotiatedInfo(const Security::SessionPointer &) STUB
 void Security::NegotiationHistory::retrieveParsedInfo(Security::TlsDetails::Pointer const &) STUB
 const char *Security::NegotiationHistory::cipherName() const STUB
 const char *Security::NegotiationHistory::printTlsVersion(AnyP::ProtocolVersion const &v) const STUB
@@ -60,7 +60,7 @@ void PeerConnector::handleNegotiateError(const int) STUB
 void PeerConnector::noteWantRead() STUB
 void PeerConnector::noteWantWrite() STUB
 void PeerConnector::noteNegotiationError(const int, const int, const int) STUB
-//    virtual Security::ContextPtr getSslContext() = 0;
+//    virtual Security::ContextPointer getTlsContext() = 0;
 void PeerConnector::bail(ErrorState *) STUB
 void PeerConnector::callBack() STUB
 void PeerConnector::recordNegotiationDetails() STUB
@@ -69,11 +69,11 @@ void PeerConnector::recordNegotiationDetails() STUB
 #include "security/PeerOptions.h"
 Security::PeerOptions Security::ProxyOutgoingConfig;
 void Security::PeerOptions::parse(char const*) STUB
-Security::ContextPtr Security::PeerOptions::createClientContext(bool) STUB_RETVAL(NULL)
+Security::ContextPointer Security::PeerOptions::createClientContext(bool) STUB_RETVAL(Security::ContextPointer())
 void Security::PeerOptions::updateTlsVersionLimits() STUB
-Security::ContextPtr Security::PeerOptions::createBlankContext() const STUB
-void Security::PeerOptions::updateContextCa(Security::ContextPtr &) STUB
-void Security::PeerOptions::updateContextCrl(Security::ContextPtr &) STUB
+Security::ContextPointer Security::PeerOptions::createBlankContext() const STUB_RETVAL(Security::ContextPointer())
+void Security::PeerOptions::updateContextCa(Security::ContextPointer &) STUB
+void Security::PeerOptions::updateContextCrl(Security::ContextPointer &) STUB
 void Security::PeerOptions::dumpCfg(Packable*, char const*) const STUB
 long Security::PeerOptions::parseOptions() STUB_RETVAL(0)
 long Security::PeerOptions::parseFlags() STUB_RETVAL(0)
@@ -83,9 +83,9 @@ void parse_securePeerOptions(Security::PeerOptions *) STUB
 //Security::ServerOptions::ServerOptions(const Security::ServerOptions &) STUB
 void Security::ServerOptions::parse(const char *) STUB
 void Security::ServerOptions::dumpCfg(Packable *, const char *) const STUB
-Security::ContextPtr Security::ServerOptions::createBlankContext() const STUB
+Security::ContextPointer Security::ServerOptions::createBlankContext() const STUB_RETVAL(Security::ContextPointer())
 bool Security::ServerOptions::createStaticServerContext(AnyP::PortCfg &) STUB_RETVAL(false)
-void Security::ServerOptions::updateContextEecdh(Security::ContextPtr &) STUB
+void Security::ServerOptions::updateContextEecdh(Security::ContextPointer &) STUB
 
 #include "security/Session.h"
 namespace Security {

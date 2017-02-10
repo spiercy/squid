@@ -11,7 +11,6 @@
 #include "squid.h"
 #include "acl/Acl.h"
 #include "acl/AclDenyInfoList.h"
-#include "acl/AclNameList.h"
 #include "acl/AclSizeLimit.h"
 #include "acl/Address.h"
 #include "acl/Gadgets.h"
@@ -613,7 +612,7 @@ parseConfigFile(const char *file_name)
 static void
 configDoConfigure(void)
 {
-    memset(&Config2, '\0', sizeof(SquidConfig2));
+    Config2.clear();
     /* init memory as early as possible */
     memConfigure();
     /* Sanity checks */
@@ -836,7 +835,7 @@ configDoConfigure(void)
             if (pwd->pw_dir && *pwd->pw_dir) {
                 // putenv() leaks by design; avoid leaks when nothing changes
                 static SBuf lastDir;
-                if (lastDir.isEmpty() || !lastDir.cmp(pwd->pw_dir)) {
+                if (lastDir.isEmpty() || lastDir.cmp(pwd->pw_dir) != 0) {
                     lastDir = pwd->pw_dir;
                     int len = strlen(pwd->pw_dir) + 6;
                     char *env_str = (char *)xcalloc(len, 1);
@@ -880,7 +879,7 @@ configDoConfigure(void)
 #endif
         }
 #if USE_OPENSSL
-        Ssl::useSquidUntrusted(Config.ssl_client.sslContext);
+        Ssl::useSquidUntrusted(Config.ssl_client.sslContext.get());
 #endif
     }
 
@@ -1341,7 +1340,7 @@ void
 dump_acl_access(StoreEntry * entry, const char *name, acl_access * head)
 {
     if (head)
-        dump_SBufList(entry, head->treeDump(name,NULL));
+        dump_SBufList(entry, head->treeDump(name, &Acl::AllowOrDeny));
 }
 
 static void
@@ -1487,7 +1486,7 @@ static void
 free_acl_tos(acl_tos ** head)
 {
     delete *head;
-    head = NULL;
+    *head = NULL;
 }
 
 #if SO_MARK && USE_LIBCAP
@@ -1540,7 +1539,7 @@ static void
 free_acl_nfmark(acl_nfmark ** head)
 {
     delete *head;
-    head = NULL;
+    *head = NULL;
 }
 #endif /* SO_MARK */
 
@@ -1847,6 +1846,23 @@ dump_authparam(StoreEntry * entry, const char *name, Auth::ConfigVector cfg)
         (*i)->dump(entry, name, (*i));
 }
 #endif /* USE_AUTH */
+
+static void
+ParseAclWithAction(acl_access **access, const allow_t &action, const char *desc, ACL *acl = nullptr)
+{
+    assert(access);
+    SBuf name;
+    if (!*access) {
+        *access = new Acl::Tree;
+        name.Printf("(%s rules)", desc);
+        (*access)->context(name.c_str(), config_input_line);
+    }
+    Acl::AndNode *rule = new Acl::AndNode;
+    name.Printf("(%s rule)", desc);
+    rule->context(name.c_str(), config_input_line);
+    acl ? rule->add(acl) : rule->lineParse();
+    (*access)->add(rule, action);
+}
 
 /* TODO: just return the object, the # is irrelevant */
 static int
@@ -2313,17 +2329,14 @@ free_peer(CachePeer ** P)
 static void
 dump_cachemgrpasswd(StoreEntry * entry, const char *name, Mgr::ActionPasswordList * list)
 {
-    wordlist *w;
-
-    while (list != NULL) {
+    while (list) {
         if (strcmp(list->passwd, "none") && strcmp(list->passwd, "disable"))
             storeAppendPrintf(entry, "%s XXXXXXXXXX", name);
         else
             storeAppendPrintf(entry, "%s %s", name, list->passwd);
 
-        for (w = list->actions; w != NULL; w = w->next) {
-            storeAppendPrintf(entry, " %s", w->key);
-        }
+        for (auto w : list->actions)
+            entry->appendf(" " SQUIDSBUFPH, SQUIDSBUFPRINT(w));
 
         storeAppendPrintf(entry, "\n");
         list = list->next;
@@ -2333,16 +2346,16 @@ dump_cachemgrpasswd(StoreEntry * entry, const char *name, Mgr::ActionPasswordLis
 static void
 parse_cachemgrpasswd(Mgr::ActionPasswordList ** head)
 {
-    char *passwd = NULL;
-    wordlist *actions = NULL;
-    Mgr::ActionPasswordList *p;
-    Mgr::ActionPasswordList **P;
+    char *passwd = nullptr;
     parse_string(&passwd);
-    parse_wordlist(&actions);
-    p = new Mgr::ActionPasswordList;
-    p->passwd = passwd;
-    p->actions = actions;
 
+    Mgr::ActionPasswordList *p = new Mgr::ActionPasswordList;
+    p->passwd = passwd;
+
+    while (char *token = ConfigParser::NextQuotedToken())
+        p->actions.push_back(SBuf(token));
+
+    Mgr::ActionPasswordList **P;
     for (P = head; *P; P = &(*P)->next) {
         /*
          * See if any of the actions from this line already have a
@@ -2352,15 +2365,12 @@ parse_cachemgrpasswd(Mgr::ActionPasswordList ** head)
          * requested action.  Thus, we should warn users who might
          * think they can have two passwords for the same action.
          */
-        wordlist *w;
-        wordlist *u;
-
-        for (w = (*P)->actions; w; w = w->next) {
-            for (u = actions; u; u = u->next) {
-                if (strcmp(w->key, u->key))
+        for (const auto &w : (*P)->actions) {
+            for (const auto &u : p->actions) {
+                if (w != u)
                     continue;
 
-                debugs(0, DBG_CRITICAL, "WARNING: action '" << u->key << "' (line " << config_lineno << ") already has a password");
+                debugs(0, DBG_PARSE_NOTE(1), "ERROR: action '" << u << "' (line " << config_lineno << ") already has a password");
             }
         }
     }
@@ -2371,25 +2381,17 @@ parse_cachemgrpasswd(Mgr::ActionPasswordList ** head)
 static void
 free_cachemgrpasswd(Mgr::ActionPasswordList ** head)
 {
-    Mgr::ActionPasswordList *p;
-
-    while ((p = *head) != NULL) {
-        *head = p->next;
-        xfree(p->passwd);
-        wordlistDestroy(&p->actions);
-        xfree(p);
-    }
+    delete *head;
+    *head = nullptr;
 }
 
 static void
 dump_denyinfo(StoreEntry * entry, const char *name, AclDenyInfoList * var)
 {
-    AclNameList *a;
-
     while (var != NULL) {
         storeAppendPrintf(entry, "%s %s", name, var->err_page_name);
 
-        for (a = var->acl_list; a != NULL; a = a->next)
+        for (auto *a = var->acl_list; a != NULL; a = a->next)
             storeAppendPrintf(entry, " %s", a->name);
 
         storeAppendPrintf(entry, "\n");
@@ -2407,24 +2409,8 @@ parse_denyinfo(AclDenyInfoList ** var)
 void
 free_denyinfo(AclDenyInfoList ** list)
 {
-    AclDenyInfoList *a = NULL;
-    AclDenyInfoList *a_next = NULL;
-    AclNameList *l = NULL;
-    AclNameList *l_next = NULL;
-
-    for (a = *list; a; a = a_next) {
-        for (l = a->acl_list; l; l = l_next) {
-            l_next = l->next;
-            memFree(l, MEM_ACL_NAME_LIST);
-            l = NULL;
-        }
-
-        a_next = a->next;
-        memFree(a, MEM_ACL_DENY_INFO_LIST);
-        a = NULL;
-    }
-
-    *list = NULL;
+    delete *list;
+    *list = nullptr;
 }
 
 static void
@@ -3903,11 +3889,11 @@ dump_generic_port(StoreEntry * e, const char *n, const AnyP::PortCfgPointer &s)
     if (s->sslContextSessionId)
         storeAppendPrintf(e, " sslcontext=%s", s->sslContextSessionId);
 
-    if (s->generateHostCertificates)
-        storeAppendPrintf(e, " generate-host-certificates");
+    if (!s->generateHostCertificates)
+        storeAppendPrintf(e, " generate-host-certificates=off");
 
-    if (s->dynamicCertMemCacheSize != std::numeric_limits<size_t>::max())
-        storeAppendPrintf(e, "dynamic_cert_mem_cache_size=%lu%s\n", (unsigned long)s->dynamicCertMemCacheSize, B_BYTES_STR);
+    if (s->dynamicCertMemCacheSize != 4*1024*1024) // 4MB default
+        storeAppendPrintf(e, "dynamic_cert_mem_cache_size=%" PRIuSIZE "%s\n", s->dynamicCertMemCacheSize, B_BYTES_STR);
 #endif
 }
 
@@ -3924,8 +3910,8 @@ void
 configFreeMemory(void)
 {
     free_all();
+    Config.ssl_client.sslContext.reset();
 #if USE_OPENSSL
-    SSL_CTX_free(Config.ssl_client.sslContext);
     Ssl::unloadSquidUntrusted();
 #endif
 }
@@ -4678,24 +4664,16 @@ static void parse_sslproxy_ssl_bump(acl_access **ssl_bump)
 
     bumpCfgStyleLast = bumpCfgStyleNow;
 
-    Acl::AndNode *rule = new Acl::AndNode;
-    rule->context("(ssl_bump rule)", config_input_line);
-    rule->lineParse();
     // empty rule OK
-
-    assert(ssl_bump);
-    if (!*ssl_bump) {
-        *ssl_bump = new Acl::Tree;
-        (*ssl_bump)->context("(ssl_bump rules)", config_input_line);
-    }
-
-    (*ssl_bump)->add(rule, action);
+    ParseAclWithAction(ssl_bump, action, "ssl_bump");
 }
 
 static void dump_sslproxy_ssl_bump(StoreEntry *entry, const char *name, acl_access *ssl_bump)
 {
     if (ssl_bump)
-        dump_SBufList(entry, ssl_bump->treeDump(name, Ssl::BumpModeStr));
+        dump_SBufList(entry, ssl_bump->treeDump(name, [](const allow_t &action) {
+        return Ssl::BumpModeStr.at(action.kind);
+    }));
 }
 
 static void free_sslproxy_ssl_bump(acl_access **ssl_bump)
@@ -4822,21 +4800,16 @@ static void parse_ftp_epsv(acl_access **ftp_epsv)
     if (ftpEpsvIsDeprecatedRule) {
         // overwrite previous ftp_epsv lines
         delete *ftp_epsv;
+        *ftp_epsv = nullptr;
+
         if (ftpEpsvDeprecatedAction == allow_t(ACCESS_DENIED)) {
-            Acl::AndNode *ftpEpsvRule = new Acl::AndNode;
-            ftpEpsvRule->context("(ftp_epsv rule)", config_input_line);
-            ACL *a = ACL::FindByName("all");
-            if (!a) {
-                delete ftpEpsvRule;
+            if (ACL *a = ACL::FindByName("all"))
+                ParseAclWithAction(ftp_epsv, ftpEpsvDeprecatedAction, "ftp_epsv", a);
+            else {
                 self_destruct();
                 return;
             }
-            ftpEpsvRule->add(a);
-            *ftp_epsv = new Acl::Tree;
-            (*ftp_epsv)->context("(ftp_epsv rules)", config_input_line);
-            (*ftp_epsv)->add(ftpEpsvRule, ftpEpsvDeprecatedAction);
-        } else
-            *ftp_epsv = NULL;
+        }
         FtpEspvDeprecated = true;
     } else {
         aclParseAccessLine(cfg_directive, LegacyParser, ftp_epsv);
@@ -4846,7 +4819,7 @@ static void parse_ftp_epsv(acl_access **ftp_epsv)
 static void dump_ftp_epsv(StoreEntry *entry, const char *name, acl_access *ftp_epsv)
 {
     if (ftp_epsv)
-        dump_SBufList(entry, ftp_epsv->treeDump(name, NULL));
+        dump_SBufList(entry, ftp_epsv->treeDump(name, Acl::AllowOrDeny));
 }
 
 static void free_ftp_epsv(acl_access **ftp_epsv)
@@ -4971,31 +4944,22 @@ parse_on_unsupported_protocol(acl_access **access)
         return;
     }
 
-    Acl::AndNode *rule = new Acl::AndNode;
-    rule->context("(on_unsupported_protocol rule)", config_input_line);
-    rule->lineParse();
     // empty rule OK
-
-    assert(access);
-    if (!*access) {
-        *access = new Acl::Tree;
-        (*access)->context("(on_unsupported_protocol rules)", config_input_line);
-    }
-
-    (*access)->add(rule, action);
+    ParseAclWithAction(access, action, "on_unsupported_protocol");
 }
 
 static void
 dump_on_unsupported_protocol(StoreEntry *entry, const char *name, acl_access *access)
 {
-    const char *on_error_tunnel_mode_str[] = {
+    static const std::vector<const char *> onErrorTunnelMode = {
         "none",
         "tunnel",
-        "respond",
-        NULL
+        "respond"
     };
     if (access) {
-        SBufList lines = access->treeDump(name, on_error_tunnel_mode_str);
+        SBufList lines = access->treeDump(name, [](const allow_t &action) {
+            return onErrorTunnelMode.at(action.kind);
+        });
         dump_SBufList(entry, lines);
     }
 }

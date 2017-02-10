@@ -85,36 +85,38 @@ Security::ServerOptions::dumpCfg(Packable *p, const char *pfx) const
         p->appendf(" %sdh=" SQUIDSBUFPH, pfx, SQUIDSBUFPRINT(dh));
 }
 
-Security::ContextPtr
+Security::ContextPointer
 Security::ServerOptions::createBlankContext() const
 {
-    Security::ContextPtr t = nullptr;
-
+    Security::ContextPointer ctx;
 #if USE_OPENSSL
     Ssl::Initialize();
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L)
-    t = SSL_CTX_new(TLS_server_method());
+    SSL_CTX *t = SSL_CTX_new(TLS_server_method());
 #else
-    t = SSL_CTX_new(SSLv23_server_method());
+    SSL_CTX *t = SSL_CTX_new(SSLv23_server_method());
 #endif
     if (!t) {
-        const auto x = ERR_error_string(ERR_get_error(), nullptr);
-        debugs(83, DBG_CRITICAL, "ERROR: Failed to allocate TLS server context: " << x);
+        const auto x = ERR_get_error();
+        debugs(83, DBG_CRITICAL, "ERROR: Failed to allocate TLS server context: " << Security::ErrorString(x));
     }
+    ctx.resetWithoutLocking(t);
 
 #elif USE_GNUTLS
     // Initialize for X.509 certificate exchange
+    gnutls_certificate_credentials_t t;
     if (const int x = gnutls_certificate_allocate_credentials(&t)) {
-        debugs(83, DBG_CRITICAL, "ERROR: Failed to allocate TLS server context: error=" << x);
+        debugs(83, DBG_CRITICAL, "ERROR: Failed to allocate TLS server context: " << Security::ErrorString(x));
     }
+    ctx.resetWithoutLocking(t);
 
 #else
     debugs(83, DBG_CRITICAL, "ERROR: Failed to allocate TLS server context: No TLS library");
 
 #endif
 
-    return t;
+    return ctx;
 }
 
 bool
@@ -166,7 +168,7 @@ Security::ServerOptions::loadDhParams()
 }
 
 void
-Security::ServerOptions::updateContextEecdh(Security::ContextPtr &ctx)
+Security::ServerOptions::updateContextEecdh(Security::ContextPointer &ctx)
 {
     // set Elliptic Curve details into the server context
     if (!eecdhCurve.isEmpty()) {
@@ -181,14 +183,14 @@ Security::ServerOptions::updateContextEecdh(Security::ContextPtr &ctx)
 
         auto ecdh = EC_KEY_new_by_curve_name(nid);
         if (!ecdh) {
-            auto ssl_error = ERR_get_error();
-            debugs(83, DBG_CRITICAL, "ERROR: Unable to configure Ephemeral ECDH: " << ERR_error_string(ssl_error, NULL));
+            const auto x = ERR_get_error();
+            debugs(83, DBG_CRITICAL, "ERROR: Unable to configure Ephemeral ECDH: " << Security::ErrorString(x));
             return;
         }
 
-        if (!SSL_CTX_set_tmp_ecdh(ctx, ecdh)) {
-            auto ssl_error = ERR_get_error();
-            debugs(83, DBG_CRITICAL, "ERROR: Unable to set Ephemeral ECDH: " << ERR_error_string(ssl_error, NULL));
+        if (!SSL_CTX_set_tmp_ecdh(ctx.get(), ecdh)) {
+            const auto x = ERR_get_error();
+            debugs(83, DBG_CRITICAL, "ERROR: Unable to set Ephemeral ECDH: " << Security::ErrorString(x));
         }
         EC_KEY_free(ecdh);
 
@@ -200,8 +202,8 @@ Security::ServerOptions::updateContextEecdh(Security::ContextPtr &ctx)
 
     // set DH parameters into the server context
 #if USE_OPENSSL
-    if (parsedDhParams.get()) {
-        SSL_CTX_set_tmp_dh(ctx, parsedDhParams.get());
+    if (parsedDhParams) {
+        SSL_CTX_set_tmp_dh(ctx.get(), parsedDhParams.get());
     }
 #endif
 }

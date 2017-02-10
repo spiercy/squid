@@ -12,7 +12,7 @@
 #include "clients/Client.h"
 #include "comm.h"
 #include "http/forward.h"
-#include "HttpStateFlags.h"
+#include "http/StateFlags.h"
 #include "sbuf/SBuf.h"
 
 class FwdState;
@@ -30,7 +30,7 @@ public:
                                        StoreEntry * entry,
                                        const AccessLogEntryPointer &al,
                                        HttpHeader * hdr_out,
-                                       const HttpStateFlags &flags);
+                                       const Http::StateFlags &flags);
 
     virtual const Comm::ConnectionPointer & dataConnection() const;
     /* should be private */
@@ -46,7 +46,7 @@ public:
     CachePeer *_peer;       /* CachePeer request made to */
     int eof;            /* reached end-of-object? */
     int lastChunk;      /* reached last chunk of a chunk-encoded reply */
-    HttpStateFlags flags;
+    Http::StateFlags flags;
     size_t read_sz;
     SBuf inBuf;                ///< I/O buffer for receiving server responses
     bool ignoreCacheControl;
@@ -129,6 +129,10 @@ private:
     int64_t payloadSeen;
     /// positive when we read more than we wanted
     int64_t payloadTruncated;
+
+    /// Whether we received a Date header older than that of a matching
+    /// cached response.
+    bool sawDateGoBack;
 };
 
 int httpCachable(const HttpRequestMethod&);

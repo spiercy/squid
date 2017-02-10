@@ -583,14 +583,6 @@ public:
      */
     size_type findLastNotOf(const CharacterSet &set, size_type endPos = npos) const;
 
-    /** sscanf-alike
-     *
-     * sscanf re-implementation. Non-const, and not \0-clean.
-     * \return same as sscanf
-     * \see man sscanf(3)
-     */
-    int scanf(const char *format, ...);
-
     /// converts all characters to lower case; \see man tolower(3)
     void toLower();
 
@@ -618,6 +610,11 @@ public:
 
     // TODO: possibly implement erase() similar to std::string's erase
     // TODO: possibly implement a replace() call
+
+    /// SBuf object identifier meant for test cases and debugging.
+    /// Does not change when object does, including during assignment.
+    const InstanceId<SBuf> id;
+
 private:
 
     /**
@@ -645,10 +642,6 @@ private:
     size_type off_; ///< our content start offset from the beginning of shared store_
     size_type len_; ///< number of our content bytes in shared store_
     static SBufStats stats; ///< class-wide statistics
-
-    /// SBuf object identifier; does not change when contents do,
-    ///   including during assignment
-    const InstanceId<SBuf> id;
 
     /** obtain prototype store
      *
@@ -701,9 +694,10 @@ public:
     /*
      * Parameters are listed in the reverse order of importance: Satisfaction of
      * the lower-listed requirements may violate the higher-listed requirements.
+     * For example, idealSpace has no effect unless it exceeds minSpace.
      */
     size_type idealSpace = 0; ///< if allocating anyway, provide this much space
-    size_type minSpace = 0; ///< allocate if spaceSize() is smaller
+    size_type minSpace = 0; ///< allocate [at least this much] if spaceSize() is smaller
     size_type maxCapacity = SBuf::maxSize; ///< do not allocate more than this
     bool allowShared = true; ///< whether sharing our storage with others is OK
 };
