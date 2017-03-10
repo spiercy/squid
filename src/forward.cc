@@ -558,7 +558,7 @@ FwdState::checkRetry()
     if (origin_tries > 2)
         return false;
 
-    if (squid_curtime - start_t > Config.Timeout.forward)
+    if (!Comm::EnoughTimeToReForward(start_t))
         return false;
 
     if (flags.dont_retry)
@@ -1085,23 +1085,6 @@ FwdState::connectStart()
     if (n_tries == 0) // first attempt
         request->hier.first_conn_start = current_time;
 
-    /* connection timeout */
-    int ctimeout;
-    if (serverDestinations[0]->getPeer()) {
-        ctimeout = serverDestinations[0]->getPeer()->connect_timeout > 0 ?
-                   serverDestinations[0]->getPeer()->connect_timeout : Config.Timeout.peer_connect;
-    } else {
-        ctimeout = Config.Timeout.connect;
-    }
-
-    /* calculate total forwarding timeout ??? */
-    int ftimeout = Config.Timeout.forward - (squid_curtime - start_t);
-    if (ftimeout < 0)
-        ftimeout = 5;
-
-    if (ftimeout < ctimeout)
-        ctimeout = ftimeout;
-
     if (serverDestinations[0]->getPeer() && request->flags.sslBumped) {
         debugs(50, 4, "fwdConnectStart: Ssl bumped connections through parrent proxy are not allowed");
         ErrorState *anErr = new ErrorState(ERR_CANNOT_FORWARD, Http::scServiceUnavailable, request);
@@ -1208,7 +1191,8 @@ FwdState::connectStart()
 #endif
 
     calls.connector = commCbCall(17,3, "fwdConnectDoneWrapper", CommConnectCbPtrFun(fwdConnectDoneWrapper, this));
-    Comm::ConnOpener *cs = new Comm::ConnOpener(serverDestinations[0], calls.connector, ctimeout);
+    const time_t connTimeout = serverDestinations[0]->connectTimeout(start_t);
+    Comm::ConnOpener *cs = new Comm::ConnOpener(serverDestinations[0], calls.connector, connTimeout);
     if (host)
         cs->setHost(host);
     AsyncJob::Start(cs);

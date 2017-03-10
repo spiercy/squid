@@ -48,6 +48,7 @@
 #include "HttpStateFlags.h"
 #include "ip/QosConfig.h"
 #include "MemBuf.h"
+#include "neighbors.h"
 #include "PeerSelectState.h"
 #include "SquidConfig.h"
 #include "SquidTime.h"
@@ -73,6 +74,11 @@ class TunnelStateData
 {
 
 public:
+    TunnelStateData();
+    ~TunnelStateData();
+    TunnelStateData(const TunnelStateData &); // do not implement
+    TunnelStateData &operator =(const TunnelStateData &); // do not implement
+
     // Required by CbcPointer<> used by cbdataDialer
     // TODO: use CBDATA_CLASS2() instead
     void *toCbdata() { return this; }
@@ -93,6 +99,10 @@ public:
     const char * getHost() const {
         return (server.conn != NULL && server.conn->getPeer() ? server.conn->getPeer()->host : request->GetHost());
     };
+
+    /// starts connecting to the next hop, either for the first time or while
+    /// recovering from the previous connect failure
+    void startConnecting();
 
     class Connection
     {
@@ -129,7 +139,7 @@ public:
 
     Connection client, server;
     int *status_ptr;		/* pointer to status for logging */
-    time_t started; ///< when this tunnel was initiated.
+    time_t start; ///< object creation time, before any peer selection/connection attempts
     void copyRead(Connection &from, IOCB *completion);
     void connectToPeer(); // should be protected
 
@@ -156,7 +166,6 @@ static CLCB tunnelServerClosed;
 static CLCB tunnelClientClosed;
 static CTCB tunnelTimeout;
 static PSC tunnelPeerSelectComplete;
-static void tunnelStateFree(TunnelStateData * tunnelState);
 static void tunnelConnected(const Comm::ConnectionPointer &server, void *);
 static void tunnelRelayConnectRequest(const Comm::ConnectionPointer &server, void *);
 
@@ -168,7 +177,7 @@ tunnelServerClosed(const CommCloseCbParams &params)
     tunnelState->server.conn = NULL;
 
     if (tunnelState->noConnections()) {
-        tunnelStateFree(tunnelState);
+        delete tunnelState;
         return;
     }
 
@@ -186,7 +195,7 @@ tunnelClientClosed(const CommCloseCbParams &params)
     tunnelState->client.conn = NULL;
 
     if (tunnelState->noConnections()) {
-        tunnelStateFree(tunnelState);
+        delete tunnelState;
         return;
     }
 
@@ -196,16 +205,22 @@ tunnelClientClosed(const CommCloseCbParams &params)
     }
 }
 
-static void
-tunnelStateFree(TunnelStateData * tunnelState)
+TunnelStateData::TunnelStateData() :
+        url(NULL),
+        request(NULL),
+        status_ptr(NULL),
+        start(squid_curtime)
 {
-    debugs(26, 3, HERE << "tunnelState=" << tunnelState);
-    assert(tunnelState != NULL);
-    assert(tunnelState->noConnections());
-    safe_free(tunnelState->url);
-    tunnelState->serverDestinations.clean();
-    HTTPMSGUNLOCK(tunnelState->request);
-    delete tunnelState;
+    debugs(26, 3, "TunnelStateData constructed this=" << this);
+}
+
+TunnelStateData::~TunnelStateData()
+{
+    debugs(26, 3, "TunnelStateData destructed this=" << this);
+    assert(noConnections());
+    xfree(url);
+    serverDestinations.clean();
+    HTTPMSGUNLOCK(request);
 }
 
 TunnelStateData::Connection::~Connection()
@@ -592,33 +607,21 @@ tunnelConnectDone(const Comm::ConnectionPointer &conn, comm_err_t status, int xe
 
     if (status != COMM_OK) {
         debugs(26, 4, HERE << conn << ", comm failure recovery.");
+        {
+            assert(!tunnelState->serverDestinations.empty());
+            const Comm::Connection &failedDest = *tunnelState->serverDestinations.front();
+            if (CachePeer *peer = failedDest.getPeer())
+                peerConnectFailed(peer);
+            debugs(26, 4, "removing the failed one from " << tunnelState->serverDestinations.size() <<
+                   " destinations: " << failedDest);
+        }
         /* At this point only the TCP handshake has failed. no data has been passed.
          * we are allowed to re-try the TCP-level connection to alternate IPs for CONNECT.
          */
-        debugs(26, 4, "removing server 1 of " << tunnelState->serverDestinations.size() <<
-                       " from destinations (" << tunnelState->serverDestinations[0] << ")");
         tunnelState->serverDestinations.shift();
-        time_t fwdTimeout = tunnelState->started + Config.Timeout.forward;
-        if (fwdTimeout > squid_curtime && tunnelState->serverDestinations.size() > 0) {
-            // find remaining forward_timeout available for this attempt
-            fwdTimeout -= squid_curtime;
-            if (fwdTimeout > Config.Timeout.connect)
-                fwdTimeout = Config.Timeout.connect;
-            /* Try another IP of this destination host */
-
-            if (Ip::Qos::TheConfig.isAclTosActive()) {
-                tunnelState->serverDestinations[0]->tos = GetTosToServer(tunnelState->request);
-            }
-
-#if SO_MARK && USE_LIBCAP
-            tunnelState->serverDestinations[0]->nfmark = GetNfmarkToServer(tunnelState->request);
-#endif
-
-            debugs(26, 4, HERE << "retry with : " << tunnelState->serverDestinations[0]);
-            AsyncCall::Pointer call = commCbCall(26,3, "tunnelConnectDone", CommConnectCbPtrFun(tunnelConnectDone, tunnelState));
-            Comm::ConnOpener *cs = new Comm::ConnOpener(tunnelState->serverDestinations[0], call, fwdTimeout);
-            cs->setHost(tunnelState->url);
-            AsyncJob::Start(cs);
+        if (!tunnelState->serverDestinations.empty() && Comm::EnoughTimeToReForward(tunnelState->start)) {
+            debugs(26, 4, "re-forwarding");
+            tunnelState->startConnecting();
         } else {
             debugs(26, 4, HERE << "terminate with error.");
             ErrorState *err = new ErrorState(ERR_CONNECT_FAIL, Http::scServiceUnavailable, tunnelState->request);
@@ -715,7 +718,6 @@ tunnelStart(ClientHttpRequest * http, int64_t * size_ptr, int *status_ptr)
     tunnelState->server.size_ptr = size_ptr;
     tunnelState->status_ptr = status_ptr;
     tunnelState->client.conn = http->getConn()->clientConnection;
-    tunnelState->started = squid_curtime;
 
     comm_add_close_handler(tunnelState->client.conn->fd,
                            tunnelClientClosed,
@@ -829,20 +831,26 @@ tunnelPeerSelectComplete(Comm::ConnectionList *peer_paths, ErrorState *err, void
     }
     delete err;
 
-    if (Ip::Qos::TheConfig.isAclTosActive()) {
-        tunnelState->serverDestinations[0]->tos = GetTosToServer(tunnelState->request);
-    }
+    debugs(26, 3, peer_paths->size() << " paths, starting with " << (*peer_paths)[0]);
+    tunnelState->startConnecting();
+}
+
+void
+TunnelStateData::startConnecting()
+{
+    Comm::ConnectionPointer &dest = serverDestinations.front();
+
+    if (Ip::Qos::TheConfig.isAclTosActive())
+        dest->tos = GetTosToServer(request);
 
 #if SO_MARK && USE_LIBCAP
-    tunnelState->serverDestinations[0]->nfmark = GetNfmarkToServer(tunnelState->request);
+    dest->nfmark = GetNfmarkToServer(request);
 #endif
 
-    debugs(26, 3, HERE << "paths=" << peer_paths->size() << ", p[0]={" << (*peer_paths)[0] << "}, serverDest[0]={" <<
-           tunnelState->serverDestinations[0] << "}");
-
-    AsyncCall::Pointer call = commCbCall(26,3, "tunnelConnectDone", CommConnectCbPtrFun(tunnelConnectDone, tunnelState));
-    Comm::ConnOpener *cs = new Comm::ConnOpener(tunnelState->serverDestinations[0], call, Config.Timeout.connect);
-    cs->setHost(tunnelState->url);
+    const time_t connectTimeout = dest->connectTimeout(start);
+    AsyncCall::Pointer call = commCbCall(26,3, "tunnelConnectDone", CommConnectCbPtrFun(tunnelConnectDone, this));
+    Comm::ConnOpener *cs = new Comm::ConnOpener(dest, call, connectTimeout);
+    cs->setHost(url);
     AsyncJob::Start(cs);
 }
 

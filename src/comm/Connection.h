@@ -119,6 +119,13 @@ public:
      */
     void setPeer(CachePeer * p);
 
+    /// Connection establishment timeout for callers that have already decided
+    /// to connect(2), either for the first time or after checking
+    /// EnoughTimeToReForward() during any re-forwarding attempts.
+    /// \returns the time left for this connection to become connected
+    /// \param fwdStart The start time of the peer selection/connection process.
+    time_t connectTimeout(const time_t fwdStart) const;
+
 private:
     /** These objects may not be exactly duplicated. Use copyDetails() instead. */
     Connection(const Connection &c);
@@ -159,6 +166,11 @@ private:
     /** cache_peer data object (if any) */
     CachePeer *peer_;
 };
+
+/// Whether there is still time to re-try after a previous connection failure.
+/// \param fwdStart The start time of the peer selection/connection process.
+bool EnoughTimeToReForward(const time_t fwdStart);
+
 
 }; // namespace Comm
 

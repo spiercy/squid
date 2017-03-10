@@ -81,6 +81,9 @@ void peerConnectSucceded(CachePeer *);
 void dump_peer_options(StoreEntry *, CachePeer *);
 int peerHTTPOkay(const CachePeer *, HttpRequest *);
 
+/// \returns the effective connect timeout for the given peer
+time_t peerConnectTimeout(const CachePeer *peer);
+
 CachePeer *whichPeer(const Ip::Address &from);
 
 #endif /* SQUID_NEIGHBORS_H_ */

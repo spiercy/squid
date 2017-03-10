@@ -4,6 +4,8 @@
 #include "comm.h"
 #include "comm/Connection.h"
 #include "fde.h"
+#include "neighbors.h"
+#include "SquidConfig.h"
 #include "SquidTime.h"
 
 class CachePeer;
@@ -88,4 +90,47 @@ Comm::Connection::setPeer(CachePeer *p)
     if (p) {
         peer_ = cbdataReference(p);
     }
+}
+
+/// subtracts time_t values, returning zero if smaller exceeds the larger value
+/// time_t might be unsigned so we need to be careful when subtracting times...
+static inline time_t
+diffOrZero(const time_t larger, const time_t smaller)
+{
+    return (larger > smaller) ? (larger - smaller) : 0;
+}
+
+/// time left to finish the whole forwarding process (which started at fwdStart)
+static time_t
+ForwardTimeout(const time_t fwdStart)
+{
+    // time already spent on forwarding (0 if clock went backwards)
+    const time_t timeSpent = diffOrZero(squid_curtime, fwdStart);
+    return diffOrZero(Config.Timeout.forward, timeSpent);
+}
+
+time_t
+Comm::Connection::connectTimeout(const time_t fwdStart) const
+{
+    // a connection opening timeout (ignoring forwarding time limits for now)
+    const CachePeer *peer = getPeer();
+    const time_t ctimeout = peer ? peerConnectTimeout(peer) : Config.Timeout.connect;
+
+    // time we have left to finish the whole forwarding process
+    const time_t timeLeft = ForwardTimeout(fwdStart);
+
+    // The caller decided to connect. If there is no time left, to protect
+    // connecting code from trying to establish a connection while a zero (i.e.,
+    // "immediate") timeout notification is firing, ensure a positive timeout.
+    // XXX: This hack gives some timed-out forwarding sequences more time than
+    // some sequences that have not quite reached the forwarding timeout yet!
+    const time_t ftimeout = timeLeft ? timeLeft : 5; // seconds
+
+    return min(ctimeout, ftimeout);
+}
+
+bool
+Comm::EnoughTimeToReForward(const time_t fwdStart)
+{
+    return ForwardTimeout(fwdStart) > 0;
 }

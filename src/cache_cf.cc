@@ -2111,6 +2111,7 @@ parse_peer(CachePeer ** head)
     p->icp.port = CACHE_ICP_PORT;
     p->weight = 1;
     p->basetime = 0;
+    p->connect_timeout_raw = 0;
     p->stats.logged_state = PEER_ALIVE;
 
     if ((token = strtok(NULL, w_space)) == NULL)
@@ -2264,7 +2265,7 @@ parse_peer(CachePeer ** head)
             p->login = xstrdup(token + 6);
             rfc1738_unescape(p->login);
         } else if (!strncmp(token, "connect-timeout=", 16)) {
-            p->connect_timeout = xatoi(token + 16);
+            p->connect_timeout_raw = xatoi(token + 16);
         } else if (!strncmp(token, "connect-fail-limit=", 19)) {
             p->connect_fail_limit = xatoi(token + 19);
 #if USE_CACHE_DIGESTS
