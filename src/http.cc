@@ -1134,7 +1134,6 @@ HttpStateData::persistentConnStatus() const
     return statusIfComplete();
 }
 
-#if USE_DELAY_POOLS
 static void
 readDelayed(void *context, CommRead const &)
 {
@@ -1142,7 +1141,6 @@ readDelayed(void *context, CommRead const &)
     state->flags.do_next_read = true;
     state->maybeReadVirginBody();
 }
-#endif
 
 void
 HttpStateData::readReply(const CommIoCbParams &io)
@@ -1177,23 +1175,13 @@ HttpStateData::readReply(const CommIoCbParams &io)
     CommIoCbParams rd(this); // will be expanded with ReadNow results
     rd.conn = io.conn;
     rd.size = entry->bytesWanted(Range<size_t>(0, inBuf.spaceSize()));
-#if USE_DELAY_POOLS
-    if (rd.size < 1) {
+
+    if (rd.size <= 0) {
         assert(entry->mem_obj);
-
-        /* read ahead limit */
-        /* Perhaps these two calls should both live in MemObject */
         AsyncCall::Pointer nilCall;
-        if (!entry->mem_obj->readAheadPolicyCanRead()) {
-            entry->mem_obj->delayRead(DeferredRead(readDelayed, this, CommRead(io.conn, NULL, 0, nilCall)));
-            return;
-        }
-
-        /* delay id limit */
-        entry->mem_obj->mostBytesAllowed().delayRead(DeferredRead(readDelayed, this, CommRead(io.conn, NULL, 0, nilCall)));
+        entry->mem_obj->delayRead(DeferredRead(readDelayed, this, CommRead(io.conn, NULL, 0, nilCall)));
         return;
     }
-#endif
 
     switch (Comm::ReadNow(rd, inBuf)) {
     case Comm::INPROGRESS:
