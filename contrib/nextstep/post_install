@@ -37,7 +37,7 @@ then
 	echo "Already have mime.conf"
 else
 	echo "Installing default mime.conf"
-	(cd /usr/local/squid/etc; /bin/cp -p mime.conf.default mime.conf)
+	(cd /usr/local/squid/etc; /bin/cp -p mime.conf.sample mime.conf)
 fi
 
 echo "(done)"

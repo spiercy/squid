@@ -702,6 +702,7 @@ tunnelStart(ClientHttpRequest * http, int64_t * size_ptr, int *status_ptr, const
     commSetConnTimeout(tunnelState->client.conn, Config.Timeout.lifetime, timeoutCall);
 
     peerSelect(&(tunnelState->serverDestinations), request,
+               http->al,
                NULL,
                tunnelPeerSelectComplete,
                tunnelState);

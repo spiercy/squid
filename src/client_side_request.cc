@@ -190,6 +190,9 @@ ClientHttpRequest::ClientHttpRequest(ConnStateData * aConn) :
     setConn(aConn);
     al = new AccessLogEntry;
     al->tcpClient = clientConnection = aConn->clientConnection;
+    al->cache.port =  cbdataReference(aConn->port);
+    al->cache.caddr = aConn->log_addr;
+
 #if USE_SSL
     if (aConn->clientConnection != NULL && aConn->clientConnection->isOpen()) {
         if (SSL *ssl = fd_table[aConn->clientConnection->fd].ssl)
@@ -532,6 +535,7 @@ clientFollowXForwardedForCheck(allow_t answer, void *data)
         */
         ConnStateData *conn = http->getConn();
         conn->log_addr = request->indirect_client_addr;
+        http->al->cache.caddr = conn->log_addr;
     }
     request->x_forwarded_for_iterator.clean();
     request->flags.done_follow_x_forwarded_for=true;
@@ -598,6 +602,8 @@ ClientRequestContext::hostHeaderVerifyFailed(const char *A, const char *B)
     debugs(85, DBG_IMPORTANT, "SECURITY ALERT: Host header forgery detected on " <<
            http->getConn()->clientConnection << " (" << A << " does not match " << B << ")");
     debugs(85, DBG_IMPORTANT, "SECURITY ALERT: By user agent: " << http->request->header.getStr(HDR_USER_AGENT));
+    if (const char *ua = http->request->header.getStr(HDR_USER_AGENT))
+        debugs(85, DBG_IMPORTANT, "SECURITY ALERT: By user agent: " << ua);
     debugs(85, DBG_IMPORTANT, "SECURITY ALERT: on URL: " << urlCanonical(http->request));
 
     // IP address validation for Host: failed. reject the connection.
@@ -1400,6 +1406,9 @@ ClientHttpRequest::httpStart()
     logType = LOG_TAG_NONE;
     debugs(85, 4, "ClientHttpRequest::httpStart: " << Format::log_tags[logType] << " for '" << uri << "'");
 
+    // now we know that we are not tunneling or bumping CONNECT
+    getConn()->flags.readMore = true; // resume (or continue) reading
+
     /* no one should have touched this */
     assert(out.offset == 0);
     /* Use the Stream Luke */
@@ -1569,7 +1578,7 @@ ClientHttpRequest::doCallouts()
             calloutContext->adaptation_acl_check_done = true;
             if (Adaptation::AccessCheck::Start(
                         Adaptation::methodReqmod, Adaptation::pointPreCache,
-                        request, NULL, this))
+                        request, NULL, calloutContext->http->al, this))
                 return; // will call callback
         }
 #endif
@@ -1706,7 +1715,7 @@ ClientHttpRequest::startAdaptation(const Adaptation::ServiceGroupPointer &g)
     assert(!virginHeadSource);
     assert(!adaptedBodySource);
     virginHeadSource = initiateAdaptation(
-                           new Adaptation::Iterator(request, NULL, g));
+                           new Adaptation::Iterator(request, NULL, al, g));
 
     // we could try to guess whether we can bypass this adaptation
     // initiation failure, but it should not really happen

@@ -1,10 +1,15 @@
 #include "squid.h"
+#include "AccessLogEntry.h"
 #include "auth/basic/auth_basic.h"
 #include "auth/basic/User.h"
 #include "auth/basic/UserRequest.h"
 #include "auth/State.h"
 #include "charset.h"
 #include "Debug.h"
+#include "HttpMsg.h"
+#include "HttpRequest.h"
+#include "format/Format.h"
+#include "MemBuf.h"
 #include "rfc1738.h"
 #include "SquidTime.h"
 
@@ -21,6 +26,15 @@ Auth::Basic::UserRequest::authenticated() const
         return 1;
 
     return 0;
+}
+
+const char *
+Auth::Basic::UserRequest::credentialsStr()
+{
+    Auth::Basic::User const *basic_auth = dynamic_cast<Auth::Basic::User const *>(user().getRaw());
+    if (basic_auth)
+        return basic_auth->passwd;
+    return NULL;
 }
 
 /* log a basic user in
@@ -78,7 +92,7 @@ Auth::Basic::UserRequest::module_direction()
 
 /* send the initial data to a basic authenticator module */
 void
-Auth::Basic::UserRequest::module_start(AUTHCB * handler, void *data)
+Auth::Basic::UserRequest::module_start(HttpRequest *request, AccessLogEntry::Pointer &al, AUTHCB * handler, void *data)
 {
     assert(user()->auth_type == Auth::AUTH_BASIC);
     Auth::Basic::User *basic_auth = dynamic_cast<Auth::Basic::User *>(user().getRaw());
@@ -111,18 +125,21 @@ Auth::Basic::UserRequest::module_start(AUTHCB * handler, void *data)
     /* mark this user as having verification in progress */
     user()->credentials(Auth::Pending);
     char buf[HELPER_INPUT_BUFFER];
-    static char username[HELPER_INPUT_BUFFER];
-    static char pass[HELPER_INPUT_BUFFER];
-    if (static_cast<Auth::Basic::Config*>(user()->config)->utf8) {
-        latin1_to_utf8(username, sizeof(username), user()->username());
-        latin1_to_utf8(pass, sizeof(pass), basic_auth->passwd);
-        xstrncpy(username, rfc1738_escape(username), sizeof(username));
-        xstrncpy(pass, rfc1738_escape(pass), sizeof(pass));
-    } else {
-        xstrncpy(username, rfc1738_escape(user()->username()), sizeof(username));
-        xstrncpy(pass, rfc1738_escape(basic_auth->passwd), sizeof(pass));
+    int sz = 0;
+    if (!(sz = helperFormatedRequest(buf, sizeof(buf), request, al))){
+        static char username[HELPER_INPUT_BUFFER];
+        static char pass[HELPER_INPUT_BUFFER];
+        if (static_cast<Auth::Basic::Config*>(user()->config)->utf8) {
+            latin1_to_utf8(username, sizeof(username), user()->username());
+            latin1_to_utf8(pass, sizeof(pass), basic_auth->passwd);
+            xstrncpy(username, rfc1738_escape(username), sizeof(username));
+            xstrncpy(pass, rfc1738_escape(pass), sizeof(pass));
+        } else {
+            xstrncpy(username, rfc1738_escape(user()->username()), sizeof(username));
+            xstrncpy(pass, rfc1738_escape(basic_auth->passwd), sizeof(pass));
+        }
+        sz = snprintf(buf, sizeof(buf), "%s %s\n", username, pass);
     }
-    int sz = snprintf(buf, sizeof(buf), "%s %s\n", username, pass);
     if (sz<=0) {
         debugs(9, DBG_CRITICAL, "ERROR: Basic Authentication Failure. Can not build helper validation request.");
         handler(data);
@@ -162,13 +179,16 @@ Auth::Basic::UserRequest::HandleReply(void *data, char *reply)
 
     assert(basic_auth != NULL);
 
-    if (reply && (strncasecmp(reply, "OK", 2) == 0))
+    if (reply && (strncasecmp(reply, "OK", 2) == 0)) {
         basic_auth->credentials(Auth::Ok);
-    else {
-        basic_auth->credentials(Auth::Failed);
-
         if (t && *t)
+            basic_auth->extractHelperMessage(t, t);
+    } else {
+        basic_auth->credentials(Auth::Failed);
+        if (t && *t) {
+            basic_auth->extractHelperMessage(t, t);
             r->auth_user_request->setDenyMessage(t);
+        }
     }
 
     basic_auth->expiretime = squid_curtime;

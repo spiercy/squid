@@ -1,6 +1,7 @@
 #ifndef SQUID_ACLFILLED_CHECKLIST_H
 #define SQUID_ACLFILLED_CHECKLIST_H
 
+#include "AccessLogEntry.h"
 #include "acl/Checklist.h"
 #include "ip/Address.h"
 #if USE_AUTH
@@ -74,6 +75,8 @@ public:
     /// SSL [certificate validation] errors, in undefined order
     Ssl::Errors *sslErrors;
 #endif
+
+    AccessLogEntry::Pointer al;  ///< info for the future access.log entry
 
     ExternalACLEntry *extacl_entry;
 

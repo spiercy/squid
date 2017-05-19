@@ -64,6 +64,7 @@ typedef struct {
     const char *client_ident;
     const char *method_s;
     RH *handler;
+    const char *authHelperMessage;
 } redirectStateData;
 
 static HLPCB redirectHandleReply;
@@ -152,6 +153,8 @@ redirectStart(ClientHttpRequest * http, RH * handler, void *data)
     if (http->request->auth_user_request != NULL) {
         r->client_ident = http->request->auth_user_request->username();
         debugs(61, 5, HERE << "auth-user=" << (r->client_ident?r->client_ident:"NULL"));
+
+        r->authHelperMessage = http->request->auth_user_request->user()->helperMessage();
     }
 #endif
 
@@ -186,14 +189,17 @@ redirectStart(ClientHttpRequest * http, RH * handler, void *data)
     if ((fqdn = fqdncache_gethostbyaddr(r->client_addr, 0)) == NULL)
         fqdn = dash_str;
 
-    sz = snprintf(buf, MAX_REDIRECTOR_REQUEST_STRLEN, "%s %s/%s %s %s myip=%s myport=%d\n",
+    sz = snprintf(buf, MAX_REDIRECTOR_REQUEST_STRLEN, "%s %s/%s %s %s myip=%s myport=%d%s%s\n",
                   r->orig_url,
                   r->client_addr.NtoA(claddr,MAX_IPSTRLEN),
                   fqdn,
                   r->client_ident[0] ? rfc1738_escape(r->client_ident) : dash_str,
                   r->method_s,
                   http->request->my_addr.NtoA(myaddr,MAX_IPSTRLEN),
-                  http->request->my_addr.GetPort());
+                  http->request->my_addr.GetPort(),
+                  r->authHelperMessage ? " " : "",
+                  r->authHelperMessage ? r->authHelperMessage : ""
+        );
 
     if ((sz<=0) || (sz>=MAX_REDIRECTOR_REQUEST_STRLEN)) {
         if (sz<=0) {

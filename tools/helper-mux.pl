@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/local/bin/perl
 # helper multiplexer. Talks to squid using the multiplexed variant of
 # the helper protocol, and maintains a farm of synchronous helpers
 # helpers are lazily started, as many as needed.

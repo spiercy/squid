@@ -799,9 +799,9 @@ nodist_ufsdump_SOURCES = \
 	globals.cc
 
 sysconf_DATA = \
-	squid.conf.default \
+	squid.conf.sample \
 	squid.conf.documented \
-	mime.conf.default
+	mime.conf.sample
 
 data_DATA = \
 	mib.txt
@@ -839,7 +839,7 @@ EXTRA_DIST = \
 	repl_modules.sh \
 	$(STUB_SOURCE) \
 	mib.txt \
-	mime.conf.default
+	mime.conf.sample
 
 libAIO_a_SOURCES = \
 		$(AIO_WIN32_SOURCES) \
@@ -977,8 +977,8 @@ cache_cf.o: cf_parser.cci
 cf_gen$(EXEEXT): $(cf_gen_SOURCES) $(cf_gen_DEPENDENCIES) cf_gen_defines.cci
 	$(HOSTCXX) -o $@ $(srcdir)/cf_gen.cc -I$(srcdir) -I$(top_builddir)/include/ -I$(top_builddir)/src
 
-# squid.conf.default is built by cf_gen when making cf_parser.cci
-squid.conf.default squid.conf.documented: cf_parser.cci
+# squid.conf.sample is built by cf_gen when making cf_parser.cci
+squid.conf.sample squid.conf.documented: cf_parser.cci
 	true
 
 cf_parser.cci: cf.data cf_gen$(EXEEXT)
@@ -1035,28 +1035,28 @@ install-data-local: install-sysconfDATA install-dataDATA
 	@if test -f $(DESTDIR)$(DEFAULT_MIME_TABLE) ; then \
 	  echo "$@ will not overwrite existing $(DESTDIR)$(DEFAULT_MIME_TABLE)" ; \
 	else \
-	  echo "$(INSTALL_DATA) $(srcdir)/mime.conf.default $(DESTDIR)$(DEFAULT_MIME_TABLE)" ;\
-	  $(INSTALL_DATA) $(srcdir)/mime.conf.default $(DESTDIR)$(DEFAULT_MIME_TABLE); \
+	  echo "$(INSTALL_DATA) $(srcdir)/mime.conf.sample $(DESTDIR)$(DEFAULT_MIME_TABLE)" ;\
+	  $(INSTALL_DATA) $(srcdir)/mime.conf.sample $(DESTDIR)$(DEFAULT_MIME_TABLE); \
 	fi
 	@if test -f $(DESTDIR)$(DEFAULT_CONFIG_FILE) ; then \
 	  echo "$@ will not overwrite existing $(DESTDIR)$(DEFAULT_CONFIG_FILE)" ; \
 	else \
-	  echo "$(INSTALL_DATA) squid.conf.default $(DESTDIR)$(DEFAULT_CONFIG_FILE)"; \
-	  $(INSTALL_DATA) squid.conf.default $(DESTDIR)$(DEFAULT_CONFIG_FILE); \
+	  echo "$(INSTALL_DATA) squid.conf.sample $(DESTDIR)$(DEFAULT_CONFIG_FILE)"; \
+	  $(INSTALL_DATA) squid.conf.sample $(DESTDIR)$(DEFAULT_CONFIG_FILE); \
 	fi
-	echo "$(INSTALL_DATA) squid.conf.default $(DESTDIR)$(DEFAULT_CONFIG_FILE).default"; \
-	$(INSTALL_DATA) squid.conf.default $(DESTDIR)$(DEFAULT_CONFIG_FILE).default; \
+	echo "$(INSTALL_DATA) squid.conf.sample $(DESTDIR)$(DEFAULT_CONFIG_FILE).sample"; \
+	$(INSTALL_DATA) squid.conf.sample $(DESTDIR)$(DEFAULT_CONFIG_FILE).sample; \
 	echo "$(INSTALL_DATA) squid.conf.documented $(DESTDIR)$(DEFAULT_CONFIG_FILE).documented"; \
 	$(INSTALL_DATA) squid.conf.documented $(DESTDIR)$(DEFAULT_CONFIG_FILE).documented; \
 	$(mkinstalldirs) $(DESTDIR)$(DEFAULT_LOG_PREFIX); \
 	$(mkinstalldirs) $(DESTDIR)$(DEFAULT_SWAP_DIR); \
 	$(mkinstalldirs) $(DESTDIR)`dirname $(DEFAULT_PID_FILE)`
 
-uninstall-local: squid.conf.default
-	@$(SHELL) $(top_srcdir)/scripts/remove-cfg.sh "$(RM)" $(DESTDIR)$(DEFAULT_MIME_TABLE) $(srcdir)/mime.conf.default
-	@$(SHELL) $(top_srcdir)/scripts/remove-cfg.sh "$(RM)" $(DESTDIR)$(DEFAULT_CONFIG_FILE) squid.conf.default
+uninstall-local: squid.conf.sample
+	@$(SHELL) $(top_srcdir)/scripts/remove-cfg.sh "$(RM)" $(DESTDIR)$(DEFAULT_MIME_TABLE) $(srcdir)/mime.conf.sample
+	@$(SHELL) $(top_srcdir)/scripts/remove-cfg.sh "$(RM)" $(DESTDIR)$(DEFAULT_CONFIG_FILE) squid.conf.sample
 
-CLEANFILES += cf.data squid.conf.default squid.conf.documented \
+CLEANFILES += cf.data squid.conf.sample squid.conf.documented \
 	DiskIO/DiskIOModules_gen.cc \
 	test_tools.cc *.a
 

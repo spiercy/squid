@@ -116,6 +116,8 @@ Auth::Basic::Config::rotateHelpers()
 void
 Auth::Basic::Config::done()
 {
+    Auth::Config::done();
+
     authbasic_initialised = 0;
 
     if (basicauthenticators) {
@@ -149,6 +151,7 @@ Auth::Basic::Config::dump(StoreEntry * entry, const char *name, Auth::Config * s
     storeAppendPrintf(entry, "%s basic children %d startup=%d idle=%d concurrency=%d\n", name, authenticateChildren.n_max, authenticateChildren.n_startup, authenticateChildren.n_idle, authenticateChildren.concurrency);
     storeAppendPrintf(entry, "%s basic credentialsttl %d seconds\n", name, (int) credentialsTTL);
     storeAppendPrintf(entry, "%s basic casesensitive %s\n", name, casesensitive ? "on" : "off");
+    Auth::Config::dump(entry, name, scheme);
 }
 
 Auth::Basic::Config::Config() :
@@ -185,7 +188,7 @@ Auth::Basic::Config::parse(Auth::Config * scheme, int n_configured, char *param_
     } else if (strcasecmp(param_str, "utf8") == 0) {
         parse_onoff(&utf8);
     } else {
-        debugs(29, DBG_CRITICAL, HERE << "unrecognised basic auth scheme parameter '" << param_str << "'");
+        Auth::Config::parse(scheme, n_configured, param_str);
     }
 }
 
@@ -238,7 +241,7 @@ Auth::Basic::Config::decodeCleartext(const char *httpAuthHeader)
  * descriptive message to the user.
  */
 Auth::UserRequest::Pointer
-Auth::Basic::Config::decode(char const *proxy_auth)
+Auth::Basic::Config::decode(char const *proxy_auth, const char *requestRealm)
 {
     Auth::UserRequest::Pointer auth_user_request = dynamic_cast<Auth::UserRequest*>(new Auth::Basic::UserRequest);
     /* decode the username */
@@ -256,18 +259,16 @@ Auth::Basic::Config::decode(char const *proxy_auth)
 
     char *seperator = strchr(cleartext, ':');
 
-    lb = local_basic = new Auth::Basic::User(this);
-    if (seperator == NULL) {
-        local_basic->username(cleartext);
-    } else {
+    lb = local_basic = new Auth::Basic::User(this, requestRealm);
+    if (seperator ) {
         /* terminate the username */
         *seperator = '\0';
-        local_basic->username(cleartext);
         local_basic->passwd = xstrdup(seperator+1);
     }
 
     if (!casesensitive)
-        Tolower((char *)local_basic->username());
+        Tolower(cleartext);
+    local_basic->username(cleartext);
 
     if (local_basic->passwd == NULL) {
         debugs(29, 4, HERE << "no password in proxy authorization header '" << proxy_auth << "'");
@@ -291,7 +292,7 @@ Auth::Basic::Config::decode(char const *proxy_auth)
     /* now lookup and see if we have a matching auth_user structure in memory. */
     Auth::User::Pointer auth_user;
 
-    if ((auth_user = findUserInCache(lb->username(), Auth::AUTH_BASIC)) == NULL) {
+    if ((auth_user = findUserInCache(lb->userKey(), Auth::AUTH_BASIC)) == NULL) {
         /* the user doesn't exist in the username cache yet */
         /* save the credentials */
         debugs(29, 9, HERE << "Creating new user '" << lb->username() << "'");

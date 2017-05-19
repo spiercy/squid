@@ -3,6 +3,7 @@
 
 #include "acl/Acl.h"
 #include "base/AsyncJob.h"
+#include "AccessLogEntry.h"
 #include "adaptation/Elements.h"
 #include "adaptation/forward.h"
 #include "adaptation/Initiator.h"
@@ -25,7 +26,7 @@ public:
 
     // use this to start async ACL checks; returns true if started
     static bool Start(Method method, VectPoint vp, HttpRequest *req,
-                      HttpReply *rep, Adaptation::Initiator *initiator);
+                      HttpReply *rep, AccessLogEntry::Pointer &al, Adaptation::Initiator *initiator);
 
 protected:
     // use Start to start adaptation checks

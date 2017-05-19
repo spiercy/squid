@@ -16,12 +16,14 @@
 
 Adaptation::Iterator::Iterator(
     HttpMsg *aMsg, HttpRequest *aCause,
+    AccessLogEntry::Pointer &alp,
     const ServiceGroupPointer &aGroup):
         AsyncJob("Iterator"),
         Adaptation::Initiate("Iterator"),
         theGroup(aGroup),
         theMsg(HTTPMSGLOCK(aMsg)),
         theCause(aCause ? HTTPMSGLOCK(aCause) : NULL),
+        al(alp),
         theLauncher(0),
         iterations(0),
         adapted(false)
@@ -251,7 +253,7 @@ Adaptation::ServiceFilter Adaptation::Iterator::filter() const
         Must(false); // should not happen
     }
 
-    return ServiceFilter(method, theGroup->point, req, rep);
+    return ServiceFilter(method, theGroup->point, req, rep, al);
 }
 
 CBDATA_NAMESPACED_CLASS_INIT(Adaptation, Iterator);

@@ -82,7 +82,7 @@ install-data-local: translate
 	done; \
 	$(INSTALL_DATA) $(srcdir)/TRANSLATORS $(DESTDIR)$(DEFAULT_ERROR_DIR)/TRANSLATORS; \
 	$(INSTALL_DATA) $(srcdir)/COPYRIGHT $(DESTDIR)$(DEFAULT_ERROR_DIR)/COPYRIGHT; \
-	$(INSTALL_DATA) $(srcdir)/errorpage.css $(DESTDIR)$(DEFAULT_STYLESHEET).default; \
+	$(INSTALL_DATA) $(srcdir)/errorpage.css $(DESTDIR)$(DEFAULT_STYLESHEET).sample; \
 	$(SHELL) $(srcdir)/alias-link.sh "$(LN)" "$(RM)" "$(DESTDIR)$(DEFAULT_ERROR_DIR)" "$(srcdir)/aliases" || exit 1 ;
 
 uninstall-local:
@@ -105,7 +105,7 @@ uninstall-local:
 	  fi \
 	done;
 	@$(SHELL) $(top_srcdir)/scripts/remove-cfg.sh "$(RM)" $(DESTDIR)$(DEFAULT_STYLESHEET)
-	rm -f $(DESTDIR)$(DEFAULT_STYLESHEET).default
+	rm -f $(DESTDIR)$(DEFAULT_STYLESHEET).sample
 	rm -f $(DESTDIR)$(DEFAULT_ERROR_DIR)/TRANSLATORS
 	rm -f $(DESTDIR)$(DEFAULT_ERROR_DIR)/COPYRIGHT
 

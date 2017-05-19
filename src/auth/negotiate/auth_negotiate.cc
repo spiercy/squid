@@ -88,6 +88,8 @@ Auth::Negotiate::Config::rotateHelpers()
 void
 Auth::Negotiate::Config::done()
 {
+    Auth::Config::done();
+
     authnegotiate_initialised = 0;
 
     if (negotiateauthenticators) {
@@ -121,6 +123,7 @@ Auth::Negotiate::Config::dump(StoreEntry * entry, const char *name, Auth::Config
                       name, authenticateChildren.n_max, authenticateChildren.n_startup, authenticateChildren.n_idle, authenticateChildren.concurrency);
     storeAppendPrintf(entry, "%s %s keep_alive %s\n", name, "negotiate", keep_alive ? "on" : "off");
 
+    Auth::Config::dump(entry, name, scheme);
 }
 
 Auth::Negotiate::Config::Config() : keep_alive(1)
@@ -141,7 +144,7 @@ Auth::Negotiate::Config::parse(Auth::Config * scheme, int n_configured, char *pa
     } else if (strcasecmp(param_str, "keep_alive") == 0) {
         parse_onoff(&keep_alive);
     } else {
-        debugs(29, DBG_CRITICAL, "ERROR: unrecognised Negotiate auth scheme parameter '" << param_str << "'");
+        Auth::Config::parse(scheme, n_configured, param_str);
     }
 }
 
@@ -287,9 +290,9 @@ authenticateNegotiateStats(StoreEntry * sentry)
  * Auth_user structure.
  */
 Auth::UserRequest::Pointer
-Auth::Negotiate::Config::decode(char const *proxy_auth)
+Auth::Negotiate::Config::decode(char const *proxy_auth, const char *requestRealm)
 {
-    Auth::Negotiate::User *newUser = new Auth::Negotiate::User(Auth::Config::Find("negotiate"));
+    Auth::Negotiate::User *newUser = new Auth::Negotiate::User(Auth::Config::Find("negotiate"), requestRealm);
     Auth::UserRequest *auth_user_request = new Auth::Negotiate::UserRequest();
     assert(auth_user_request->user() == NULL);
 

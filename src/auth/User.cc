@@ -53,13 +53,14 @@ CBDATA_TYPE(AuthUserIP);
 
 time_t Auth::User::last_discard = 0;
 
-Auth::User::User(Auth::Config *aConfig) :
+Auth::User::User(Auth::Config *aConfig, const char *requestRealm) :
         auth_type(Auth::AUTH_UNKNOWN),
         config(aConfig),
         ipcount(0),
         expiretime(0),
         credentials_state(Auth::Unchecked),
-        username_(NULL)
+        username_(NULL),
+        requestRealm_(requestRealm)
 {
     proxy_auth_list.head = proxy_auth_list.tail = NULL;
     proxy_match_cache.head = proxy_match_cache.tail = NULL;
@@ -382,4 +383,35 @@ Auth::User::UsernameCacheStats(StoreEntry *output)
                           auth_user->username()
                          );
     }
+}
+
+
+void
+Auth::User::extractHelperMessage(char *line, char * &end) 
+{
+    const char *s = line;
+    const char *token_end = strchr(s, ' ');
+    const char *isKeyValue;
+    do {
+        if((isKeyValue = squid_strnstr(s, "_=", token_end - s))) {
+            s = isKeyValue + 2;
+            if (*s == '\"') {
+                s++; //after quote
+                while (*s && *s != '"') s++;
+                if (*s) ++s; // point after quote
+            } else
+                s = token_end;
+            // Now s is point to space or to '\0'
+            // find next space to mark token end
+            if (*s)
+                token_end = strchr(s + 1, ' ');
+        }
+    } while(*s && isKeyValue);
+
+    end = line + (s - line);
+    helperMessage_.clean();
+    helperMessage_.append(line, end - line);
+
+    if (*end == ' ')
+        ++end;
 }

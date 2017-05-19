@@ -34,8 +34,12 @@
 #include "auth/Config.h"
 #include "auth/Gadgets.h"
 #include "auth/UserRequest.h"
+#include "cache_cf.h"
+#include "ConfigParser.h"
 #include "Debug.h"
 #include "globals.h"
+#include "Store.h"
+#include "format/Format.h"
 
 Auth::ConfigVector Auth::TheConfig;
 
@@ -47,7 +51,7 @@ Auth::ConfigVector Auth::TheConfig;
  * It may also be NULL reflecting that no user could be created.
  */
 Auth::UserRequest::Pointer
-Auth::Config::CreateAuthUser(const char *proxy_auth)
+Auth::Config::CreateAuthUser(const char *proxy_auth, AccessLogEntry::Pointer &al)
 {
     assert(proxy_auth != NULL);
     debugs(29, 9, HERE << "header = '" << proxy_auth << "'");
@@ -59,8 +63,15 @@ Auth::Config::CreateAuthUser(const char *proxy_auth)
                "Unsupported or unconfigured/inactive proxy-auth scheme, '" << proxy_auth << "'");
         return NULL;
     }
+    static MemBuf rmb;
+    rmb.reset();
+    if (config->requestRealm) {
+        config->requestRealm->assemble(rmb, al, 0);
+    } else if (config->requestFormat) {
+        config->requestFormat->assemble(rmb, al, 0);
+    }
 
-    return config->decode(proxy_auth);
+    return config->decode(proxy_auth, rmb.hasContent() ? rmb.content() : NULL);
 }
 
 Auth::Config *
@@ -95,4 +106,69 @@ Auth::Config::findUserInCache(const char *nameKey, Auth::Type authType)
     }
 
     return NULL;
+}
+
+void
+Auth::Config::parse(Auth::Config * scheme, int n_configured, char *param_str)
+{
+    if (strcasecmp(param_str, "request_format") == 0) {
+        bool wasQuoted;
+        ConfigParser::ParseQuotedString(&requestFormatLine, &wasQuoted);
+        Format::Format *nlf =  new ::Format::Format(scheme->type());
+        if (!nlf->parse(requestFormatLine.termedBuf())) {
+            self_destruct();
+            return;
+        }
+        if (requestFormat)
+            delete requestFormat;
+
+        requestFormat = nlf;
+        
+        if (char *t = strtok(NULL, w_space)) {
+               debugs(29, DBG_CRITICAL, HERE << "unexpected argument '" << t << "' after request_format specification");
+               self_destruct();
+        }
+    } else if (strcasecmp(param_str, "request_realm") == 0) {
+        bool wasQuoted;
+        ConfigParser::ParseQuotedString(&requestRealmFormat, &wasQuoted);
+        Format::Format *nlf =  new ::Format::Format(scheme->type());
+        if (!nlf->parse(requestRealmFormat.termedBuf())) {
+            self_destruct();
+            return;
+        }
+        if (requestRealm)
+            delete requestRealm;
+
+        requestRealm = nlf;
+
+        if (char *t = strtok(NULL, w_space)) {
+            debugs(29, DBG_CRITICAL, HERE << "unexpected argument '" << t << "' after request_realm specification");
+            self_destruct();
+        }
+    } else {
+        debugs(29, DBG_CRITICAL, HERE << "unrecognised " << scheme->type() << " auth scheme parameter '" << param_str << "'");
+    }
+}
+
+void
+Auth::Config::dump(StoreEntry *entry, const char *name, Auth::Config *scheme)
+{
+    if (requestFormatLine.defined())
+        storeAppendPrintf(entry, "%s %s request_format \"%s\"\n", name, scheme->type(), requestFormatLine.termedBuf());
+    if (requestRealmFormat.defined())
+        storeAppendPrintf(entry, "%s %s request_format \"%s\"\n", name, scheme->type(), requestRealmFormat.termedBuf());
+}
+
+void
+Auth::Config::done()
+{
+    if (requestFormat)
+        delete requestFormat;
+    requestFormat = NULL; 
+    requestFormatLine.clean();
+
+    if (requestRealm)
+        delete requestRealm;
+    requestRealm = NULL;
+    requestRealmFormat.clean();
 }

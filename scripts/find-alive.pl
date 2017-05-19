@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/local/bin/perl -w
 
 # Reads cache.log from STDIN, preferrably with full debugging enabled.
 # Finds creation and destruction messages for a given class.

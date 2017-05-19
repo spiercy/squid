@@ -1,4 +1,4 @@
-#!/usr/bin/perl -T -w
+#!/usr/local/bin/perl -T -w
 #
 # rredir.pl
 #

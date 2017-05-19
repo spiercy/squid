@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/local/bin/perl
 #
 # Author: Tsantilas Christos
 # (C) 2010 The Measurement Factory

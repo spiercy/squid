@@ -42,8 +42,20 @@ Auth::User::username(char const *aString)
 {
     if (aString) {
         assert(!username_);
-        username_ = xstrdup(aString);
+        username_ = xstrdup(aString);        
+        if (requestRealm_.defined())
+            userKey_ = BuildUserKey(username_, requestRealm_.termedBuf());
     } else {
         safe_free(username_);
     }
+}
+
+const char *
+Auth::User::BuildUserKey(const char *username, const char *realm)
+{
+    static String key;
+    key.reset(username);
+    key.append(':');
+    key.append(realm);
+    return key.termedBuf();
 }

@@ -80,6 +80,8 @@ Auth::Ntlm::Config::rotateHelpers()
 void
 Auth::Ntlm::Config::done()
 {
+    Auth::Config::done();
+
     authntlm_initialised = 0;
 
     if (ntlmauthenticators) {
@@ -113,6 +115,7 @@ Auth::Ntlm::Config::dump(StoreEntry * entry, const char *name, Auth::Config * sc
                       name, authenticateChildren.n_max, authenticateChildren.n_startup, authenticateChildren.n_idle, authenticateChildren.concurrency);
     storeAppendPrintf(entry, "%s %s keep_alive %s\n", name, "ntlm", keep_alive ? "on" : "off");
 
+    Auth::Config::dump(entry, name, scheme);
 }
 
 Auth::Ntlm::Config::Config() : keep_alive(1)
@@ -133,7 +136,7 @@ Auth::Ntlm::Config::parse(Auth::Config * scheme, int n_configured, char *param_s
     } else if (strcasecmp(param_str, "keep_alive") == 0) {
         parse_onoff(&keep_alive);
     } else {
-        debugs(29, DBG_CRITICAL, "ERROR unrecognised NTLM auth scheme parameter '" << param_str << "'");
+        Auth::Config::parse(scheme, n_configured, param_str);
     }
 }
 
@@ -267,9 +270,9 @@ authenticateNTLMStats(StoreEntry * sentry)
  * Auth_user structure.
  */
 Auth::UserRequest::Pointer
-Auth::Ntlm::Config::decode(char const *proxy_auth)
+Auth::Ntlm::Config::decode(char const *proxy_auth, const char *requestRealm)
 {
-    Auth::Ntlm::User *newUser = new Auth::Ntlm::User(Auth::Config::Find("ntlm"));
+    Auth::Ntlm::User *newUser = new Auth::Ntlm::User(Auth::Config::Find("ntlm"), requestRealm);
     Auth::UserRequest::Pointer auth_user_request = new Auth::Ntlm::UserRequest();
     assert(auth_user_request->user() == NULL);
 

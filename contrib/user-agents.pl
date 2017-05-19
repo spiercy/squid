@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/local/bin/perl
 #
 # John@MCC.ac.uk
 # John@Pharmweb.NET

@@ -651,13 +651,6 @@ ClientHttpRequest::logRequest()
     if (loggingEntry() && loggingEntry()->mem_obj)
         al->cache.objectSize = loggingEntry()->contentLen();
 
-    al->cache.caddr.SetNoAddr();
-
-    if (getConn() != NULL) {
-        al->cache.caddr = getConn()->log_addr;
-        al->cache.port =  cbdataReference(getConn()->port);
-    }
-
     al->cache.requestSize = req_sz;
     al->cache.requestHeadersSize = req_sz;
 
@@ -2763,6 +2756,13 @@ clientProcessRequest(ConnStateData *conn, HttpParser *hp, ClientSocketContext *c
     // Let tunneling code be fully responsible for CONNECT requests
     if (http->request->method == METHOD_CONNECT) {
         context->mayUseConnection(true);
+
+        // "may" in "mayUse" is meaningful here: no tunnel if Squid redirects,
+        // needs to authenticate, or responds with an error. For now, pause so
+        // that we do not read and try to parse tunneled and/or encrypted data.
+        // We resume reading if we get to ClientHttpRequest::httpStart() or 
+        // ConnStateData::switchToHttps().
+
         conn->flags.readMore = false;
     }
 
@@ -4244,7 +4244,7 @@ clientAclChecklistCreate(const acl_access * acl, ClientHttpRequest * http)
     ConnStateData * conn = http->getConn();
     ACLFilledChecklist *ch = new ACLFilledChecklist(acl, http->request,
             cbdataReferenceValid(conn) && conn != NULL && conn->clientConnection != NULL ? conn->clientConnection->rfc931 : dash_str);
-
+    ch->al = http->al;
     /*
      * hack for ident ACL. It needs to get full addresses, and a place to store
      * the ident result on persistent connections...
@@ -4292,6 +4292,8 @@ ConnStateData::stopReading()
         comm_read_cancel(clientConnection->fd, reader);
         reader = NULL;
     }
+
+    flags.readMore = false;
 }
 
 BodyPipe::Pointer

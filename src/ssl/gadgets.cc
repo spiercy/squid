@@ -257,7 +257,7 @@ static void
 mimicExtensions(Ssl::X509_Pointer & cert, Ssl::X509_Pointer const & mimicCert)
 {
     static int extensions[]= {
-        NID_key_usage,
+        //NID_key_usage,
         NID_ext_key_usage,
         NID_basic_constraints,
         0
@@ -387,11 +387,11 @@ static bool generateFakeSslCertificate(Ssl::X509_Pointer & certToStore, Ssl::EVP
     if (!ret)
         return false;
 
-    /*Now sign the request */
+    /*Now sign the request with sha256 */
     if (properties.signAlgorithm != Ssl::algSignSelf && properties.signWithPkey.get())
-        ret = X509_sign(cert.get(), properties.signWithPkey.get(), EVP_sha1());
+        ret = X509_sign(cert.get(), properties.signWithPkey.get(), EVP_sha256());
     else //else sign with self key (self signed request)
-        ret = X509_sign(cert.get(), pkey.get(), EVP_sha1());
+        ret = X509_sign(cert.get(), pkey.get(), EVP_sha256());
 
     if (!ret)
         return false;

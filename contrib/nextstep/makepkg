@@ -36,9 +36,9 @@ chmod 644 ${PRG}.info
 
 mkdirs ${TMPDIR}/usr/local/squid/etc ${TMPDIR}/usr/local/squid/logs
 /bin/cp -pr /usr/local/squid/bin ${TMPDIR}/usr/local/squid
-/bin/cp -pr /usr/local/squid/etc/squid.conf.default ${TMPDIR}/usr/local/squid/etc
+/bin/cp -pr /usr/local/squid/etc/squid.conf.sample ${TMPDIR}/usr/local/squid/etc
 # SQUID 2 (comment out if Squid 1)
-/bin/cp -pr /usr/local/squid/etc/mime.conf.default ${TMPDIR}/usr/local/squid/etc
+/bin/cp -pr /usr/local/squid/etc/mime.conf.sample ${TMPDIR}/usr/local/squid/etc
 /bin/cp -pr /usr/local/squid/etc/icons ${TMPDIR}/usr/local/squid/etc
 /bin/cp -pr /usr/local/squid/etc/errors ${TMPDIR}/usr/local/squid/etc
 # END SQUID 2

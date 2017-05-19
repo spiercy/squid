@@ -91,7 +91,7 @@ cachemgr.cgi.8: $(srcdir)/cachemgr.cgi.8.in Makefile
 ## Shared
 
 install-data-local:
-	$(INSTALL_DATA) $(srcdir)/cachemgr.conf $(DESTDIR)$(DEFAULT_CACHEMGR_CONFIG).default
+	$(INSTALL_DATA) $(srcdir)/cachemgr.conf $(DESTDIR)$(DEFAULT_CACHEMGR_CONFIG).sample
 	@if test -f $(DESTDIR)$(DEFAULT_CACHEMGR_CONFIG) ; then \
 	        echo "$@ will not overwrite existing $(DESTDIR)$(DEFAULT_CACHEMGR_CONFIG)" ; \
 	else \
@@ -101,4 +101,4 @@ install-data-local:
 
 uninstall-local:
 	@$(SHELL) $(top_srcdir)/scripts/remove-cfg.sh "$(RM)" $(DESTDIR)$(DEFAULT_CACHEMGR_CONFIG)
-	$(RM) -f $(DESTDIR)$(DEFAULT_CACHEMGR_CONFIG).default
+	$(RM) -f $(DESTDIR)$(DEFAULT_CACHEMGR_CONFIG).sample

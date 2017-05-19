@@ -558,7 +558,7 @@ ServerStateData::startAdaptation(const Adaptation::ServiceGroupPointer &group, H
     }
 
     adaptedHeadSource = initiateAdaptation(
-                            new Adaptation::Iterator(vrep, cause, group));
+                            new Adaptation::Iterator(vrep, cause, fwd->al, group));
     startedAdaptation = initiated(adaptedHeadSource);
     Must(startedAdaptation);
 }
@@ -921,7 +921,7 @@ ServerStateData::adaptOrFinalizeReply()
     // The callback can be called with a NULL service if adaptation is off.
     adaptationAccessCheckPending = Adaptation::AccessCheck::Start(
                                        Adaptation::methodRespmod, Adaptation::pointPreCache,
-                                       originalRequest(), virginReply(), this);
+                                       originalRequest(), virginReply(), fwd->al, this);
     debugs(11,5, HERE << "adaptationAccessCheckPending=" << adaptationAccessCheckPending);
     if (adaptationAccessCheckPending)
         return;

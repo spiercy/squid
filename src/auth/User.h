@@ -39,6 +39,7 @@
 #include "dlink.h"
 #include "ip/Address.h"
 #include "RefCount.h"
+#include "SquidString.h"
 
 class AuthUserHashPointer;
 class StoreEntry;
@@ -78,11 +79,16 @@ public:
 public:
     static void cacheInit();
     static void CachedACLsReset();
+    static _SQUID_INLINE_ const char *BuildUserKey(const char *username, const char *realm);
 
     void absorb(Auth::User::Pointer from);
     virtual ~User();
     _SQUID_INLINE_ char const *username() const;
     _SQUID_INLINE_ void username(char const *);
+
+    const char *requestRealm() {return requestRealm_.termedBuf();}
+
+    const char *userKey() {return userKey_.defined() ? userKey_.termedBuf() : username_;}
 
     /**
      * How long these credentials are still valid for.
@@ -101,6 +107,9 @@ public:
     CredentialState credentials() const;
     void credentials(CredentialState);
 
+    void extractHelperMessage(char *msg, char * &end);
+    const char *helperMessage() {return helperMessage_.termedBuf();};
+
 private:
     /**
      * The current state these credentials are in:
@@ -113,7 +122,7 @@ private:
     CredentialState credentials_state;
 
 protected:
-    User(Auth::Config *);
+    User(Auth::Config *, const char *requestRealm);
 
 private:
     /**
@@ -129,8 +138,22 @@ private:
      */
     const char *username_;
 
+    /**
+     * A realm for the user depending on request, designed to identify users,
+     * with the same username and different authentication domains.
+     */
+    const String requestRealm_;
+
+    /**
+     * A Unique key for the user, consist by username and requestRealm_
+     */
+    String userKey_;
+
+
     /** what ip addresses has this user been seen at?, plus a list length cache */
     dlink_list ip_list;
+
+    String helperMessage_;
 };
 
 } // namespace Auth

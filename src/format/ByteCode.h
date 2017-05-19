@@ -195,6 +195,7 @@ typedef enum {
     LFT_SSL_USER_CERT_SUBJECT,
     LFT_SSL_USER_CERT_ISSUER,
 #endif
+    LFT_CREDENTIALS,
 
     LFT_PERCENT			/* special string cases for escaped chars */
 } ByteCode_t;

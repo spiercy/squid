@@ -155,10 +155,13 @@ ConfigParser::ParseQuotedString(String *var, bool *wasQuoted)
         debugs(3, DBG_CRITICAL, "ParseQuotedString: missing '\"' at the end of quoted string" );
         self_destruct();
     }
-    strtok(s-1, "\""); /*Reset the strtok to point after the "  */
-    *s = '\0';
+    var->clean();
+    var->append(token + 1, s - 1 - token);
 
-    var->reset(token+1);
+    s--;
+    // convert any other '"' delimiter to space
+    while(*s == '"' && s > token) *s-- = ' ';
+    strtok(s, "\""); /*Reset the strtok to point after the "  */
 }
 
 const char *

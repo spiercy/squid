@@ -1,4 +1,5 @@
 #include "squid.h"
+#include "AccessLogEntry.h"
 #include "auth/negotiate/auth_negotiate.h"
 #include "auth/negotiate/UserRequest.h"
 #include "auth/State.h"
@@ -9,6 +10,8 @@
 #include "HttpHeaderTools.h"
 #include "HttpReply.h"
 #include "HttpRequest.h"
+#include "format/Format.h"
+#include "MemBuf.h"
 #include "SquidTime.h"
 
 Auth::Negotiate::UserRequest::UserRequest()
@@ -52,6 +55,18 @@ Auth::Negotiate::UserRequest::authenticated() const
     return 0;
 }
 
+const char *
+Auth::Negotiate::UserRequest::credentialsStr()
+{
+    static char buf[MAX_AUTHTOKEN_LEN];
+    if (user()->credentials() == Auth::Pending) {
+        snprintf(buf, sizeof(buf), "YR %s\n", client_blob); //CHECKME: can ever client_blob be 0 here?
+    } else {
+        snprintf(buf, sizeof(buf), "KK %s\n", client_blob);
+    }
+    return buf;
+}
+
 Auth::Direction
 Auth::Negotiate::UserRequest::module_direction()
 {
@@ -82,7 +97,7 @@ Auth::Negotiate::UserRequest::module_direction()
 }
 
 void
-Auth::Negotiate::UserRequest::module_start(AUTHCB * handler, void *data)
+Auth::Negotiate::UserRequest::module_start(HttpRequest *req, AccessLogEntry::Pointer &al, AUTHCB * handler, void *data)
 {
     static char buf[MAX_AUTHTOKEN_LEN];
 
@@ -100,10 +115,12 @@ Auth::Negotiate::UserRequest::module_start(AUTHCB * handler, void *data)
 
     debugs(29, 8, HERE << "credentials state is '" << user()->credentials() << "'");
 
-    if (user()->credentials() == Auth::Pending) {
-        snprintf(buf, sizeof(buf), "YR %s\n", client_blob); //CHECKME: can ever client_blob be 0 here?
-    } else {
-        snprintf(buf, sizeof(buf), "KK %s\n", client_blob);
+    if (!helperFormatedRequest(buf, sizeof(buf), request, al))  {
+        if (user()->credentials() == Auth::Pending) {
+            snprintf(buf, sizeof(buf), "YR %s\n", client_blob); //CHECKME: can ever client_blob be 0 here?
+        } else {
+            snprintf(buf, sizeof(buf), "KK %s\n", client_blob);
+        }
     }
 
     waiting = 1;
@@ -275,6 +292,12 @@ Auth::Negotiate::UserRequest::HandleReply(void *data, void *lastserver, char *re
     if (blob) {
         ++blob;
         arg = strchr(blob + 1, ' ');
+
+        if (char *t = strchr(arg + 1, ' ')) {
+            ++t;
+            if (*t)
+                lm_request->user()->extractHelperMessage(t, t);
+        }
     } else {
         arg = NULL;
     }
@@ -314,10 +337,10 @@ Auth::Negotiate::UserRequest::HandleReply(void *data, void *lastserver, char *re
         debugs(29, 4, HERE << "authenticated user " << auth_user_request->user()->username());
         /* see if this is an existing user with a different proxy_auth
          * string */
-        AuthUserHashPointer *usernamehash = static_cast<AuthUserHashPointer *>(hash_lookup(proxy_auth_username_cache, auth_user_request->user()->username()));
+        AuthUserHashPointer *usernamehash = static_cast<AuthUserHashPointer *>(hash_lookup(proxy_auth_username_cache, auth_user_request->user()->userKey()));
         Auth::User::Pointer local_auth_user = lm_request->user();
         while (usernamehash && (usernamehash->user()->auth_type != Auth::AUTH_NEGOTIATE ||
-                                strcmp(usernamehash->user()->username(), auth_user_request->user()->username()) != 0))
+                                strcmp(usernamehash->user()->userKey(), auth_user_request->user()->userKey()) != 0))
             usernamehash = static_cast<AuthUserHashPointer *>(usernamehash->next);
         if (usernamehash) {
             /* we can't seamlessly recheck the username due to the

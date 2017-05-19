@@ -43,6 +43,8 @@
 #include "comm/Connection.h"
 #include "HttpReply.h"
 #include "HttpRequest.h"
+#include "format/Format.h"
+#include "MemBuf.h"
 
 /* Generic Functions */
 
@@ -59,12 +61,12 @@ Auth::UserRequest::username() const
 
 /* send the initial data to an authenticator module */
 void
-Auth::UserRequest::start(AUTHCB * handler, void *data)
+Auth::UserRequest::start(HttpRequest *request, AccessLogEntry::Pointer &al, AUTHCB * handler, void *data)
 {
     assert(handler);
     assert(data);
     debugs(29, 9, HERE << "auth_user_request '" << this << "'");
-    module_start(handler, data);
+    module_start(request, al, handler, data);
 }
 
 bool
@@ -280,7 +282,7 @@ authTryGetUser(Auth::UserRequest::Pointer auth_user_request, ConnStateData * con
  * Caller is responsible for locking and unlocking their *auth_user_request!
  */
 AuthAclState
-Auth::UserRequest::authenticate(Auth::UserRequest::Pointer * auth_user_request, http_hdr_type headertype, HttpRequest * request, ConnStateData * conn, Ip::Address &src_addr)
+Auth::UserRequest::authenticate(Auth::UserRequest::Pointer * auth_user_request, http_hdr_type headertype, HttpRequest * request, ConnStateData * conn, Ip::Address &src_addr, AccessLogEntry::Pointer &al)
 {
     const char *proxy_auth;
     assert(headertype != 0);
@@ -359,7 +361,7 @@ Auth::UserRequest::authenticate(Auth::UserRequest::Pointer * auth_user_request, 
             /* beginning of a new request check */
             debugs(29, 4, HERE << "No connection authentication type");
 
-            *auth_user_request = Auth::Config::CreateAuthUser(proxy_auth);
+            *auth_user_request = Auth::Config::CreateAuthUser(proxy_auth, al);
             if (*auth_user_request == NULL)
                 return AUTH_ACL_CHALLENGE;
             else if (!(*auth_user_request)->valid()) {
@@ -446,7 +448,7 @@ Auth::UserRequest::authenticate(Auth::UserRequest::Pointer * auth_user_request, 
 }
 
 AuthAclState
-Auth::UserRequest::tryToAuthenticateAndSetAuthUser(Auth::UserRequest::Pointer * aUR, http_hdr_type headertype, HttpRequest * request, ConnStateData * conn, Ip::Address &src_addr)
+Auth::UserRequest::tryToAuthenticateAndSetAuthUser(Auth::UserRequest::Pointer * aUR, http_hdr_type headertype, HttpRequest * request, ConnStateData * conn, Ip::Address &src_addr, AccessLogEntry::Pointer &al)
 {
     // If we have already been called, return the cached value
     Auth::UserRequest::Pointer t = authTryGetUser(*aUR, conn, request);
@@ -462,7 +464,7 @@ Auth::UserRequest::tryToAuthenticateAndSetAuthUser(Auth::UserRequest::Pointer * 
     }
 
     // ok, call the actual authenticator routine.
-    AuthAclState result = authenticate(aUR, headertype, request, conn, src_addr);
+    AuthAclState result = authenticate(aUR, headertype, request, conn, src_addr, al);
 
     // auth process may have changed the UserRequest we are dealing with
     t = authTryGetUser(*aUR, conn, request);
@@ -554,4 +556,22 @@ Auth::Scheme::Pointer
 Auth::UserRequest::scheme() const
 {
     return Auth::Scheme::Find(user()->config->type());
+}
+
+int
+Auth::UserRequest::helperFormatedRequest(char *buf, size_t size, HttpRequest *request, AccessLogEntry::Pointer &al)
+{
+    if (Format::Format *reqFmt = user()->config->requestFormat) {
+        MemBuf mb;
+        mb.init(1024, 2048);
+        // We should pass AccessLogEntry as second argument ....
+        Auth::UserRequest::Pointer oldReq = request->auth_user_request;
+        request->auth_user_request = this;
+        reqFmt->assemble(mb, al, 0);
+        request->auth_user_request = oldReq;
+        int sz = snprintf(buf, size, "%s\n", mb.content());
+        debugs(29, 5, "Assebled line to send :" << mb.content());
+        return sz;
+    }
+    return 0;
 }

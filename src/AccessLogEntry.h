@@ -156,7 +156,7 @@ public:
                 ssluser(NULL),
 #endif
                 port(NULL) {
-            ;
+            caddr.SetNoAddr();
         }
 
         Ip::Address caddr;

@@ -1778,7 +1778,7 @@ Changes to squid-2.6.STABLE15 (31 Aug 2007)
 	  headers
 	- Bug #2023: Compile error with old GCC 2.x or other ANSI-C compilers
 	  before C99
-	- squid.conf.default updated and reorganised in more sensible groups
+	- squid.conf.sample updated and reorganised in more sensible groups
 	- correct and document the syslog access_log format
 	- Armenian error pages translation
 	- digest_ldap_helper usage help updated
@@ -1805,7 +1805,7 @@ Changes to squid-2.6.STABLE15 (31 Aug 2007)
 
 Changes to squid-2.6.STABLE14 (15 Jul 2007)
 
-	- squid.conf.default cleanup to have options in their proper sections.
+	- squid.conf.sample cleanup to have options in their proper sections.
 	- documentation correction in the refresh_pattern ignore-auth option
 	- URI-escaping not uses the recommended upper-case hex codes
 	- refresh_pattern min-age 0 correted to really mean 0, and not 1 second
@@ -2100,7 +2100,7 @@ Changes to squid-2.6.STABLE2 (31 Jul 2006)
 	  statistics
 	- Added to the redirectors interface the support for SSL client
 	  certificate
-	- squid.conf.default cleanup to remove references to old options
+	- squid.conf.sample cleanup to remove references to old options
 	- Fix many filedescriptors in combination with TPROXY
 	- Fix connection pinning in transparently intercepted connections
 	- Bug #1679: LDFLAGS not honored in some programs.
@@ -2500,7 +2500,7 @@ Changes to squid-2.5.STABLE7 (11 Oct 2004)
 	- [Minor] Apparent memory leak in client_db (Bug #833)
 	- [Minor] NTLM authentication truncated causing failures. (Bug
 	  #1016)
-	- [Cosmetic] Grammatical corrections in squid.conf.default
+	- [Cosmetic] Grammatical corrections in squid.conf.sample
 	- [Cosmetic] Unknown %X errorpage codes incorrectly quoted. (Bug
 	  #1030)
 	- [Medium] Segfaults and other strange crashes when using heap
@@ -2565,7 +2565,7 @@ Changes to squid-2.5.STABLE6 (9 Jul 2004)
 	- Bug #954: Segment violation when using a blank user name in digest
 	  authentication
 	- Bug #943: assertion failed: errorpage.c:292: "mem->inmem_hi == 0"
-	- Spelling corrections in configure and squid.conf.default
+	- Spelling corrections in configure and squid.conf.sample
 	- The meaning of ERR in digest helper protocol clarified in the
 	  squid.conf documentation
 	- Bug #950: Spelling error in Turkish ERR_DNS_FAIL
@@ -2804,7 +2804,7 @@ Changes to squid-2.5.STABLE2 (Mars 17, 2003):
 	  the user to authenticate.
 	- cleanups in the developer bootstrap.sh process when preparing
 	  the sources.
-	- several squid.conf.default documentation updated to correctly
+	- several squid.conf.sample documentation updated to correctly
 	  refer to the current names when refering to other directives
 	- authenticate_ip_ttl documentation updates
 	- several assertion faults and segmentation violations corrected
@@ -2850,7 +2850,7 @@ Changes to squid-2.5.STABLE2 (Mars 17, 2003):
 	  the pid file to be monitored to determine when Squid has shut down
 	  properly
 	- correct authentication scheme setups on some platforms or compilers
-	- several squid.conf.default documentation updates to remove references
+	- several squid.conf.sample documentation updates to remove references
 	  to renamed or replaced directives by changing them to their current
 	  names.
 	- the SSL reverse proxy support updated to allow building with
@@ -3199,7 +3199,7 @@ Changes to Squid-2.4.DEVEL4 ():
 	  compensate previously dead peers
 	- DNS retransmit parameters
 	- Show all FTP server messages
-	- squid.conf.default now indicates if a directive isn't enabled in
+	- squid.conf.sample now indicates if a directive isn't enabled in
 	  the installed binary, and what configure option to use for enabling it
 	- Fixed a temporary memory leak on persistent POSTs
 	- Fixed a temporary memory leak when the server response headers

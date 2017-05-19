@@ -16,13 +16,13 @@ basic_msnt_auth_SOURCES = \
 	valid.h
 
 EXTRA_DIST = \
-	msntauth.conf.default \
+	msntauth.conf.sample \
 	msntauth-v2.0.lsm \
 	README.html \
 	config.test
 
 sysconf_DATA = \
-	msntauth.conf.default
+	msntauth.conf.sample
 
 CFLAGS += -DSYSCONFDIR=\"$(sysconfdir)\"
 CXXFLAGS += -DSYSCONFDIR=\"$(sysconfdir)\"
@@ -37,15 +37,15 @@ LDADD = \
 INCLUDES += -I$(srcdir) -I$(top_srcdir)/lib
 
 
-install-data-local: msntauth.conf.default
+install-data-local: msntauth.conf.sample
 	@if test -f $(DESTDIR)$(MSNTAUTH_CONF) ; then \
 		echo "$@ will not overwrite existing $(DESTDIR)$(MSNTAUTH_CONF)" ; \
 	else \
-		echo "$(INSTALL_DATA) $(srcdir)/msntauth.conf.default $(DESTDIR)$(MSNTAUTH_CONF)" ; \
-		$(INSTALL_DATA) $(srcdir)/msntauth.conf.default $(DESTDIR)$(MSNTAUTH_CONF) ; \
+		echo "$(INSTALL_DATA) $(srcdir)/msntauth.conf.sample $(DESTDIR)$(MSNTAUTH_CONF)" ; \
+		$(INSTALL_DATA) $(srcdir)/msntauth.conf.sample $(DESTDIR)$(MSNTAUTH_CONF) ; \
 	fi
 
 uninstall-local:
 	@$(SHELL) $(top_srcdir)/scripts/remove-cfg.sh "$(RM)" $(DESTDIR)$(MSNTAUTH_CONF)
-	$(RM) -f $(DESTDIR)$(MSNTAUTH_CONF).default
+	$(RM) -f $(DESTDIR)$(MSNTAUTH_CONF).sample
 

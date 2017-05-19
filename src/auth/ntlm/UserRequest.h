@@ -27,7 +27,8 @@ public:
     virtual void authenticate(HttpRequest * request, ConnStateData * conn, http_hdr_type type);
     virtual Auth::Direction module_direction();
     virtual void onConnectionClose(ConnStateData *);
-    virtual void module_start(AUTHCB *, void *);
+    virtual void module_start(HttpRequest *req, AccessLogEntry::Pointer &al, AUTHCB *, void *);
+    virtual const char *credentialsStr();
 
     virtual const char * connLastHeader();
 

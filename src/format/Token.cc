@@ -150,6 +150,7 @@ static TokenTableEntry TokenTableMisc[] = {
     {">eui", LFT_CLIENT_EUI},
     {"err_code", LFT_SQUID_ERROR },
     {"err_detail", LFT_SQUID_ERROR_DETAIL },
+    {"credentials", LFT_CREDENTIALS},
     {NULL, LFT_NONE}		/* this must be last */
 };
 

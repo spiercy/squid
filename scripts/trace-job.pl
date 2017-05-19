@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/local/bin/perl -w
 
 # Reads cache.log and displays lines that correspond to a given async job.
 # 

@@ -191,7 +191,7 @@ The main configuration file. You must initially make changes to this file for
 to work. For example, the default configuration only allows access from RFC private LAN networks.
 Some packaging distributions block even that.
 .
-.if !'po4a'hide' .IP "squid.conf.default"
+.if !'po4a'hide' .IP "squid.conf.sample"
 Reference copy of the configuration file. Always kept up to date with
 the version of Squid you are using.
 .IP
