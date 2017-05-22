@@ -1221,8 +1221,6 @@ peerDNSConfigure(const ipcache_addrs *ia, const DnsLookupDetails &, void *data)
         return;
     }
 
-    p->tcp_up = p->connect_fail_limit;
-
     for (j = 0; j < (int) ia->count && j < PEER_MAX_ADDRESSES; ++j) {
         p->addresses[j] = ia->in_addrs[j];
         debugs(15, 2, "--> IP address #" << j << ": " << p->addresses[j]);
@@ -1232,6 +1230,8 @@ peerDNSConfigure(const ipcache_addrs *ia, const DnsLookupDetails &, void *data)
     p->in_addr.SetEmpty();
     p->in_addr = p->addresses[0];
     p->in_addr.SetPort(p->icp.port);
+
+    peerProbeConnect(p); // detect any died or revived peers ASAP
 
     if (p->type == PEER_MULTICAST)
         peerCountMcastPeersSchedule(p, 10);
