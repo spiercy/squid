@@ -4391,7 +4391,7 @@ void httpsSslBumpStep2AccessCheckDone(allow_t answer, void *data)
             connState->in.buf.append(rbuf.content(), rbuf.contentSize());
             ClientSocketContext::Pointer context = connState->getCurrentContext();
             ClientHttpRequest *http = context->http;
-            tunnelStart(http, &http->out.size, &http->al->http.code, http->al);
+            tunnelStart(http);
         }
     }
 }
