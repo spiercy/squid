@@ -561,6 +561,7 @@ ClientRequestContext::hostHeaderVerifyFailed(const char *A, const char *B)
     debugs(85, DBG_IMPORTANT, "SECURITY ALERT: on URL: " << urlCanonical(http->request));
 
     // IP address validation for Host: failed. reject the connection.
+    http->getConn()->quitAfterError(http->request);
     clientStreamNode *node = (clientStreamNode *)http->client_stream.tail->prev->data;
     clientReplyContext *repContext = dynamic_cast<clientReplyContext *>(node->data.getRaw());
     assert (repContext);
@@ -1421,7 +1422,17 @@ ClientRequestContext::sslBumpAccessCheck()
     if (bumpMode != Ssl::bumpEnd) {
         debugs(85, 5, HERE << "SslBump already decided (" << bumpMode <<
                "), " << "ignoring ssl_bump for " << http->getConn());
-        if (!http->getConn()->serverBump())
+
+        // We need the following "if" for transparently bumped TLS connection,
+        // because in this case we are running ssl_bump access list before
+        // the doCallouts runs. It can be removed after the bug #4340 fixed.
+        // We do not want to proceed to bumping steps:
+        //  - if the TLS connection with the client is already established
+        //    because we are accepting normal HTTP requests on TLS port,
+        //    or because of the client-first bumping mode
+        //  - When the bumping is already started
+        if (!http->getConn()->switchedToHttps() &&
+                !http->getConn()->serverBump())
             http->sslBumpNeed(bumpMode); // for processRequest() to bump if needed and not already bumped
         http->al->ssl.bumpMode = bumpMode; // inherited from bumped connection
         return false;

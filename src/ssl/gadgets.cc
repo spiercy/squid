@@ -351,12 +351,12 @@ addAltNameWithSubjectCn(Ssl::X509_Pointer &cert)
     const int loc = X509_NAME_get_index_by_NID(name, NID_commonName, -1);
     if (loc < 0)
         return false;
-    
+
     ASN1_STRING *cn_data = X509_NAME_ENTRY_get_data(X509_NAME_get_entry(name, loc));
     if (!cn_data)
         return false;
 
-    char dnsName[1024];
+    char dnsName[1024]; // DNS names are limited to 256 characters
     const int res = snprintf(dnsName, sizeof(dnsName), "DNS:%*s", cn_data->length, cn_data->data);
     if (res <= 0 || res >= static_cast<int>(sizeof(dnsName)))
         return false;
@@ -368,11 +368,11 @@ addAltNameWithSubjectCn(Ssl::X509_Pointer &cert)
     const bool result = X509_add_ext(cert.get(), ext, -1);
 
     X509_EXTENSION_free(ext);
-
     return result;
 }
 
-static bool buildCertificate(Ssl::X509_Pointer & cert, Ssl::CertificateProperties const &properties)
+static bool
+buildCertificate(Ssl::X509_Pointer & cert, Ssl::CertificateProperties const &properties)
 {
     // not an Ssl::X509_NAME_Pointer because X509_REQ_get_subject_name()
     // returns a pointer to the existing subject name. Nothing to clean here.
@@ -434,7 +434,7 @@ static bool buildCertificate(Ssl::X509_Pointer & cert, Ssl::CertificatePropertie
         // Mimic subjectAltName unless we used a configured CN: browsers reject
         // certificates with CN unrelated to subjectAltNames.
         if (!properties.setCommonName) {
-            int pos = X509_get_ext_by_NID (properties.mimicCert.get(), NID_subject_alt_name , -1);
+            int pos = X509_get_ext_by_NID(properties.mimicCert.get(), NID_subject_alt_name, -1);
             X509_EXTENSION *ext=X509_get_ext(properties.mimicCert.get(), pos);
             if (ext) {
                 if (X509_add_ext(cert.get(), ext, -1))
