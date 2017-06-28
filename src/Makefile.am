@@ -22,7 +22,9 @@ SBUF_SOURCE= \
 	SBuf.h \
 	SBuf.cc \
 	SBufExceptions.h \
-	SBufExceptions.cc
+	SBufExceptions.cc \
+	SBufAlgos.h \
+	SBufAlgos.cc
 
 STOREMETA_SOURCE = \
 	StoreMeta.cc \
@@ -3805,7 +3807,6 @@ tests_testSBufList_SOURCES= \
 	$(SBUF_SOURCE) \
 	SBufList.h \
 	SBufList.cc \
-	SBufAlgos.h \
 	SBufDetailedStats.h \
 	tests/stub_SBufDetailedStats.cc \
 	SBufStream.h \
