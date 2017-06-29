@@ -24,6 +24,7 @@
 #include "SwapDir.h"
 #include "wordlist.h"
 
+#include <memory>
 #include <unordered_map>
 
 #if USE_SSL_CRTD
