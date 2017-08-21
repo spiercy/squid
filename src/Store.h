@@ -118,8 +118,11 @@ public:
     /// if needed, initialize mem_obj member w/o URI-related information
     MemObject *makeMemObject();
 
-    /// initialize mem_obj member (if needed) and supply URI-related info
+    /// initialize mem_obj (if needed) and set or reset URI-related info (always)
     void createMemObject(const char *storeId, const char *logUri, const HttpRequestMethod &aMethod);
+
+    /// initialize mem_obj (if needed) and set URI-related info (if missing)
+    void ensureMemObject(const char *storeId, const char *logUri, const HttpRequestMethod &aMethod);
 
     void dump(int debug_lvl) const;
     void hashDelete();

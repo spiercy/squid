@@ -779,8 +779,7 @@ storeCreatePureEntry(const char *url, const char *log_url, const RequestFlags &f
     debugs(20, 3, "storeCreateEntry: '" << url << "'");
 
     e = new StoreEntry();
-    e->makeMemObject();
-    e->mem_obj->setUris(url, log_url, method);
+    e->createMemObject(url, log_url, method);
 
     if (flags.cachable) {
         EBIT_CLR(e->flags, RELEASE_REQUEST);
@@ -1691,6 +1690,16 @@ StoreEntry::createMemObject(const char *aUrl, const char *aLogUrl, const HttpReq
 {
     makeMemObject();
     mem_obj->setUris(aUrl, aLogUrl, aMethod);
+}
+
+void
+StoreEntry::ensureMemObject(const char *aUrl, const char *aLogUrl, const HttpRequestMethod &aMethod)
+{
+    makeMemObject();
+    // Do not clobber preexisting mem_obj->method, if any (e.g., when a HEAD
+    // request is a cache hit for a GET response, keep the method as GET).
+    if (!mem_obj->hasUris())
+        mem_obj->setUris(aUrl, aLogUrl, aMethod);
 }
 
 /** disable sending content to the clients.
