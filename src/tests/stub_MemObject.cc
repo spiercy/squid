@@ -29,14 +29,17 @@ MemObject::endOffset() const
 void MemObject::trimSwappable() STUB
 void MemObject::trimUnSwappable() STUB
 int64_t MemObject::policyLowestOffsetToKeep(bool swap) const STUB_RETVAL(-1)
-MemObject::MemObject() :
+MemObject::MemObject(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod) :
+    method(aMethod),
     inmem_lo(0),
     nclients(0),
     ping_reply_callback(NULL),
     ircb_data(NULL),
     id(0),
     object_sz(-1),
-    swap_hdr_sz(0)
+    swap_hdr_sz(0),
+    storeId_(aStoreId),
+    logUri_((!aLogUri || aLogUri == aStoreId) ? String() : aLogUri)
 {
     memset(&clients, 0, sizeof(clients));
     memset(&start_ping, 0, sizeof(start_ping));
@@ -45,7 +48,6 @@ MemObject::MemObject() :
 
 const char *MemObject::storeId() const STUB_RETVAL(NULL)
 const char *MemObject::logUri() const STUB_RETVAL(NULL)
-void MemObject::setUris(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod) STUB
 void MemObject::reset() STUB
 void MemObject::delayRead(DeferredRead const &aRead) STUB
 bool MemObject::readAheadPolicyCanRead() const STUB_RETVAL(false)

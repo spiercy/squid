@@ -180,7 +180,6 @@ Transients::copyFromShm(const sfileno index)
                                          extra.reqFlags, extra.reqMethod);
 
     assert(e->mem_obj);
-    e->mem_obj->method = extra.reqMethod;
     e->mem_obj->xitTable.io = MemObject::ioReading;
     e->mem_obj->xitTable.index = index;
 

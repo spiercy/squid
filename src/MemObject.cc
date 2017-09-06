@@ -53,11 +53,7 @@ MemObject::inUseCount()
 const char *
 MemObject::storeId() const
 {
-    if (!storeId_.size()) {
-        debugs(20, DBG_IMPORTANT, "Bug: Missing MemObject::storeId value");
-        dump();
-        storeId_ = "[unknown_URI]";
-    }
+    assert(storeId_.size());
     return storeId_.termedBuf();
 }
 
@@ -73,26 +69,8 @@ MemObject::hasUris() const
     return storeId_.size();
 }
 
-void
-MemObject::setUris(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod)
-{
-    storeId_ = aStoreId;
-    debugs(88, 3, "storeId: " << storeId_);
-
-    // fast pointer comparison for a common storeCreateEntry(url,url,...) case
-    if (!aLogUri || aLogUri == aStoreId)
-        logUri_.clean(); // use storeId_ by default to minimize copying
-    else
-        logUri_ = aLogUri;
-
-    method = aMethod;
-
-#if URL_CHECKSUM_DEBUG
-    chksum = url_checksum(urlXXX());
-#endif
-}
-
-MemObject::MemObject() :
+MemObject::MemObject(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod) :
+    method(aMethod),
     inmem_lo(0),
     nclients(0),
     smpCollapsed(false),
@@ -104,12 +82,21 @@ MemObject::MemObject() :
 #if URL_CHECKSUM_DEBUG
     chksum(0),
 #endif
-    vary_headers(nullptr)
+    vary_headers(nullptr),
+    storeId_(aStoreId ? aStoreId : "[unknown_URI]"),
+    logUri_((!aLogUri || aLogUri == aStoreId) ? String() : aLogUri)
 {
+#if URL_CHECKSUM_DEBUG
+    chksum = url_checksum(urlXXX());
+#endif
     debugs(20, 3, "new MemObject " << this);
     memset(&start_ping, 0, sizeof(start_ping));
     memset(&abort, 0, sizeof(abort));
     reply_ = new HttpReply;
+    if (!aStoreId) {
+        debugs(20, DBG_IMPORTANT, "Bug: Missing MemObject::storeId value");
+        dump();
+    }
 }
 
 MemObject::~MemObject()
