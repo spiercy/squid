@@ -39,7 +39,7 @@ public:
     MemObject(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod);
     ~MemObject();
 
-    /// whether setUris() has been called
+    /// whether StoreId was provided
     bool hasUris() const;
 
     void write(const StoreIOBuffer &buf);

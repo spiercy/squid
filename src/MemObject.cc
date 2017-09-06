@@ -63,10 +63,13 @@ MemObject::logUri() const
     return logUri_.size() ? logUri_.termedBuf() : storeId();
 }
 
+static const char *defaultURI = "[unknown_URI]";
+
 bool
 MemObject::hasUris() const
 {
-    return storeId_.size();
+    assert(storeId_.size());
+    return (storeId_.cmp(defaultURI) != 0);
 }
 
 MemObject::MemObject(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod) :
@@ -83,7 +86,7 @@ MemObject::MemObject(char const *aStoreId, char const *aLogUri, const HttpReques
     chksum(0),
 #endif
     vary_headers(nullptr),
-    storeId_(aStoreId ? aStoreId : "[unknown_URI]"),
+    storeId_(aStoreId ? aStoreId : defaultURI),
     logUri_((!aLogUri || aLogUri == aStoreId) ? String() : aLogUri)
 {
 #if URL_CHECKSUM_DEBUG
