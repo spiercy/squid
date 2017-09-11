@@ -563,7 +563,7 @@ Auth::UserRequest::helperFormatedRequest(char *buf, size_t size, HttpRequest *re
 {
     if (Format::Format *reqFmt = user()->config->requestFormat) {
         MemBuf mb;
-        mb.init(1024, 2048);
+        mb.init();
         // We should pass AccessLogEntry as second argument ....
         Auth::UserRequest::Pointer oldReq = request->auth_user_request;
         request->auth_user_request = this;
