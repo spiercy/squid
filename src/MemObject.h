@@ -36,13 +36,17 @@ public:
     static size_t inUseCount();
 
     void dump() const;
-    MemObject();
+    MemObject(char const *, char const *, const HttpRequestMethod &);
+
     ~MemObject();
 
     /// sets store ID, log URI, and request method; TODO: find a better name
+    /// XXX: remove this method and make corresponding URI fields constant
+    /// when another XXX within MemStore::get() is addressed.
     void setUris(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod);
 
-    /// whether setUris() has been called
+    /// Whether entry StoreID was provided.
+    /// TODO: probably misnamed.
     bool hasUris() const;
 
     void write(const StoreIOBuffer &buf);

@@ -308,7 +308,8 @@ clientReplyContext::processExpired()
     }
 
     if (entry) {
-        entry->ensureMemObject(url, http->log_uri, http->request->method);
+        entry->createMemObject(url, http->log_uri, http->request->method);
+        entry->mem_obj->setUris(url, http->log_uri, http->request->method);
         debugs(88, 5, "collapsed on existing revalidation entry: " << *entry);
         collapsedRevalidation = crSlave;
     } else {
@@ -996,6 +997,8 @@ clientReplyContext::purgeFoundObject(StoreEntry *entry)
     http->storeEntry()->lock("clientReplyContext::purgeFoundObject");
     http->storeEntry()->createMemObject(storeId(), http->log_uri,
                                         http->request->method);
+    http->storeEntry()->mem_obj->setUris(storeId(), http->log_uri,
+                                            http->request->method);
 
     sc = storeClientListAdd(http->storeEntry(), this);
 
@@ -1846,8 +1849,8 @@ clientReplyContext::doGetMoreData()
 
         http->storeEntry()->lock("clientReplyContext::doGetMoreData");
 
-        http->storeEntry()->ensureMemObject(storeId(), http->log_uri, http->request->method);
-
+        http->storeEntry()->createMemObject(storeId(), http->log_uri, http->request->method);
+        http->storeEntry()->mem_obj->setUris(storeId(), http->log_uri, http->request->method);
         sc = storeClientListAdd(http->storeEntry(), this);
 #if USE_DELAY_POOLS
         sc->setDelayId(DelayId::DelayClient(http));
