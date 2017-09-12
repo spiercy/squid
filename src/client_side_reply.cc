@@ -994,7 +994,7 @@ clientReplyContext::purgeFoundObject(StoreEntry *entry)
     http->storeEntry(entry);
 
     http->storeEntry()->lock("clientReplyContext::purgeFoundObject");
-    http->storeEntry()->ensureMemObject(storeId(), http->log_uri,
+    http->storeEntry()->createMemObject(storeId(), http->log_uri,
                                         http->request->method);
 
     sc = storeClientListAdd(http->storeEntry(), this);

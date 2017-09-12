@@ -36,10 +36,13 @@ public:
     static size_t inUseCount();
 
     void dump() const;
-    MemObject(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod);
+    MemObject();
     ~MemObject();
 
-    /// whether StoreId was provided
+    /// sets store ID, log URI, and request method; TODO: find a better name
+    void setUris(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod);
+
+    /// whether setUris() has been called
     bool hasUris() const;
 
     void write(const StoreIOBuffer &buf);
@@ -89,7 +92,7 @@ public:
     /// client request URI used for logging; storeId() by default
     const char *logUri() const;
 
-    const HttpRequestMethod method;
+    HttpRequestMethod method;
     mem_hdr data_hdr;
     int64_t inmem_lo;
     dlink_list clients;
@@ -173,8 +176,8 @@ public:
 private:
     HttpReplyPointer reply_;
 
-    const String storeId_; ///< StoreId for our entry (usually request URI)
-    const String logUri_;  ///< URI used for logging (usually request URI)
+    mutable String storeId_; ///< StoreId for our entry (usually request URI)
+    mutable String logUri_;  ///< URI used for logging (usually request URI)
 
     DeferredReadManager deferredReads;
 };

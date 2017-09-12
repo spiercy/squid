@@ -30,7 +30,7 @@ void
 testStoreHashIndex::testStats()
 {
     StoreEntry *logEntry = new StoreEntry;
-    logEntry->ensureMemObject("dummy_storeId", nullptr, HttpRequestMethod());
+    logEntry->createMemObject("dummy_storeId", NULL, HttpRequestMethod());
     logEntry->store_status = STORE_PENDING;
     Store::Init();
     TestSwapDirPointer aStore (new TestSwapDir);
@@ -50,7 +50,7 @@ void
 testStoreHashIndex::testMaxSize()
 {
     StoreEntry *logEntry = new StoreEntry;
-    logEntry->ensureMemObject("dummy_storeId", nullptr, HttpRequestMethod());
+    logEntry->createMemObject("dummy_storeId", NULL, HttpRequestMethod());
     logEntry->store_status = STORE_PENDING;
     Store::Init();
     TestSwapDirPointer aStore (new TestSwapDir);

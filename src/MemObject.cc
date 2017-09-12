@@ -53,7 +53,11 @@ MemObject::inUseCount()
 const char *
 MemObject::storeId() const
 {
-    assert(storeId_.size());
+    if (!storeId_.size()) {
+        debugs(20, DBG_IMPORTANT, "Bug: Missing MemObject::storeId value");
+        dump();
+        storeId_ = "[unknown_URI]";
+    }
     return storeId_.termedBuf();
 }
 
@@ -63,17 +67,32 @@ MemObject::logUri() const
     return logUri_.size() ? logUri_.termedBuf() : storeId();
 }
 
-static const char *defaultURI = "[unknown_URI]";
-
 bool
 MemObject::hasUris() const
 {
-    assert(storeId_.size());
-    return (storeId_.cmp(defaultURI) != 0);
+    return storeId_.size();
 }
 
-MemObject::MemObject(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod) :
-    method(aMethod),
+void
+MemObject::setUris(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod)
+{
+    storeId_ = aStoreId;
+    debugs(88, 3, "storeId: " << storeId_);
+
+    // fast pointer comparison for a common storeCreateEntry(url,url,...) case
+    if (!aLogUri || aLogUri == aStoreId)
+        logUri_.clean(); // use storeId_ by default to minimize copying
+    else
+        logUri_ = aLogUri;
+
+    method = aMethod;
+
+#if URL_CHECKSUM_DEBUG
+    chksum = url_checksum(urlXXX());
+#endif
+}
+
+MemObject::MemObject() :
     inmem_lo(0),
     nclients(0),
     smpCollapsed(false),
@@ -85,21 +104,12 @@ MemObject::MemObject(char const *aStoreId, char const *aLogUri, const HttpReques
 #if URL_CHECKSUM_DEBUG
     chksum(0),
 #endif
-    vary_headers(nullptr),
-    storeId_(aStoreId ? aStoreId : defaultURI),
-    logUri_((!aLogUri || aLogUri == aStoreId) ? String() : aLogUri)
+    vary_headers(nullptr)
 {
-#if URL_CHECKSUM_DEBUG
-    chksum = url_checksum(urlXXX());
-#endif
     debugs(20, 3, "new MemObject " << this);
     memset(&start_ping, 0, sizeof(start_ping));
     memset(&abort, 0, sizeof(abort));
     reply_ = new HttpReply;
-    if (!aStoreId) {
-        debugs(20, DBG_IMPORTANT, "Bug: Missing MemObject::storeId value");
-        dump();
-    }
 }
 
 MemObject::~MemObject()
