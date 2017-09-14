@@ -40,6 +40,8 @@ public:
     ~MemObject();
 
     /// sets store ID, log URI, and request method; TODO: find a better name
+    /// XXX: remove this method and make corresponding URI fields constant
+    /// when the XXX in MemStore::get() is addressed.
     void setUris(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod);
 
     /// whether setUris() has been called

@@ -1677,29 +1677,28 @@ StoreEntry::url() const
         return mem_obj->storeId();
 }
 
-MemObject *
-StoreEntry::makeMemObject()
+void
+StoreEntry::createMemObject()
 {
-    if (!mem_obj)
-        mem_obj = new MemObject();
-    return mem_obj;
+    assert(!mem_obj);
+    mem_obj = new MemObject();
 }
 
 void
 StoreEntry::createMemObject(const char *aUrl, const char *aLogUrl, const HttpRequestMethod &aMethod)
 {
-    makeMemObject();
-    mem_obj->setUris(aUrl, aLogUrl, aMethod);
+    assert(!mem_obj);
+    ensureMemObject(aUrl, aLogUrl, aMethod);
 }
 
 void
 StoreEntry::ensureMemObject(const char *aUrl, const char *aLogUrl, const HttpRequestMethod &aMethod)
 {
-    makeMemObject();
+    if (!mem_obj)
+        mem_obj = new MemObject();
     // Do not clobber preexisting mem_obj->method, if any (e.g., when a HEAD
     // request is a cache hit for a GET response, keep the method as GET).
-    if (!mem_obj->hasUris())
-        mem_obj->setUris(aUrl, aLogUrl, aMethod);
+    mem_obj->setUris(aUrl, aLogUrl, aMethod);
 }
 
 /** disable sending content to the clients.

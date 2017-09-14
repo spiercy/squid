@@ -115,10 +115,10 @@ public:
     int validToSend() const;
     bool memoryCachable(); ///< checkCachable() and can be cached in memory
 
-    /// if needed, initialize mem_obj member w/o URI-related information
-    MemObject *makeMemObject();
+    /// initialize mem_obj, assert if mem_obj already exists
+    void createMemObject();
 
-    /// initialize mem_obj (if needed) and set or reset URI-related info (always)
+    /// initialize mem_obj and set URI-related info, assert if mem_obj already exists
     void createMemObject(const char *storeId, const char *logUri, const HttpRequestMethod &aMethod);
 
     /// initialize mem_obj (if needed) and set URI-related info (if missing)

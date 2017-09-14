@@ -76,6 +76,9 @@ MemObject::hasUris() const
 void
 MemObject::setUris(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod)
 {
+    if (hasUris())
+        return;
+
     storeId_ = aStoreId;
     debugs(88, 3, "storeId: " << storeId_);
 
@@ -90,6 +93,8 @@ MemObject::setUris(char const *aStoreId, char const *aLogUri, const HttpRequestM
 #if URL_CHECKSUM_DEBUG
     chksum = url_checksum(urlXXX());
 #endif
+
+    assert(hasUris());
 }
 
 MemObject::MemObject() :
