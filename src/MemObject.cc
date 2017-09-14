@@ -76,11 +76,6 @@ MemObject::hasUris() const
 void
 MemObject::setUris(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod)
 {
-    // Do not clobber preexisting method, if any (e.g., when a HEAD
-    // request is a cache hit for a GET response, keep the method as GET).
-    if (hasUris())
-        return;
-
     storeId_ = aStoreId;
     debugs(88, 3, "storeId: " << storeId_);
 
@@ -97,8 +92,7 @@ MemObject::setUris(char const *aStoreId, char const *aLogUri, const HttpRequestM
 #endif
 }
 
-MemObject::MemObject(char const *aStoreId, char const *aLogUri, const HttpRequestMethod &aMethod) :
-    method(aMethod),
+MemObject::MemObject() :
     inmem_lo(0),
     nclients(0),
     smpCollapsed(false),
@@ -110,13 +104,8 @@ MemObject::MemObject(char const *aStoreId, char const *aLogUri, const HttpReques
 #if URL_CHECKSUM_DEBUG
     chksum(0),
 #endif
-    vary_headers(nullptr),
-    storeId_(aStoreId),
-    logUri_((aLogUri == aStoreId) ? nullptr : aLogUri)
+    vary_headers(nullptr)
 {
-#if URL_CHECKSUM_DEBUG
-    chksum = url_checksum(urlXXX());
-#endif
     debugs(20, 3, "new MemObject " << this);
     memset(&start_ping, 0, sizeof(start_ping));
     memset(&abort, 0, sizeof(abort));
