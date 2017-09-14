@@ -1696,8 +1696,6 @@ StoreEntry::ensureMemObject(const char *aUrl, const char *aLogUrl, const HttpReq
 {
     if (!mem_obj)
         mem_obj = new MemObject();
-    // Do not clobber preexisting mem_obj->method, if any (e.g., when a HEAD
-    // request is a cache hit for a GET response, keep the method as GET).
     mem_obj->setUris(aUrl, aLogUrl, aMethod);
 }
 
