@@ -56,6 +56,7 @@ int StoreEntry::validToSend() const STUB_RETVAL(0)
 bool StoreEntry::memoryCachable() STUB_RETVAL(false)
 void StoreEntry::createMemObject() STUB
 void StoreEntry::createMemObject(const char *, const char *, const HttpRequestMethod &aMethod) STUB
+void StoreEntry::ensureMemObject(const char *, const char *, const HttpRequestMethod &) STUB
 void StoreEntry::dump(int debug_lvl) const STUB
 void StoreEntry::hashDelete() STUB
 void StoreEntry::hashInsert(const cache_key *) STUB
