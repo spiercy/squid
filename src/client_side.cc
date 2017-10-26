@@ -458,6 +458,7 @@ ClientHttpRequest::logRequest()
     bool updatePerformanceCounters = true;
     if (Config.accessList.stats_collection) {
         ACLFilledChecklist statsCheck(Config.accessList.stats_collection, request, NULL);
+        statsCheck.al = al;
         if (al->reply) {
             statsCheck.reply = al->reply;
             HTTPMSGLOCK(statsCheck.reply);
@@ -1525,6 +1526,7 @@ bool ConnStateData::serveDelayedError(Http::Stream *context)
             bool allowDomainMismatch = false;
             if (Config.ssl_client.cert_error) {
                 ACLFilledChecklist check(Config.ssl_client.cert_error, request, dash_str);
+                check.al = http->al;
                 check.sslErrors = new Security::CertErrors(Security::CertError(SQUID_X509_V_ERR_DOMAIN_MISMATCH, srvCert));
                 allowDomainMismatch = (check.fastCheck() == ACCESS_ALLOWED);
                 delete check.sslErrors;
@@ -1575,6 +1577,7 @@ clientTunnelOnError(ConnStateData *conn, Http::StreamPointer &context, HttpReque
 {
     if (conn->mayTunnelUnsupportedProto()) {
         ACLFilledChecklist checklist(Config.accessList.on_unsupported_protocol, request.getRaw(), nullptr);
+        checklist.al = (context && context->http) ? context->http->al : nullptr;
         checklist.requestErrorType = requestError;
         checklist.src_addr = conn->clientConnection->remote;
         checklist.my_addr = conn->clientConnection->local;
@@ -2490,7 +2493,7 @@ ConnStateData::start()
 
         auto &pools = ClientDelayPools::Instance()->pools;
         ACLFilledChecklist ch(NULL, NULL, NULL);
-
+ 
         // TODO: we check early to limit error response bandwith but we
         // should recheck when we can honor delay_pool_uses_indirect
         // TODO: we should also pass the port details for myportname here.

@@ -824,6 +824,7 @@ HttpStateData::handle1xx(HttpReply *reply)
     // check whether the 1xx response forwarding is allowed by squid.conf
     if (Config.accessList.reply) {
         ACLFilledChecklist ch(Config.accessList.reply, originalRequest(), NULL);
+        ch.al = fwd->al;
         ch.reply = reply;
         HTTPMSGLOCK(ch.reply);
         if (ch.fastCheck() != ACCESS_ALLOWED) { // TODO: support slow lookups?
@@ -2349,6 +2350,7 @@ HttpStateData::finishingBrokenPost()
     }
 
     ACLFilledChecklist ch(Config.accessList.brokenPosts, originalRequest(), NULL);
+    ch.al = fwd->al;
     if (ch.fastCheck() != ACCESS_ALLOWED) {
         debugs(11, 5, HERE << "didn't match brokenPosts");
         return false;

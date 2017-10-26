@@ -39,9 +39,9 @@ Note::addValue(const String &value)
 const char *
 Note::match(HttpRequest *request, HttpReply *reply, const AccessLogEntry::Pointer &al)
 {
-
     typedef Values::iterator VLI;
     ACLFilledChecklist ch(NULL, request, NULL);
+    ch.al = al;
     ch.reply = reply;
     if (reply)
         HTTPMSGLOCK(ch.reply);

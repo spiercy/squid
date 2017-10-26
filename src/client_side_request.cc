@@ -1766,6 +1766,7 @@ ClientHttpRequest::doCallouts()
         calloutContext->tosToClientDone = true;
         if (getConn() != NULL && Comm::IsConnOpen(getConn()->clientConnection)) {
             ACLFilledChecklist ch(NULL, request, NULL);
+            ch.al = calloutContext->http->al;
             ch.src_addr = request->client_addr;
             ch.my_addr = request->my_addr;
             tos_t tos = aclMapTOS(Ip::Qos::TheConfig.tosToClient, &ch);
@@ -1778,6 +1779,7 @@ ClientHttpRequest::doCallouts()
         calloutContext->nfmarkToClientDone = true;
         if (getConn() != NULL && Comm::IsConnOpen(getConn()->clientConnection)) {
             ACLFilledChecklist ch(NULL, request, NULL);
+            ch.al = calloutContext->http->al;
             ch.src_addr = request->client_addr;
             ch.my_addr = request->my_addr;
             nfmark_t mark = aclMapNfmark(Ip::Qos::TheConfig.nfmarkToClient, &ch);
