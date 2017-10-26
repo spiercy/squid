@@ -12,10 +12,10 @@
 #define SQUID_PEER_USERHASH_H_
 
 class CachePeer;
-class HttpRequest;
+class ps_state;
 
 void peerUserHashInit(void);
-CachePeer * peerUserHashSelectParent(HttpRequest * request);
+CachePeer * peerUserHashSelectParent(ps_state*);
 
 #endif /* SQUID_PEER_USERHASH_H_ */
 

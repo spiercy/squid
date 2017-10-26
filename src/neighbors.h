@@ -21,16 +21,17 @@ class HttpRequestMethod;
 class CachePeer;
 class StoreEntry;
 class URL;
+class ps_state;
 
 CachePeer *getFirstPeer(void);
-CachePeer *getFirstUpParent(HttpRequest *);
+CachePeer *getFirstUpParent(ps_state *);
 CachePeer *getNextPeer(CachePeer *);
-CachePeer *getSingleParent(HttpRequest *);
-int neighborsCount(HttpRequest *);
+CachePeer *getSingleParent(ps_state *);
+int neighborsCount(ps_state *);
 int neighborsUdpPing(HttpRequest *,
                      StoreEntry *,
                      IRCB * callback,
-                     void *data,
+                     ps_state *ps,
                      int *exprep,
                      int *timeout);
 void neighborAddAcl(const char *, const char *);
@@ -43,9 +44,9 @@ void neighborsHtcpClear(StoreEntry *, const char *, HttpRequest *, const HttpReq
 #endif
 CachePeer *peerFindByName(const char *);
 CachePeer *peerFindByNameAndPort(const char *, unsigned short);
-CachePeer *getDefaultParent(HttpRequest * request);
-CachePeer *getRoundRobinParent(HttpRequest * request);
-CachePeer *getWeightedRoundRobinParent(HttpRequest * request);
+CachePeer *getDefaultParent(ps_state*);
+CachePeer *getRoundRobinParent(ps_state*);
+CachePeer *getWeightedRoundRobinParent(ps_state*);
 void peerClearRRStart(void);
 void peerClearRR(void);
 lookup_t peerDigestLookup(CachePeer * p, HttpRequest * request);
@@ -58,7 +59,7 @@ peer_t neighborType(const CachePeer *, const URL &);
 void peerConnectFailed(CachePeer *);
 void peerConnectSucceded(CachePeer *);
 void dump_peer_options(StoreEntry *, CachePeer *);
-int peerHTTPOkay(const CachePeer *, HttpRequest *);
+int peerHTTPOkay(const CachePeer *, ps_state *);
 
 // TODO: Consider moving this method to CachePeer class.
 /// \returns the effective connect timeout for the given peer

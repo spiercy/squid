@@ -100,8 +100,12 @@ ps_state::~ps_state()
 }
 
 static int
-peerSelectIcpPing(HttpRequest * request, int direct, StoreEntry * entry)
+peerSelectIcpPing(ps_state *ps, StoreEntry * entry)
 {
+    assert(ps);
+    HttpRequest *request = ps->request;
+    const int direct = ps->direct;
+
     int n;
     assert(entry);
     assert(entry->ping_status == PING_NONE);
@@ -115,7 +119,7 @@ peerSelectIcpPing(HttpRequest * request, int direct, StoreEntry * entry)
         if (direct != DIRECT_NO)
             return 0;
 
-    n = neighborsCount(request);
+    n = neighborsCount(ps);
 
     debugs(44, 3, "peerSelectIcpPing: counted " << n << " neighbors");
 
@@ -514,7 +518,7 @@ peerSelectFoo(ps_state * ps)
     peerSelectDnsPaths(ps);
 }
 
-bool peerAllowedToUse(const CachePeer * p, HttpRequest * request);
+bool peerAllowedToUse(const CachePeer *, ps_state*);
 
 /**
  * peerSelectPinned
@@ -529,7 +533,7 @@ peerSelectPinned(ps_state * ps)
         return;
     CachePeer *pear = request->pinnedConnection()->pinnedPeer();
     if (Comm::IsConnOpen(request->pinnedConnection()->validatePinnedConnection(request, pear))) {
-        if (pear && peerAllowedToUse(pear, request)) {
+        if (pear && peerAllowedToUse(pear, ps)) {
             peerAddFwdServer(&ps->servers, pear, PINNED);
             if (ps->entry)
                 ps->entry->ping_status = PING_DONE;     /* Skip ICP */
@@ -575,7 +579,7 @@ peerGetSomeNeighbor(ps_state * ps)
 #endif
         if ((p = netdbClosestParent(request))) {
             code = CLOSEST_PARENT;
-        } else if (peerSelectIcpPing(request, ps->direct, entry)) {
+        } else if (peerSelectIcpPing(ps, entry)) {
             debugs(44, 3, "peerSelect: Doing ICP pings");
             ps->ping.start = current_time;
             ps->ping.n_sent = neighborsUdpPing(request,
@@ -679,21 +683,21 @@ peerGetSomeParent(ps_state * ps)
     if (ps->direct == DIRECT_YES)
         return;
 
-    if ((p = peerSourceHashSelectParent(request))) {
+    if ((p = peerSourceHashSelectParent(ps))) {
         code = SOURCEHASH_PARENT;
 #if USE_AUTH
-    } else if ((p = peerUserHashSelectParent(request))) {
+    } else if ((p = peerUserHashSelectParent(ps))) {
         code = USERHASH_PARENT;
 #endif
-    } else if ((p = carpSelectParent(request))) {
+    } else if ((p = carpSelectParent(ps))) {
         code = CARP;
-    } else if ((p = getRoundRobinParent(request))) {
+    } else if ((p = getRoundRobinParent(ps))) {
         code = ROUNDROBIN_PARENT;
-    } else if ((p = getWeightedRoundRobinParent(request))) {
+    } else if ((p = getWeightedRoundRobinParent(ps))) {
         code = ROUNDROBIN_PARENT;
-    } else if ((p = getFirstUpParent(request))) {
+    } else if ((p = getFirstUpParent(ps))) {
         code = FIRSTUP_PARENT;
-    } else if ((p = getDefaultParent(request))) {
+    } else if ((p = getDefaultParent(ps))) {
         code = DEFAULT_PARENT;
     }
 
@@ -720,7 +724,7 @@ peerGetAllParents(ps_state * ps)
         if (neighborType(p, request->url) != PEER_PARENT)
             continue;
 
-        if (!peerHTTPOkay(p, request))
+        if (!peerHTTPOkay(p, ps))
             continue;
 
         debugs(15, 3, "peerGetAllParents: adding alive parent " << p->host);
@@ -733,7 +737,7 @@ peerGetAllParents(ps_state * ps)
      * simply are not configured to handle the request.
      */
     /* Add default parent as a last resort */
-    if ((p = getDefaultParent(request))) {
+    if ((p = getDefaultParent(ps))) {
         peerAddFwdServer(&ps->servers, p, DEFAULT_PARENT);
     }
 }

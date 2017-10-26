@@ -12,10 +12,10 @@
 #define SQUID_CARP_H_
 
 class CachePeer;
-class HttpRequest;
+class ps_state;
 
 void carpInit(void);
-CachePeer *carpSelectParent(HttpRequest *);
+CachePeer *carpSelectParent(ps_state*);
 
 #endif /* SQUID_CARP_H_ */
 

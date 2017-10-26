@@ -30,6 +30,7 @@ typedef void STABH(void *);
 class store_client;
 class HttpRequest;
 class HttpReply;
+class ps_state;
 
 class MemObject
 {
@@ -156,7 +157,7 @@ public:
 
     struct timeval start_ping;
     IRCB *ping_reply_callback;
-    void *ircb_data;
+    ps_state *ircb_data;
 
     struct {
         STABH *callback;
