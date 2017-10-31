@@ -312,6 +312,8 @@ squid_SOURCES = \
 	globals.h \
 	gopher.h \
 	gopher.cc \
+	HappyConnOpener.cc \
+	HappyConnOpener.h \
 	helper.cc \
 	helper.h \
 	hier_code.h \
@@ -1899,6 +1901,8 @@ tests_test_http_range_SOURCES = \
 	FwdState.h \
 	gopher.h \
 	tests/stub_gopher.cc \
+	HappyConnOpener.cc \
+	HappyConnOpener.h \
 	helper.cc \
 	hier_code.h \
 	$(HTCPSOURCE) \
@@ -2294,6 +2298,8 @@ tests_testHttpRequest_SOURCES = \
 	FwdState.h \
 	gopher.h \
 	tests/stub_gopher.cc \
+	HappyConnOpener.cc \
+	HappyConnOpener.h \
 	helper.cc \
 	hier_code.h \
 	$(HTCPSOURCE) \
@@ -2590,6 +2596,8 @@ tests_testCacheManager_SOURCES = \
 	FwdState.h \
 	gopher.h \
 	tests/stub_gopher.cc \
+	HappyConnOpener.cc \
+	HappyConnOpener.h \
 	hier_code.h \
 	helper.cc \
 	$(HTCPSOURCE) \
@@ -2895,6 +2903,8 @@ tests_testEvent_SOURCES = \
 	FwdState.h \
 	gopher.h \
 	tests/stub_gopher.cc \
+	HappyConnOpener.cc \
+	HappyConnOpener.h \
 	helper.cc \
 	hier_code.h \
 	$(HTCPSOURCE) \
@@ -3129,6 +3139,8 @@ tests_testEventLoop_SOURCES = \
 	FwdState.h \
 	gopher.h \
 	tests/stub_gopher.cc \
+	HappyConnOpener.cc \
+	HappyConnOpener.h \
 	helper.cc \
 	hier_code.h \
 	$(HTCPSOURCE) \
