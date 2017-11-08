@@ -56,25 +56,48 @@ nfmark_t GetNfmarkToServer(HttpRequest * request);
 /// Sets initial TOS value and Netfilter for the future outgoing connection.
 void GetMarkingsToServer(HttpRequest * request, Comm::Connection &conn);
 
+/// Holds the list with candidate connection paths for a host
 class CandidatePaths: public RefCountable
 {
 public:
     typedef RefCount<CandidatePaths> Pointer;
     CandidatePaths();
+
+    /// Add the path to the top of candidate paths. Normally used
+    /// to retry a failed connection.
     void retryPath(const Comm::ConnectionPointer &);
+
+    /// Add a new path to the end of candidate paths.
     void newPath(const Comm::ConnectionPointer &);
+
+    /// Whether the list is empty
     bool empty() {return paths_.empty();}
+
+    /// Retrieves and remove from list the first path
     Comm::ConnectionPointer popFirst();
+
+    /// Retrieves and remove from list the first path which is
+    /// not in the passed protocol family
     Comm::ConnectionPointer popFirstNotInFamily(int);
+
+    /// Whether exist a path which is not in given protocol
+    /// family
     bool existPathNotInFamily(int);
+
+    /// The number of candidate paths, including the tried/removed paths.
     int count() {return count_;}
 
+    /// The protocol family of the given path, AF_INET or AF_INET6
     static int ConnectionFamily(const Comm::ConnectionPointer &conn);
 
+    ///< whether all of the available candidate paths received from DNS
     bool destinationsFinalized;
-    double readStatus;
+
+    double readStatus; ///< When the reader access this list
 private:
     Comm::ConnectionList paths_;
+
+    /// The number of candidate paths, including the tried/removed paths.
     int count_;
 };
 
@@ -127,7 +150,10 @@ public:
     /** return a ConnectionPointer to the current server connection (may or may not be open) */
     Comm::ConnectionPointer const & serverConnection() const { return serverConn; };
 
+    /// Callback called by HappyConnOpener object when a connection is
+    /// established, or when all available candidate paths exceed.
     void noteConnection(const HappyConnOpener::Answer &cd);
+
     HttpRequest *httpRequest() {return request;}
 
 private:
@@ -167,8 +193,11 @@ private:
     /// whether we have used up all permitted forwarding attempts
     bool exhaustedTries() const;
 
-    void handlePinned(CachePeer *);
+    void handlePinned(CachePeer *); ///< Handle pinned connections
+
+    /// Whether there is at least one more candidate path available
     bool hasCandidatePath() {return destinations_ && !destinations_->empty();}
+
 public:
     StoreEntry *entry;
     HttpRequest *request;
@@ -187,17 +216,18 @@ private:
     struct {
         AsyncCall::Pointer connector;  ///< a call linking us to the ConnOpener producing serverConn.
     } calls;
-    
+
     struct {
         bool connected_okay; ///< TCP link ever opened properly. This affects retry of POST,PUT,CONNECT,etc
         bool dont_retry;
         bool forward_completed;
-        bool destinationsFound;
+        bool destinationsFound; ///< At least one candidate path found
     } flags;
 
+     /// The active HappyConnOpener object or nil
     HappyConnOpener::Pointer connOpener;
     double connOpenerInformTime; ///< Last time the connOpener object contacted
-    CandidatePaths::Pointer destinations_;
+    CandidatePaths::Pointer destinations_; ///< The available candidate paths
     Comm::ConnectionPointer serverConn; ///< a successfully opened connection to a server.
 
     AsyncCall::Pointer closeHandler; ///< The serverConn close handler
