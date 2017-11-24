@@ -73,6 +73,15 @@ AC_DEFUN([SQUID_CHECK_LIBIPHLPAPI],[
   SQUID_STATE_ROLLBACK(iphlpapi)
 ])
 
+dnl Checks whether the -lcrypto library provides various OpenSSL API functions
+AC_DEFUN([SQUID_CHECK_LIBCRYPTO_API],[
+  AH_TEMPLATE(HAVE_LIBCRYPTO_X509_GET0_SIGNATURE, "Define to 1 if the X509_get0_signature() OpenSSL API function exists")
+  SQUID_STATE_SAVE(check_openssl_libcrypto_api)
+  LIBS="$LIBS $SSLLIB"
+  AC_CHECK_LIB(crypto, X509_get0_signature, AC_DEFINE(HAVE_LIBCRYPTO_X509_GET0_SIGNATURE, 1))
+  SQUID_STATE_ROLLBACK(check_openssl_libcrypto_api)
+])
+
 dnl Checks whether the OpenSSL SSL_get_certificate crashes squid and if a
 dnl workaround can be used instead of using the SSL_get_certificate
 AC_DEFUN([SQUID_CHECK_OPENSSL_GETCERTIFICATE_WORKS],[

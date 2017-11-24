@@ -111,6 +111,18 @@ private:
     const SSL_CIPHER *cipher; ///< The negotiated cipher
 };
 
+
+/**
+  \ingroup ServerProtocolSSLAPI
+  * Generates a unique key based on CertificateProperties object and store it to key
+ */
+void InRamCertificateDbKey(const Ssl::CertificateProperties &certProperties, SBuf &key);
+
+/**
+  \ingroup ServerProtocolSSLAPI
+  Generates an OpenSSL BIO for writting to an SBuf object
+ */
+BIO *BIO_new_SBuf(SBuf *buf);
 } //namespace Ssl
 
 /// \ingroup ServerProtocolSSLAPI
@@ -245,7 +257,7 @@ void unloadSquidUntrusted();
   \ingroup ServerProtocolSSLAPI
   * Decide on the kind of certificate and generate a CA- or self-signed one
 */
-SSL_CTX * generateSslContext(CertificateProperties const &properties, AnyP::PortCfg &port);
+SSL_CTX * GenerateSslContext(CertificateProperties const &properties, AnyP::PortCfg &port, bool trusted);
 
 /**
   \ingroup ServerProtocolSSLAPI
@@ -261,7 +273,7 @@ bool verifySslCertificate(SSL_CTX * sslContext,  CertificateProperties const &pr
   * Read private key and certificate from memory and generate SSL context
   * using their.
  */
-SSL_CTX * generateSslContextUsingPkeyAndCertFromMemory(const char * data, AnyP::PortCfg &port);
+SSL_CTX * GenerateSslContextUsingPkeyAndCertFromMemory(const char * data, AnyP::PortCfg &port, bool trusted);
 
 /**
   \ingroup ServerProtocolSSLAPI

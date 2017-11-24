@@ -144,12 +144,6 @@ bool appendCertToMemory(X509_Pointer const & cert, std::string & bufferToWrite);
 
 /**
  \ingroup SslCrtdSslAPI
- * Write private key and SSL certificate to file.
- */
-bool writeCertAndPrivateKeyToFile(X509_Pointer const & cert, EVP_PKEY_Pointer const & pkey, char const * filename);
-
-/**
- \ingroup SslCrtdSslAPI
  * Write private key and SSL certificate to memory.
  */
 bool readCertAndPrivateKeyFromMemory(X509_Pointer & cert, EVP_PKEY_Pointer & pkey, char const * bufferToRead);
@@ -159,6 +153,49 @@ bool readCertAndPrivateKeyFromMemory(X509_Pointer & cert, EVP_PKEY_Pointer & pke
  * Read SSL certificate from memory.
  */
 bool readCertFromMemory(X509_Pointer & cert, char const * bufferToRead);
+
+/**
+ \ingroup SslCrtdSslAPI
+ * Read private key from file.
+ */
+void ReadPrivateKeyFromFile(char const * keyFilename, EVP_PKEY_Pointer &pkey, pem_password_cb *passwd_callback);
+
+/**
+ \ingroup SslCrtdSslAPI
+ * Initialize the bio with the file 'filename' openned for reading
+ */
+bool OpenCertsFileForReading(BIO_Pointer &bio, const char *filename);
+
+/**
+ \ingroup SslCrtdSslAPI
+ * Read a certificate from bio
+ */
+bool ReadX509Certificate(BIO_Pointer &bio, X509_Pointer & cert);
+
+/**
+ \ingroup SslCrtdSslAPI
+ * Read a private key from bio
+ */
+bool ReadPrivateKey(BIO_Pointer &bio, EVP_PKEY_Pointer &pkey, pem_password_cb *passwd_callback);
+
+/**
+ \ingroup SslCrtdSslAPI
+ * Initialize the bio with the file 'filename' openned for writting
+ */
+
+bool OpenCertsFileForWriting(BIO_Pointer &bio, const char *filename);
+
+/**
+ \ingroup SslCrtdSslAPI
+ * Write certificate to BIO.
+ */
+bool WriteX509Certificate(BIO_Pointer &bio, const X509_Pointer & cert);
+
+/**
+ \ingroup SslCrtdSslAPI
+ * Write private key to BIO.
+ */
+bool WritePrivateKey(BIO_Pointer &bio, const EVP_PKEY_Pointer &pkey);
 
 /**
   \ingroup SslCrtdSslAPI
@@ -239,13 +276,14 @@ public:
     std::string commonName; ///< A CN to use for the generated certificate
     CertSignAlgorithm signAlgorithm; ///< The signing algorithm to use
     const EVP_MD *signHash; ///< The signing hash to use
-    /// Returns certificate database primary key. New fake certificates
-    /// purge old fake certificates with the same key.
-    std::string & dbKey() const;
 private:
     CertificateProperties(CertificateProperties &);
     CertificateProperties &operator =(CertificateProperties const &);
 };
+
+/// \ingroup SslCrtdSslAPI
+/// \returns certificate database key
+std::string & OnDiskCertificateDbKey(const CertificateProperties &);
 
 /**
  \ingroup SslCrtdSslAPI
@@ -255,20 +293,6 @@ private:
  * variables.
  */
 bool generateSslCertificate(X509_Pointer & cert, EVP_PKEY_Pointer & pkey, CertificateProperties const &properties);
-
-/**
- \ingroup SslCrtdSslAPI
- * Read private key from file. Make sure that this is not encrypted file.
- */
-EVP_PKEY * readSslPrivateKey(char const * keyFilename, pem_password_cb *passwd_callback = NULL);
-
-/**
- \ingroup SslCrtdSslAPI
- *  Read certificate and private key from files.
- * \param certFilename name of file with certificate.
- * \param keyFilename name of file with private key.
- */
-void readCertAndPrivateKeyFromFiles(X509_Pointer & cert, EVP_PKEY_Pointer & pkey, char const * certFilename, char const * keyFilename);
 
 /**
  \ingroup SslCrtdSslAPI
@@ -299,6 +323,9 @@ const char *CommonHostName(X509 *x509);
 */
 const char *getOrganization(X509 *x509);
 
+/// \ingroup ServerProtocolSSLAPI
+/// \return whether both certificates exist and are the same (e.g., have identical ASN.1 images)
+bool CertificatesCmp(const X509_Pointer &cert1, const X509_Pointer &cert2);
 } // namespace Ssl
 #endif // SQUID_SSL_GADGETS_H
 

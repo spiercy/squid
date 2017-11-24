@@ -4032,8 +4032,10 @@ ConnStateData::sslCrtdHandleReply(const Helper::Reply &reply)
                     SSL_CTX *sslContext = SSL_get_SSL_CTX(ssl);
                     Ssl::configureUnconfiguredSslContext(sslContext, signAlgorithm, *port);
                 } else {
-                    SSL_CTX *ctx = Ssl::generateSslContextUsingPkeyAndCertFromMemory(reply_message.getBody().c_str(), *port);
-                    getSslContextDone(ctx, true);
+                    SSL_CTX *sslContext = Ssl::GenerateSslContextUsingPkeyAndCertFromMemory(reply_message.getBody().c_str(), *port, (signAlgorithm == Ssl::algSignTrusted));
+                    if (sslContext && !sslBumpCertKey.isEmpty())
+                        storeTlsContextToCache(sslBumpCertKey, sslContext);
+                    getSslContextDone(sslContext);
                 }
                 return;
             }
@@ -4130,6 +4132,36 @@ void ConnStateData::buildSslCertGenerationParams(Ssl::CertificateProperties &cer
     certProperties.signHash = Ssl::DefaultSignHash;
 }
 
+SSL_CTX *
+ConnStateData::getTlsContextFromCache(const SBuf &cacheKey, const Ssl::CertificateProperties &certProperties)
+{
+    debugs(33, 5, "Finding SSL certificate for " << cacheKey << " in cache");
+    Ssl::LocalContextStorage * ssl_ctx_cache = Ssl::TheGlobalContextStorage.getLocalStorage(port->s);
+    Ssl::SSL_CTX_Pointer *ctx = ssl_ctx_cache ? ssl_ctx_cache->get(cacheKey) : nullptr;
+    SSL_CTX *rawCtx;
+    if (ctx && (rawCtx = ctx->get())) {
+        if (Ssl::verifySslCertificate(rawCtx, certProperties)) {
+            debugs(33, 5, "Cached SSL certificate for " << certProperties.commonName << " is valid");
+            return rawCtx;
+        } else {
+            debugs(33, 5, "Cached SSL certificate for " << certProperties.commonName << " is out of date. Delete this certificate from cache");
+            if (ssl_ctx_cache)
+                ssl_ctx_cache->del(cacheKey);
+        }
+    }
+    return nullptr;
+}
+
+void
+ConnStateData::storeTlsContextToCache(const SBuf &cacheKey, SSL_CTX *ctx)
+{
+    Ssl::LocalContextStorage *ssl_ctx_cache = Ssl::TheGlobalContextStorage.getLocalStorage(port->s);
+    if (!ssl_ctx_cache || !ssl_ctx_cache->add(cacheKey, new Ssl::SSL_CTX_Pointer(ctx))) {
+        // If it is not in storage delete after using. Else storage deleted it.
+        fd_table[clientConnection->fd].dynamicSslContext = ctx;
+    }
+}
+
 void
 ConnStateData::getSslContextStart()
 {
@@ -4140,28 +4172,17 @@ ConnStateData::getSslContextStart()
     if (port->generateHostCertificates) {
         Ssl::CertificateProperties certProperties;
         buildSslCertGenerationParams(certProperties);
-        sslBumpCertKey = certProperties.dbKey().c_str();
-        assert(sslBumpCertKey.size() > 0 && sslBumpCertKey[0] != '\0');
 
         // Disable caching for bumpPeekAndSplice mode
         if (!(sslServerBump && (sslServerBump->act.step1 == Ssl::bumpPeek || sslServerBump->act.step1 == Ssl::bumpStare))) {
-            debugs(33, 5, "Finding SSL certificate for " << sslBumpCertKey << " in cache");
-            Ssl::LocalContextStorage * ssl_ctx_cache = Ssl::TheGlobalContextStorage.getLocalStorage(port->s);
-            SSL_CTX * dynCtx = NULL;
-            Ssl::SSL_CTX_Pointer *cachedCtx = ssl_ctx_cache ? ssl_ctx_cache->get(sslBumpCertKey.termedBuf()) : NULL;
-            if (cachedCtx && (dynCtx = cachedCtx->get())) {
-                debugs(33, 5, "SSL certificate for " << sslBumpCertKey << " found in cache");
-                if (Ssl::verifySslCertificate(dynCtx, certProperties)) {
-                    debugs(33, 5, "Cached SSL certificate for " << sslBumpCertKey << " is valid");
-                    getSslContextDone(dynCtx);
-                    return;
-                } else {
-                    debugs(33, 5, "Cached SSL certificate for " << sslBumpCertKey << " is out of date. Delete this certificate from cache");
-                    if (ssl_ctx_cache)
-                        ssl_ctx_cache->del(sslBumpCertKey.termedBuf());
-                }
-            } else {
-                debugs(33, 5, "SSL certificate for " << sslBumpCertKey << " haven't found in cache");
+            sslBumpCertKey.clear();
+            Ssl::InRamCertificateDbKey(certProperties, sslBumpCertKey);
+            assert(!sslBumpCertKey.isEmpty());
+
+            SSL_CTX *ctx = getTlsContextFromCache(sslBumpCertKey, certProperties);
+            if (ctx) {
+                getSslContextDone(ctx);
+                return;
             }
         }
 
@@ -4193,8 +4214,10 @@ ConnStateData::getSslContextStart()
             SSL_CTX *sslContext = SSL_get_SSL_CTX(ssl);
             Ssl::configureUnconfiguredSslContext(sslContext, certProperties.signAlgorithm, *port);
         } else {
-            SSL_CTX *dynCtx = Ssl::generateSslContext(certProperties, *port);
-            getSslContextDone(dynCtx, true);
+            SSL_CTX *dynCtx = Ssl::GenerateSslContext(certProperties, *port, (signAlgorithm == Ssl::algSignTrusted));
+            if (dynCtx && !sslBumpCertKey.isEmpty())
+                storeTlsContextToCache(sslBumpCertKey, dynCtx);
+            getSslContextDone(dynCtx);
         }
         return;
     }
@@ -4202,28 +4225,10 @@ ConnStateData::getSslContextStart()
 }
 
 void
-ConnStateData::getSslContextDone(SSL_CTX * sslContext, bool isNew)
+ConnStateData::getSslContextDone(SSL_CTX * sslContext)
 {
-    // Try to add generated ssl context to storage.
-    if (port->generateHostCertificates && isNew) {
-
-        if (sslContext && (signAlgorithm == Ssl::algSignTrusted)) {
-            Ssl::chainCertificatesToSSLContext(sslContext, *port);
-        } else if (signAlgorithm == Ssl::algSignTrusted) {
-            debugs(33, DBG_IMPORTANT, "WARNING: can not add signing certificate to SSL context chain because SSL context chain is invalid!");
-        }
-        //else it is self-signed or untrusted do not attrach any certificate
-
-        Ssl::LocalContextStorage *ssl_ctx_cache = Ssl::TheGlobalContextStorage.getLocalStorage(port->s);
-        assert(sslBumpCertKey.size() > 0 && sslBumpCertKey[0] != '\0');
-        if (sslContext) {
-            if (!ssl_ctx_cache || !ssl_ctx_cache->add(sslBumpCertKey.termedBuf(), new Ssl::SSL_CTX_Pointer(sslContext))) {
-                // If it is not in storage delete after using. Else storage deleted it.
-                fd_table[clientConnection->fd].dynamicSslContext = sslContext;
-            }
-        } else {
-            debugs(33, 2, HERE << "Failed to generate SSL cert for " << sslConnectHostOrIp);
-        }
+    if (port->generateHostCertificates && !sslContext) {
+        debugs(33, 2, "Failed to generate TLS cotnext for " << sslConnectHostOrIp);
     }
 
     // If generated ssl context = NULL, try to use static ssl context.

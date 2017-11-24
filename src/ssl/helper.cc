@@ -277,7 +277,7 @@ void Ssl::CertValidationHelper::Shutdown()
 }
 
 struct submitData {
-    std::string query;
+    SBuf query;
     AsyncCall::Pointer callback;
     SSL *ssl;
     CBDATA_CLASS2(submitData);
@@ -315,7 +315,7 @@ sslCrtvdHandleReplyWrapper(void *data, const ::Helper::Reply &reply)
     if (Ssl::CertValidationHelper::HelperCache &&
             (validationResponse->resultCode == ::Helper::Okay || validationResponse->resultCode == ::Helper::Error)) {
         Ssl::CertValidationResponse::Pointer *item = new Ssl::CertValidationResponse::Pointer(validationResponse);
-        if (!Ssl::CertValidationHelper::HelperCache->add(crtdvdData->query.c_str(), item))
+        if (!Ssl::CertValidationHelper::HelperCache->add(crtdvdData->query, item))
             delete item;
     }
 
@@ -350,15 +350,15 @@ void Ssl::CertValidationHelper::sslSubmit(Ssl::CertValidationRequest const &requ
     debugs(83, 5, "SSL crtvd request: " << message.compose().c_str());
 
     submitData *crtdvdData = new submitData;
-    crtdvdData->query = message.compose();
-    crtdvdData->query += '\n';
+    crtdvdData->query.assign(message.compose().c_str());
+    crtdvdData->query.append('\n');
     crtdvdData->callback = callback;
     crtdvdData->ssl = request.ssl;
     CRYPTO_add(&crtdvdData->ssl->references,1,CRYPTO_LOCK_SSL);
     Ssl::CertValidationResponse::Pointer const*validationResponse;
 
     if (CertValidationHelper::HelperCache &&
-            (validationResponse = CertValidationHelper::HelperCache->get(crtdvdData->query.c_str()))) {
+            (validationResponse = CertValidationHelper::HelperCache->get(crtdvdData->query))) {
 
         CertValidationHelper::CbDialer *dialer = dynamic_cast<CertValidationHelper::CbDialer*>(callback->getDialer());
         Must(dialer);

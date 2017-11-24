@@ -1358,6 +1358,8 @@ if test "x$with_openssl" = "xyes"; then
     SSLLIB="$LIBOPENSSL_PATH $LIBOPENSSL_LIBS $SSLLIB"
     AC_DEFINE(USE_OPENSSL,1,[OpenSSL support is available])
 
+    # check for API functions
+    SQUID_CHECK_LIBCRYPTO_API
     # check for other specific broken implementations
     SQUID_CHECK_OPENSSL_GETCERTIFICATE_WORKS
     SQUID_CHECK_OPENSSL_CONST_SSL_METHOD
