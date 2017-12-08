@@ -570,14 +570,14 @@ peerGetSomeNeighbor(ps_state * ps)
     }
 
 #if USE_CACHE_DIGESTS
-    if ((p = neighborsDigestSelect(request))) {
+    if ((p = neighborsDigestSelect(ps))) {
         if (neighborType(p, request->url) == PEER_PARENT)
             code = CD_PARENT_HIT;
         else
             code = CD_SIBLING_HIT;
     } else
 #endif
-        if ((p = netdbClosestParent(request))) {
+        if ((p = netdbClosestParent(ps))) {
             code = CLOSEST_PARENT;
         } else if (peerSelectIcpPing(ps, entry)) {
             debugs(44, 3, "peerSelect: Doing ICP pings");
@@ -823,7 +823,7 @@ peerHandleIcpReply(CachePeer * p, peer_t type, icp_common_t * header, void *data
 
     if (p && request)
         peerNoteDigestLookup(request, p,
-                             peerDigestLookup(p, request, psstate->entry));
+                             peerDigestLookup(p, psstate));
 
 #endif
 

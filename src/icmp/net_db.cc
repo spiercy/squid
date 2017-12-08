@@ -33,6 +33,7 @@
 #include "mgr/Registration.h"
 #include "mime_header.h"
 #include "neighbors.h"
+#include "PeerSelectState.h"
 #include "SquidConfig.h"
 #include "SquidTime.h"
 #include "Store.h"
@@ -1317,9 +1318,12 @@ netdbExchangeStart(void *data)
 }
 
 CachePeer *
-netdbClosestParent(HttpRequest * request)
+netdbClosestParent(ps_state *ps)
 {
 #if USE_ICMP
+    assert(ps);
+    HttpRequest *request = ps->request;
+
     CachePeer *p = NULL;
     netdbEntry *n;
     const ipcache_addrs *ia;
@@ -1363,7 +1367,7 @@ netdbClosestParent(HttpRequest * request)
         if (neighborType(p, request->url) != PEER_PARENT)
             continue;
 
-        if (!peerHTTPOkay(p, request))  /* not allowed */
+        if (!peerHTTPOkay(p, ps))  /* not allowed */
             continue;
 
         return p;
