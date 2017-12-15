@@ -1127,10 +1127,12 @@ Ftp::Server::writeErrorReply(const HttpReply *reply, const int scode)
     }
 #endif
 
-    Must(reply);
-    const char *reason = reply->header.has(HDR_FTP_REASON) ?
-                         reply->header.getStr(HDR_FTP_REASON):
-                         reply->sline.reason();
+    const char *reason = "Lost Error";
+    if (reply) {
+        reason = reply->header.has(HDR_FTP_REASON) ?
+                 reply->header.getStr(HDR_FTP_REASON):
+                 reply->sline.reason();
+    }
 
     mb.Printf("%i %s\r\n", scode, reason); // error terminating line
 
