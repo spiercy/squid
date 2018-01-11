@@ -44,6 +44,20 @@ TextException& TextException::operator=(const TextException &right)
     return *this;
 }
 
+std::ostream &
+TextException::print(std::ostream &os) const
+{
+    os << what();
+    if (theFileName) {
+        os << '\n' <<
+            "    exception location: " << SkipBuildPrefix(theFileName);
+        if (theLineNo > 0)
+            os << '(' << theLineNo << ')';
+        os << '\n';
+    }
+    return os;
+}
+
 const char *TextException::what() const throw()
 {
     /// \todo add file:lineno

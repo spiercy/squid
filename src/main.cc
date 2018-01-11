@@ -1263,6 +1263,9 @@ CurrentException(std::ostream &os)
         try {
             throw; // re-throw to recognize the exception type
         }
+        catch (const TextException &ex) {
+            ex.print(os);
+        }
         catch (const std::exception &ex) {
             os << ex.what();
         }

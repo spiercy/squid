@@ -12,6 +12,7 @@
 // Origin: xstd/TextException
 
 #include <exception>
+#include <iosfwd>
 
 static unsigned int FileNameHashCached(const char *fname);
 
@@ -31,6 +32,9 @@ public:
     unsigned int id() const { return theId; }
 
     virtual const char *what() const throw();
+
+    /// dumps the exception text into the stream
+    std::ostream &print(std::ostream &) const;
 
     TextException& operator=(const TextException &right);
 
