@@ -140,7 +140,7 @@ ESICustomParser::parse(char const *dataToParse, size_t const lengthOfData, bool 
 
             char * endofName = strpbrk(const_cast<char *>(tag), w_space);
 
-            if (endofName > tagEnd)
+            if (!endofName || endofName > tagEnd)
                 endofName = const_cast<char *>(tagEnd);
 
             *endofName = '\0';
@@ -232,7 +232,7 @@ ESICustomParser::parse(char const *dataToParse, size_t const lengthOfData, bool 
 
             char * endofName = strpbrk(const_cast<char *>(tag), w_space);
 
-            if (endofName > tagEnd)
+            if (!endofName || endofName > tagEnd)
                 endofName = const_cast<char *>(tagEnd);
 
             *endofName = '\0';
