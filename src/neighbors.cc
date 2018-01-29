@@ -163,13 +163,7 @@ peerAllowedToUse(const CachePeer * p, PeerSelector * ps)
     if (p->options.originserver && request->method == Http::METHOD_CONNECT && request->url.port() != p->http_port)
         return false;
 
-    if (p->access == NULL)
-        return true;
-
-    ACLFilledChecklist checklist(p->access, request, NULL);
-    checklist.al = ps->al;
-    checklist.syncAle(request, nullptr);
-    return checklist.fastCheck().allowed();
+    return true;
 }
 
 /* Return TRUE if it is okay to send an ICP request to this CachePeer.   */
@@ -278,8 +272,20 @@ neighborsCount(PeerSelector *ps)
     return count;
 }
 
-CachePeer *
-getFirstUpParent(PeerSelector *ps)
+void
+getNeighbors(HttpRequest * request, std::vector<CbcPointer<CachePeer> > &list)
+{
+    CachePeer *p = NULL;
+
+    for (p = Config.peers; p; p = p->next)
+        if (peerWouldBePinged(p, request))
+            list.push_back(p);
+
+    debugs(15, 3, "neighbors added: " << list.size());
+}
+
+void
+getFirstUpParent(PeerSelector *selector)
 {
     assert(ps);
     HttpRequest *request = ps->request;
@@ -296,22 +302,19 @@ getFirstUpParent(PeerSelector *ps)
         if (!peerHTTPOkay(p, ps))
             continue;
 
-        break;
+        selector->addSelection(p, FIRSTUP_PARENT);
+        debugs(15, 3, "getFirstUpParent: adding " << (p ? p->host : "NULL"));
     }
-
-    debugs(15, 3, "getFirstUpParent: returning " << (p ? p->host : "NULL"));
-    return p;
 }
 
-CachePeer *
-getRoundRobinParent(PeerSelector *ps)
+void
+getRoundRobinParent(PeerSelector *selector)
 {
     assert(ps);
     HttpRequest *request = ps->request;
 
     CachePeer *p;
-    CachePeer *q = NULL;
-
+    std::vector<std::pair<double, CachePeer *> > sortedPeers;
     for (p = Config.peers; p; p = p->next) {
         if (!p->options.roundrobin)
             continue;
@@ -325,36 +328,34 @@ getRoundRobinParent(PeerSelector *ps)
         if (p->weight == 0)
             continue;
 
-        if (q) {
-            if (p->weight == q->weight) {
-                if (q->rr_count < p->rr_count)
-                    continue;
-            } else if ( ((double) q->rr_count / q->weight) < ((double) p->rr_count / p->weight)) {
-                continue;
-            }
-        }
-
-        q = p;
+        double score = ((double) p->rr_count / p->weight);
+        sortedPeers.push_back(std::pair<double, CachePeer *>(score, p));
     }
 
-    if (q)
-        ++ q->rr_count;
-
-    debugs(15, 3, HERE << "returning " << (q ? q->host : "NULL"));
-
-    return q;
+    std::sort(sortedPeers.begin(), sortedPeers.end());
+    // First is the smalest score
+    for (auto it = sortedPeers.begin(); it!= sortedPeers.end(); ++it) {
+        debugs(39, 3, "getRoundRobinParent: selected " << it->second->name << " score "<< it->first);
+        selector->addSelection(it->second, ROUNDROBIN_PARENT);
+    }
 }
 
-CachePeer *
-getWeightedRoundRobinParent(PeerSelector *ps)
+void
+updateRoundRobinParent(CachePeer *peer)
+{
+    assert(peer->options.roundrobin);
+    if (peer) //We should update the rr_count if roundrobin peer is selected
+        ++peer->rr_count;
+}
+
+void
+getWeightedRoundRobinParent(PeerSelector *selector)
 {
     assert(ps);
     HttpRequest *request = ps->request;
 
     CachePeer *p;
-    CachePeer *q = NULL;
-    int weighted_rtt;
-
+    std::vector<std::pair<int, CachePeer *> > sortedPeers;
     for (p = Config.peers; p; p = p->next) {
         if (!p->options.weighted_roundrobin)
             continue;
@@ -365,14 +366,24 @@ getWeightedRoundRobinParent(PeerSelector *ps)
         if (!peerHTTPOkay(p, ps))
             continue;
 
-        if (q && q->rr_count < p->rr_count)
-            continue;
-
-        q = p;
+        sortedPeers.push_back(std::pair<int, CachePeer *>(p->rr_count, p));
     }
+    std::sort(sortedPeers.begin(), sortedPeers.end());
+    // First is the smalest score
+    for (auto it = sortedPeers.begin(); it!= sortedPeers.end(); ++it) {
+        debugs(39, 3, "getRoundRobinParent: selected " << it->second->name << " score "<< it->first);
+        selector->addSelection(it->second, WEIGHTED_ROUNDROBIN_PARENT);
+    }
+}
 
-    if (q && q->rr_count > 1000000)
-        for (p = Config.peers; p; p = p->next) {
+void
+updateWeightedRoundRobinParent(CachePeer *peer, HttpRequest *request)
+{
+    //We should update the rr_count if weighed roundrobin peer is selected
+    assert(peer->options.weighted_roundrobin);
+    int weighted_rtt;
+    if (peer && peer->rr_count > 1000000)
+        for (CachePeer *p = Config.peers; p; p = p->next) {
             if (!p->options.weighted_roundrobin)
                 continue;
 
@@ -382,19 +393,16 @@ getWeightedRoundRobinParent(PeerSelector *ps)
             p->rr_count = 0;
         }
 
-    if (q) {
-        weighted_rtt = (q->stats.rtt - q->basetime) / q->weight;
+    if (peer) {
+        weighted_rtt = (peer->stats.rtt - peer->basetime) / peer->weight;
 
         if (weighted_rtt < 1)
             weighted_rtt = 1;
 
-        q->rr_count += weighted_rtt;
+        peer->rr_count += weighted_rtt;
 
-        debugs(15, 3, "getWeightedRoundRobinParent: weighted_rtt " << weighted_rtt);
+        debugs(15, 3, "weighted_rtt " << weighted_rtt);
     }
-
-    debugs(15, 3, "getWeightedRoundRobinParent: returning " << (q ? q->host : "NULL"));
-    return q;
 }
 
 /**
@@ -463,8 +471,8 @@ peerAlive(CachePeer *p)
     p->stats.probe_start = 0;
 }
 
-CachePeer *
-getDefaultParent(PeerSelector *ps)
+void
+getDefaultParent(PeerSelector *selector)
 {
     assert(ps);
     HttpRequest *request = ps->request;
@@ -481,13 +489,9 @@ getDefaultParent(PeerSelector *ps)
         if (!peerHTTPOkay(p, ps))
             continue;
 
-        debugs(15, 3, "getDefaultParent: returning " << p->host);
-
-        return p;
+        selector->addSelection(p, DEFAULT_PARENT);
+        debugs(15, 3, "getDefaultParent: adding " << p->host);
     }
-
-    debugs(15, 3, "getDefaultParent: returning NULL");
-    return NULL;
 }
 
 CachePeer *
@@ -585,167 +589,88 @@ neighbors_init(void)
     first_ping = Config.peers;
 }
 
-int
-neighborsUdpPing(HttpRequest * request,
-                 StoreEntry * entry,
-                 IRCB * callback,
-                 PeerSelector *ps,
-                 int *exprep,
-                 int *timeout)
+bool
+neighborUdpPing(CachePeer *p,
+                int reqnum,
+                HttpRequest * request,
+                StoreEntry * entry,
+                IRCB * callback,
+                void *callback_data)
 {
+    int flags;
+    icp_common_t *query;
     const char *url = entry->url();
     MemObject *mem = entry->mem_obj;
-    CachePeer *p = NULL;
-    int i;
-    int reqnum = 0;
-    int flags;
-    int queries_sent = 0;
-    int peers_pinged = 0;
-    int parent_timeout = 0, parent_exprep = 0;
-    int sibling_timeout = 0, sibling_exprep = 0;
-    int mcast_timeout = 0, mcast_exprep = 0;
+    assert(entry->swap_status == SWAPOUT_NONE);
+    assert(mem->ping_reply_callback == callback);
+    assert(mem->ircb_data == callback_data);
 
-    if (Config.peers == NULL)
-        return 0;
-
-    assert(!entry->hasDisk());
-
-    mem->start_ping = current_time;
-
-    mem->ping_reply_callback = callback;
-
-    mem->ircb_data = ps;
-
-    reqnum = icpSetCacheKey((const cache_key *)entry->key);
-
-    for (i = 0, p = first_ping; i++ < Config.npeers; p = p->next) {
-        if (p == NULL)
-            p = Config.peers;
-
-        debugs(15, 5, "neighborsUdpPing: Peer " << p->host);
-
-        if (!peerWouldBePinged(p, ps))
-            continue;       /* next CachePeer */
-
-        ++peers_pinged;
-
-        debugs(15, 4, "neighborsUdpPing: pinging peer " << p->host << " for '" << url << "'");
-
-        debugs(15, 3, "neighborsUdpPing: key = '" << entry->getMD5Text() << "'");
-
-        debugs(15, 3, "neighborsUdpPing: reqnum = " << reqnum);
+    debugs(15, 5, "neighborsUdpPing: Peer " << p->host);
+    debugs(15, 4, "neighborsUdpPing: pinging peer " << p->host << " for '" << url << "'");
+    debugs(15, 3, "neighborsUdpPing: key = '" << entry->getMD5Text() << "'");
+    debugs(15, 3, "neighborsUdpPing: reqnum = " << reqnum);
 
 #if USE_HTCP
-        if (p->options.htcp && !p->options.htcp_only_clr) {
-            if (Config.Port.htcp <= 0) {
-                debugs(15, DBG_CRITICAL, "HTCP is disabled! Cannot send HTCP request to peer.");
-                continue;
-            }
+    if (p->options.htcp && !p->options.htcp_only_clr) {
+        if (Config.Port.htcp <= 0) {
+            debugs(15, DBG_CRITICAL, "HTCP is disabled! Cannot send HTCP request to peer.");
+            return false;
+        }
 
-            debugs(15, 3, "neighborsUdpPing: sending HTCP query");
-            if (htcpQuery(entry, request, p) <= 0)
-                continue; // unable to send.
-        } else
+        debugs(15, 3, "neighborsUdpPing: sending HTCP query");
+        if (htcpQuery(entry, request, p) <= 0)
+            return false; // unable to send.
+    } else
 #endif
-        {
-            if (Config.Port.icp <= 0 || !Comm::IsConnOpen(icpOutgoingConn)) {
-                debugs(15, DBG_CRITICAL, "ICP is disabled! Cannot send ICP request to peer.");
-                continue;
-            } else {
-
-                if (p->type == PEER_MULTICAST)
-                    mcastSetTtl(icpOutgoingConn->fd, p->mcast.ttl);
-
-                if (p->icp.port == echo_port) {
-                    debugs(15, 4, "neighborsUdpPing: Looks like a dumb cache, send DECHO ping");
-                    // TODO: Get ALE from callback_data if possible.
-                    icpCreateAndSend(ICP_DECHO, 0, url, reqnum, 0,
-                                     icpOutgoingConn->fd, p->in_addr, nullptr);
-                } else {
-                    flags = 0;
-
-                    if (Config.onoff.query_icmp)
-                        if (p->icp.version == ICP_VERSION_2)
-                            flags |= ICP_FLAG_SRC_RTT;
-
-                    // TODO: Get ALE from callback_data if possible.
-                    icpCreateAndSend(ICP_QUERY, flags, url, reqnum, 0,
-                                     icpOutgoingConn->fd, p->in_addr, nullptr);
-                }
-            }
-        }
-
-        ++queries_sent;
-
-        ++ p->stats.pings_sent;
-
-        if (p->type == PEER_MULTICAST) {
-            mcast_exprep += p->mcast.n_replies_expected;
-            mcast_timeout += (p->stats.rtt * p->mcast.n_replies_expected);
-        } else if (neighborUp(p)) {
-            /* its alive, expect a reply from it */
-
-            if (neighborType(p, request->url) == PEER_PARENT) {
-                ++parent_exprep;
-                parent_timeout += p->stats.rtt;
-            } else {
-                ++sibling_exprep;
-                sibling_timeout += p->stats.rtt;
-            }
+    {
+        if (Config.Port.icp <= 0 || !Comm::IsConnOpen(icpOutgoingConn)) {
+            debugs(15, DBG_CRITICAL, "ICP is disabled! Cannot send ICP request to peer.");
+            return false;
         } else {
-            /* Neighbor is dead; ping it anyway, but don't expect a reply */
-            /* log it once at the threshold */
 
-            if (p->stats.logged_state == PEER_ALIVE) {
-                debugs(15, DBG_IMPORTANT, "Detected DEAD " << neighborTypeStr(p) << ": " << p->name);
-                p->stats.logged_state = PEER_DEAD;
+            if (p->type == PEER_MULTICAST)
+                mcastSetTtl(icpOutgoingConn->fd, p->mcast.ttl);
+
+            if (p->icp.port == echo_port) {
+                debugs(15, 4, "neighborsUdpPing: Looks like a dumb cache, send DECHO ping");
+                query = icp_common_t::CreateMessage(ICP_DECHO, 0, url, reqnum, 0);
+                icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LOG_ICP_QUERY, 0);
+            } else {
+                flags = 0;
+
+                if (Config.onoff.query_icmp)
+                    if (p->icp.version == ICP_VERSION_2)
+                        flags |= ICP_FLAG_SRC_RTT;
+
+                query = icp_common_t::CreateMessage(ICP_QUERY, flags, url, reqnum, 0);
+
+                icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LOG_ICP_QUERY, 0.0);
             }
         }
-
-        p->stats.last_query = squid_curtime;
-
-        /*
-         * keep probe_start == 0 for a multicast CachePeer,
-         * so neighborUp() never says this CachePeer is dead.
-         */
-
-        if ((p->type != PEER_MULTICAST) && (p->stats.probe_start == 0))
-            p->stats.probe_start = squid_curtime;
     }
 
-    if ((first_ping = first_ping->next) == NULL)
-        first_ping = Config.peers;
+    ++ p->stats.pings_sent;
 
-    /*
-     * How many replies to expect?
-     */
-    *exprep = parent_exprep + sibling_exprep + mcast_exprep;
+    if (p->type != PEER_MULTICAST && !neighborUp(p)) {
+        /* Neighbor is dead; ping it anyway, but don't expect a reply */
+        /* log it once at the threshold */
 
-    /*
-     * If there is a configured timeout, use it
-     */
-    if (Config.Timeout.icp_query)
-        *timeout = Config.Timeout.icp_query;
-    else {
-        if (*exprep > 0) {
-            if (parent_exprep)
-                *timeout = 2 * parent_timeout / parent_exprep;
-            else if (mcast_exprep)
-                *timeout = 2 * mcast_timeout / mcast_exprep;
-            else
-                *timeout = 2 * sibling_timeout / sibling_exprep;
-        } else
-            *timeout = 2000;    /* 2 seconds */
-
-        if (Config.Timeout.icp_query_max)
-            if (*timeout > Config.Timeout.icp_query_max)
-                *timeout = Config.Timeout.icp_query_max;
-
-        if (*timeout < Config.Timeout.icp_query_min)
-            *timeout = Config.Timeout.icp_query_min;
+        if (p->stats.logged_state == PEER_ALIVE) {
+            debugs(15, DBG_IMPORTANT, "Detected DEAD " << neighborTypeStr(p) << ": " << p->name);
+            p->stats.logged_state = PEER_DEAD;
+        }
     }
 
-    return peers_pinged;
+    p->stats.last_query = squid_curtime;
+
+    /*
+     * keep probe_start == 0 for a multicast CachePeer,
+     * so neighborUp() never says this CachePeer is dead.
+     */
+
+    if ((p->type != PEER_MULTICAST) && (p->stats.probe_start == 0))
+        p->stats.probe_start = squid_curtime;
+    return true;
 }
 
 /* lookup the digest of a given CachePeer */
@@ -793,26 +718,24 @@ peerDigestLookup(CachePeer * p, PeerSelector * ps)
 }
 
 /* select best CachePeer based on cache digests */
-CachePeer *
-neighborsDigestSelect(PeerSelector *ps)
+void
+neighborsDigestSelect(PeerSelector *selector)
 {
-    CachePeer *best_p = NULL;
 #if USE_CACHE_DIGESTS
     assert(ps);
     HttpRequest *request = ps->request;
 
-    int best_rtt = 0;
-    int choice_count = 0;
-    int ichoice_count = 0;
     CachePeer *p;
     int p_rtt;
     int i;
+    int choice_count = 0;
 
     if (!request->flags.hierarchical)
-        return NULL;
+        return;
 
     storeKeyPublicByRequest(request);
 
+    std::vector<std::pair<int, CachePeer *> > sortedPeers;
     for (i = 0, p = first_ping; i++ < Config.npeers; p = p->next) {
         lookup_t lookup;
 
@@ -836,26 +759,27 @@ neighborsDigestSelect(PeerSelector *ps)
 
         debugs(15, 5, "neighborsDigestSelect: peer " << p->host << " rtt: " << p_rtt);
 
-        /* is this CachePeer better than others in terms of rtt ? */
-        if (!best_p || (p_rtt && p_rtt < best_rtt)) {
-            best_p = p;
-            best_rtt = p_rtt;
-
-            if (p_rtt)      /* informative choice (aka educated guess) */
-                ++ichoice_count;
-
-            debugs(15, 4, "neighborsDigestSelect: peer " << p->host << " leads with rtt " << best_rtt);
-        }
+        sortedPeers.push_back(std::pair<double, CachePeer *>(p_rtt, p));
     }
 
-    debugs(15, 4, "neighborsDigestSelect: choices: " << choice_count << " (" << ichoice_count << ")");
-    peerNoteDigestLookup(request, best_p,
-                         best_p ? LOOKUP_HIT : (choice_count ? LOOKUP_MISS : LOOKUP_NONE));
-    request->hier.n_choices = choice_count;
-    request->hier.n_ichoices = ichoice_count;
+    if (sortedPeers.size() == 0 && choice_count != 0) {
+        // This is may cause some LOOKUP_NONE be logged
+        // as LOOKUP_MISS, in the case the peer_access acl would failed
+        // if executed for all of the misses)
+        peerNoteDigestLookup(request, nullptr, LOOKUP_MISS);
+    } else {
+        std::sort(sortedPeers.begin(), sortedPeers.end());
+        for (auto it = sortedPeers.begin(); it!= sortedPeers.end(); ++it) {
+            debugs(15, 5, "neighborsDigestSelect: peer " << it->second->host << " rtt: " << it->first);
+            hier_code code;
+            if (neighborType(p, request->url) == PEER_PARENT)
+                code = CD_PARENT_HIT;
+            else
+                code = CD_SIBLING_HIT;
+            selector->addSelection(it->second, code);
+        }
+    }
 #endif
-
-    return best_p;
 }
 
 void

@@ -17,7 +17,9 @@
 #include "SquidConfig.h"
 #include "Store.h"
 
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 #define ROTATE_LEFT(x, n) (((x) << (n)) | ((x) >> (32-(n))))
 
@@ -142,26 +144,25 @@ carpInit(void)
     }
 }
 
-CachePeer *
+void
 carpSelectParent(PeerSelector *ps)
 {
     assert(ps);
     HttpRequest *request = ps->request;
 
     int k;
-    CachePeer *p = NULL;
     CachePeer *tp;
     unsigned int user_hash = 0;
     unsigned int combined_hash;
     double score;
-    double high_score = 0;
 
     if (n_carp_peers == 0)
-        return NULL;
+        return;
 
     /* calculate hash key */
     debugs(39, 2, "carpSelectParent: Calculating hash for " << request->effectiveRequestUri());
 
+    std::vector<std::pair<int, CachePeer *> > sortedPeers;
     /* select CachePeer */
     for (k = 0; k < n_carp_peers; ++k) {
         SBuf key;
@@ -207,16 +208,15 @@ carpSelectParent(PeerSelector *ps)
         debugs(39, 3, "carpSelectParent: key=" << key << " name=" << tp->name << " combined_hash=" << combined_hash  <<
                " score=" << std::setprecision(0) << score);
 
-        if ((score > high_score) && peerHTTPOkay(tp, ps)) {
-            p = tp;
-            high_score = score;
-        }
+        if (peerHTTPOkay(tp, ps))
+            sortedPeers.push_back(std::pair<int, CachePeer *>(score, tp));
     }
 
-    if (p)
-        debugs(39, 2, "carpSelectParent: selected " << p->name);
-
-    return p;
+    std::sort(sortedPeers.begin(), sortedPeers.end());
+    for (auto it = sortedPeers.rbegin(); it!= sortedPeers.rend(); ++it) {
+        debugs(39, 3, "carpSelectParent: selected " << it->second->name << " score "<< it->first);
+        selector->addSelection(it->second, CARP);
+    }
 }
 
 static void

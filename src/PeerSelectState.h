@@ -19,6 +19,8 @@
 #include "mem/forward.h"
 #include "PingData.h"
 
+#include <vector>
+
 class ErrorState;
 class HtcpReplyData;
 class HttpRequest;
@@ -84,6 +86,15 @@ public:
     /// a single selection loop iteration: attempts to add more destinations
     void selectMore();
 
+    void addSelection(CachePeer*, const hier_code);
+    void addSelectionToHead(CachePeer*, const hier_code);
+
+    void checkLastPeerAccess(allow_t answer);
+
+    void checkNextPingNeighborAccess(allow_t answer);
+    bool icpPingNeighbors();
+    bool doIcpPing();
+
     HttpRequest *request;
     AccessLogEntry::Pointer al; ///< info for the future access.log entry
     StoreEntry *entry;
@@ -91,6 +102,7 @@ public:
     void *peerCountMcastPeerXXX = nullptr; ///< a hack to help peerCountMcastPeersStart()
 
     ping_data ping;
+    std::vector<CbcPointer<CachePeer> > pingPeers;
 
 protected:
     bool selectionAborted();
@@ -113,8 +125,6 @@ protected:
     void selectSomeParent();
     void selectAllParents();
     void selectPinned();
-
-    void addSelection(CachePeer*, const hier_code);
 
     void resolveSelected();
 

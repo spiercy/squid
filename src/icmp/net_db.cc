@@ -1304,8 +1304,8 @@ netdbExchangeStart(void *data)
 #endif
 }
 
-CachePeer *
-netdbClosestParent(PeerSelector *ps)
+void
+netdbClosestParent(PeerSelector *selector)
 {
 #if USE_ICMP
     assert(ps);
@@ -1327,10 +1327,10 @@ netdbClosestParent(PeerSelector *ps)
     }
 
     if (NULL == n)
-        return NULL;
+        return;
 
     if (0 == n->n_peers)
-        return NULL;
+        return;
 
     n->last_use_time = squid_curtime;
 
@@ -1357,10 +1357,10 @@ netdbClosestParent(PeerSelector *ps)
         if (!peerHTTPOkay(p, ps))  /* not allowed */
             continue;
 
-        return p;
+        debugs(15, 5, "peer " << h->peername << " rtt: " << h->rtt);
+        selector->addSelection(p, CLOSEST_PARENT);
     }
-
 #endif
-    return NULL;
+    return;
 }
 

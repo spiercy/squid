@@ -17,23 +17,21 @@
 #include "lookup_t.h"
 #include "typedefs.h" //for IRCB
 
+#include <vector>
 class HttpRequest;
 class HttpRequestMethod;
 class CachePeer;
 class StoreEntry;
+class URL;
 class PeerSelector;
 
 CachePeer *getFirstPeer(void);
-CachePeer *getFirstUpParent(PeerSelector *);
+void getFirstUpParent(PeerSelector *, HttpRequest *);
 CachePeer *getNextPeer(CachePeer *);
-CachePeer *getSingleParent(PeerSelector *);
-int neighborsCount(PeerSelector *);
-int neighborsUdpPing(HttpRequest *,
-                     StoreEntry *,
-                     IRCB * callback,
-                     PeerSelector *ps,
-                     int *exprep,
-                     int *timeout);
+CachePeer *getSingleParent(HttpRequest *);
+int neighborsCount(HttpRequest *);
+void getNeighbors(HttpRequest *, std::vector<CbcPointer<CachePeer> > &);
+bool neighborUdpPing(CachePeer *, int, HttpRequest *, StoreEntry *, IRCB *, void *);
 void neighborAddAcl(const char *, const char *);
 
 void neighborsUdpAck(const cache_key *, icp_common_t *, const Ip::Address &);
@@ -44,13 +42,15 @@ void neighborsHtcpClear(StoreEntry *, const char *, HttpRequest *, const HttpReq
 #endif
 CachePeer *peerFindByName(const char *);
 CachePeer *peerFindByNameAndPort(const char *, unsigned short);
-CachePeer *getDefaultParent(PeerSelector*);
-CachePeer *getRoundRobinParent(PeerSelector*);
-CachePeer *getWeightedRoundRobinParent(PeerSelector*);
+void getDefaultParent(PeerSelector *);
+void getRoundRobinParent(PeerSelector *);
+void getWeightedRoundRobinParent(PeerSelector *);
+void updateRoundRobinParent(CachePeer *);
+void updateWeightedRoundRobinParent(CachePeer *, HttpRequest *);
 void peerClearRRStart(void);
 void peerClearRR(void);
-lookup_t peerDigestLookup(CachePeer * p, PeerSelector *);
-CachePeer *neighborsDigestSelect(PeerSelector *);
+lookup_t peerDigestLookup(CachePeer * p, HttpRequest * request);
+void neighborsDigestSelect(PeerSelector *);
 void peerNoteDigestLookup(HttpRequest * request, CachePeer * p, lookup_t lookup);
 void peerNoteDigestGone(CachePeer * p);
 int neighborUp(const CachePeer * e);
