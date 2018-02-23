@@ -257,7 +257,7 @@ Ftp::Client::failed(err_type error, int xerrno, ErrorState *err)
         ftperr = err;
     } else {
         Http::StatusCode httpStatus = failedHttpStatus(error);
-        ftperr = new ErrorState(error, httpStatus, fwd->request);
+        ftperr = new ErrorState(error, httpStatus, request.getRaw());
     }
 
     ftperr->xerrno = xerrno;
@@ -285,7 +285,7 @@ Ftp::Client::failed(err_type error, int xerrno, ErrorState *err)
         ftperr->ftp.reply = xstrdup(reply);
 
     if (!err) {
-        fwd->request->detailError(error, xerrno);
+        request->detailError(error, xerrno);
         fwd->fail(ftperr);
         closeServer(); // we failed, so no serverComplete()
     }
@@ -704,7 +704,7 @@ Ftp::Client::sendPassive()
     default: {
         bool doEpsv = true;
         if (Config.accessList.ftp_epsv) {
-            ACLFilledChecklist checklist(Config.accessList.ftp_epsv, fwd->request, NULL);
+            ACLFilledChecklist checklist(Config.accessList.ftp_epsv, request.getRaw(), NULL);
             doEpsv = checklist.fastCheck().allowed();
         }
         if (!doEpsv) {

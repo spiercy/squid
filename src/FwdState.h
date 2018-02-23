@@ -12,10 +12,12 @@
 #include "base/RefCount.h"
 #include "comm.h"
 #include "comm/Connection.h"
+#include "dns/LookupDetails.h"
 #include "err_type.h"
 #include "fde.h"
 #include "http/StatusCode.h"
 #include "ip/Address.h"
+#include "ipcache.h"
 #include "PeerSelectState.h"
 #include "security/forward.h"
 #if USE_OPENSSL
@@ -113,8 +115,8 @@ private:
     void stopAndDestroy(const char *reason);
 
     /* PeerSelectionInitiator API */
-    virtual void noteDestination(Comm::ConnectionPointer conn) override;
-    virtual void noteDestinationsEnd(ErrorState *selectionError) override;
+    virtual void noteDestination(Comm::ConnectionPointer path) override;
+    virtual void noteDestinationsEnd(ErrorState *error) override;
 
 #if STRICT_ORIGINAL_DST
     void selectPeerForIntercepted();
@@ -135,7 +137,7 @@ private:
 
 public:
     StoreEntry *entry;
-    HttpRequest *request;
+    // HttpRequest::Pointer request;
     AccessLogEntryPointer al; ///< info for the future access.log entry
 
     static void abort(void*);

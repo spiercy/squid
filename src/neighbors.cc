@@ -1330,7 +1330,7 @@ peerCountMcastPeersStart(void *data)
     HttpRequest *req = HttpRequest::FromUrl(url, mx);
     assert(req != nullptr);
     StoreEntry *fake = storeCreateEntry(url, url, RequestFlags(), Http::METHOD_GET);
-    const auto psstate = new PeerSelector(nullptr);
+    const auto psstate = new PeerSelector();
     psstate->request = req;
     HTTPMSGLOCK(psstate->request);
     psstate->entry = fake;

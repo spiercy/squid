@@ -12,6 +12,7 @@
 #include "AccessLogEntry.h"
 #include "acl/Checklist.h"
 #include "base/CbcPointer.h"
+#include "base/RefCount.h"
 #include "comm/forward.h"
 #include "hier_code.h"
 #include "ip/Address.h"
@@ -24,16 +25,20 @@
 class ErrorState;
 class HtcpReplyData;
 class HttpRequest;
+typedef RefCount<HttpRequest> HttpRequestPointer;
 class icp_common_t;
 class StoreEntry;
+class PeerSelector;
 
 void peerSelectInit(void);
 
 /// Interface for those who need a list of peers to forward a request to.
-class PeerSelectionInitiator: public CbdataParent
+class PeerSelectionInitiator: public Dns::IpReceiver
 {
+
 public:
-    virtual ~PeerSelectionInitiator() = default;
+    PeerSelectionInitiator(HttpRequest *req);
+    virtual ~PeerSelectionInitiator();
 
     /// called when a new unique destination has been found
     virtual void noteDestination(Comm::ConnectionPointer path) = 0;
@@ -43,63 +48,92 @@ public:
     /// guaranteed to be nil if there was at least one noteDestination() call
     virtual void noteDestinationsEnd(ErrorState *error) = 0;
 
+    /* Dns::IpReceiver API */
+    virtual void noteIp(const Ip::Address &ip) override;
+    virtual void noteIps(const Dns::CachedIps *ips, const Dns::LookupDetails &details) override;
+    virtual void noteLookup(const Dns::LookupDetails &details) override;
+
+    void notePeer(CachePeer *peer, hier_code code);
+
+    /// \returns whether the initiator may use more destinations
+    bool wantsMoreDestinations() const;
+
     /// whether noteDestination() and noteDestinationsEnd() calls are allowed
     bool subscribed = false;
+    PeerSelector *selector;
+    hier_code _peerType = HIER_NONE;
+    CbcPointer<CachePeer> _peer;
+    HttpRequestPointer request;
+    size_t foundPaths = 0; ///< number of unique destinations identified so far
+    ErrorState *lastError = nullptr;
 
     /* protected: */
     /// Initiates asynchronous peer selection that eventually
     /// results in zero or more noteDestination() calls and
     /// exactly one noteDestinationsEnd() call.
-    void startSelectingDestinations(HttpRequest *request, const AccessLogEntry::Pointer &ale, StoreEntry *entry);
+    void startSelectingDestinations(const AccessLogEntry::Pointer &ale, StoreEntry *entry);
+    void requestNewPeer();
 };
 
 class FwdServer;
 
 /// Finds peer (including origin server) IPs for forwarding a single request.
 /// Gives PeerSelectionInitiator each found destination, in the right order.
-class PeerSelector: public Dns::IpReceiver
+class PeerSelector
 {
-    CBDATA_CHILD(PeerSelector);
+    CBDATA_CLASS(PeerSelector);
 
 public:
-    explicit PeerSelector(PeerSelectionInitiator*);
-    virtual ~PeerSelector() override;
 
-    /* Dns::IpReceiver API */
-    virtual void noteIp(const Ip::Address &ip) override;
-    virtual void noteIps(const Dns::CachedIps *ips, const Dns::LookupDetails &details) override;
-    virtual void noteLookup(const Dns::LookupDetails &details) override;
+    class CbDialer: public CallDialer {
+    public:
+        typedef void (PeerSelectionInitiator::*Method)(CachePeer *, hier_code);
+        CbDialer(PeerSelectionInitiator *initiator, Method method):
+            forwader_(initiator), method_(method) {}
+        virtual ~CbDialer() {}
+
+        /* CallDialer API */
+        virtual bool canDial(AsyncCall &call) {return forwader_.valid();}
+        virtual void dial(AsyncCall &call) {(&(*forwader_)->*method_)(peer_.raw(), code_);};
+        virtual void print(std::ostream &os) const {os << "A peer!";};
+
+        CbcPointer<PeerSelectionInitiator> forwader_;
+        Method method_;
+        CbcPointer<CachePeer> peer_; /* NULL --> origin server */
+        hier_code code_ = HIER_NONE;
+    };
+
+    explicit PeerSelector();
+    ~PeerSelector();
 
     // Produce a URL for display identifying the transaction we are
     // trying to locate a peer for.
     const SBuf url() const;
 
-    /// \returns valid/interested peer initiator or nil
-    PeerSelectionInitiator *interestedInitiator();
-
-    /// \returns whether the initiator may use more destinations
-    bool wantsMoreDestinations() const;
-
     /// processes a newly discovered/finalized path
-    void handlePath(Comm::ConnectionPointer &path, FwdServer &fs);
+    // void handlePath(Comm::ConnectionPointer &path, FwdServer &fs);
 
     /// a single selection loop iteration: attempts to add more destinations
     void selectMore();
 
+    void requestPeer(AsyncCall::Pointer &call);
+
     void addSelection(CachePeer*, const hier_code);
-    void addSelectionToHead(CachePeer*, const hier_code);
+//    void addSelectionToHead(CachePeer*, const hier_code);
 
     void checkLastPeerAccess(allow_t answer);
 
     void checkNextPingNeighborAccess(allow_t answer);
     bool icpPingNeighbors();
     bool doIcpPing();
+    void callback(CachePeer *, hier_code);
 
     HttpRequest *request;
     AccessLogEntry::Pointer al; ///< info for the future access.log entry
     StoreEntry *entry;
 
     void *peerCountMcastPeerXXX = nullptr; ///< a hack to help peerCountMcastPeersStart()
+    AsyncCall::Pointer callback_;
 
     ping_data ping;
     std::vector<CbcPointer<CachePeer> > pingPeers;
@@ -126,7 +160,7 @@ protected:
     void selectAllParents();
     void selectPinned();
 
-    void resolveSelected();
+    void sendNextPeer();
 
     static IRCB HandlePingReply;
     static ACLCB CheckAlwaysDirectDone;
@@ -137,10 +171,11 @@ private:
     allow_t always_direct;
     allow_t never_direct;
     int direct;   // TODO: fold always_direct/never_direct/prefer_direct into this now that ACL can do a multi-state result.
-    size_t foundPaths = 0; ///< number of unique destinations identified so far
-    ErrorState *lastError;
 
+    int foundPeers = 0;
     FwdServer *servers; ///< a linked list of (unresolved) selected peers
+    FwdServer *currentServer = nullptr;
+    enum {DoPreselection, DoPing, DoFinal, DoFinished} selectionState = DoPreselection;
 
     /*
      * Why are these Ip::Address instead of CachePeer *?  Because a
