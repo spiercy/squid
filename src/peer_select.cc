@@ -436,16 +436,18 @@ PeerSelector::checkLastPeerAccess(allow_t answer)
 void
 PeerSelector::updateSelectedPeer(CachePeer *p, hier_code code)
 {
-    if (code == CD_PARENT_HIT || code == CD_SIBLING_HIT || code == CLOSEST_PARENT) {
 #if USE_CACHE_DIGESTS
-        if (code == CD_PARENT_HIT || code == CD_SIBLING_HIT) {
-            // Will overwrite previous state:
-            peerNoteDigestLookup(request, p, LOOKUP_HIT);
-            // If none selected and digestLookup not updates the default values
-            // in request->hier should be enough.
-        }
-#endif
+    if (code == CD_PARENT_HIT || code == CD_SIBLING_HIT) {
+        peerNoteDigestLookup(request, p, LOOKUP_HIT);
+        // If none selected and digestLookup not updates the default values
+        // in request->hier should be enough.
+
         // Do not ping for peers if any of the above peer types succeed
+        if (entry && entry->ping_status == PING_NONE)
+            entry->ping_status = PING_DONE;
+    } else
+#endif
+    if (code == CLOSEST_PARENT) {
         if (entry && entry->ping_status == PING_NONE)
             entry->ping_status = PING_DONE;
     } else if (code == WEIGHTED_ROUNDROBIN_PARENT && p->options.weighted_roundrobin)
@@ -670,7 +672,7 @@ PeerSelector::selectMore()
 void
 PeerSelector::requestPeer(AsyncCall::Pointer &call)
 {
-    assert(callback_ == nullptr);
+    assert(!callback_);
     callback_ = call;
     selectMore();
 }
