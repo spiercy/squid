@@ -110,22 +110,55 @@ public:
     // trying to locate a peer for.
     const SBuf url() const;
 
-    /// processes a newly discovered/finalized path
-    // void handlePath(Comm::ConnectionPointer &path, FwdServer &fs);
-
     /// a single selection loop iteration: attempts to add more destinations
     void selectMore();
 
+    /// Called from callers to request a new peer.
     void requestPeer(AsyncCall::Pointer &call);
 
-    void addSelection(CachePeer*, const hier_code);
-//    void addSelectionToHead(CachePeer*, const hier_code);
+    /// Add the peer to the candidate peers list
+    void addSelection(CachePeer*, const hier_code, int groupId = 0);
 
+    template <class Key> void addGroup(std::vector<std::pair<Key, CachePeer*> > &, const hier_code);
+
+    /// Removes all servers with the same grouId exist after the given server
+    /// in candidate peers list
+    void groupSelect(FwdServer *);
+
+    /// Checks if the CachePeer ACL check exist in cache (aclPeersCache)
+    bool accessCheckCached(CachePeer *p, allow_t &answer);
+
+    /// ACL check callback, if peer allowed send it to the caller
     void checkLastPeerAccess(allow_t answer);
 
+    /// Does final peer updates (statistics etc), before send the peer to caller
+    void updateSelectedPeer(CachePeer *, hier_code);
+
+    /// This is an ACL check callback.
+    /// If the checked peer allowed, store it on peersToPing list.
+    /// and call selectServersToPing to find and check the next available peer
     void checkNextPingNeighborAccess(allow_t answer);
-    bool icpPingNeighbors();
-    bool doIcpPing();
+
+    /// Runs candidatePingPeers list for the next valid Peer
+    /// and initializes an non-blocking ACL check  for this peer.
+    void selectServersToPing();
+
+    /// Checks if pinging neighbors supported and there are
+    /// available candidate peers for pinging.
+    /// It stores the candidate peers to candidatePingPeers list.
+    /// \return true if pinging supported and there are configured peers to ping
+    bool icpNeighborsToPing();
+
+    /// Starts the pinging procedure. Checks if there are available peers
+    /// for pinging, and if yes stars a non-blocking acl check on candidate
+    /// peers.
+    /// \return true if icp pinging started.
+    bool startIcpPing();
+
+    /// Ping selected peers stored in peersToPing list
+    void doIcpPing();
+
+    /// Calls caller
     void callback(CachePeer *, hier_code);
 
     HttpRequest *request;
@@ -133,10 +166,8 @@ public:
     StoreEntry *entry;
 
     void *peerCountMcastPeerXXX = nullptr; ///< a hack to help peerCountMcastPeersStart()
-    AsyncCall::Pointer callback_;
 
     ping_data ping;
-    std::vector<CbcPointer<CachePeer> > pingPeers;
 
 protected:
     bool selectionAborted();
@@ -168,14 +199,36 @@ protected:
     static EVH HandlePingTimeout;
 
 private:
+    /// Selection states
+    enum {
+        DoPreselection, ///< check for pinned, peers digest and closed parents
+        DoPing, ///< ping peers
+        DoFinal, ///< all of the remaining valid peers
+        DoFinished ///< all steps finished
+    } selectionState = DoPreselection;
+
     allow_t always_direct;
     allow_t never_direct;
     int direct;   // TODO: fold always_direct/never_direct/prefer_direct into this now that ACL can do a multi-state result.
 
     int foundPeers = 0;
     FwdServer *servers; ///< a linked list of (unresolved) selected peers
+
+    /// The member of servers list which is currently processed and checked
+    /// before sent to caller
     FwdServer *currentServer = nullptr;
-    enum {DoPreselection, DoPing, DoFinal, DoFinished} selectionState = DoPreselection;
+
+    AsyncCall::Pointer callback_; ///< caller callback
+
+    /// Temporary list with candidate peers to ping. They will be ACL checked
+    /// before added to peersToPing list
+    std::vector<CbcPointer<CachePeer> > candidatePingPeers;
+
+    /// The list with available peers for pinging
+    std::vector<CbcPointer<CachePeer> > peersToPing;
+
+    /// Cache for peers ACL checks
+    std::vector<std::pair<CbcPointer<CachePeer>, allow_t> > aclPeersCache;
 
     /*
      * Why are these Ip::Address instead of CachePeer *?  Because a
@@ -201,6 +254,13 @@ private:
 
     const InstanceId<PeerSelector> id; ///< unique identification in worker log
 };
+
+template <class Key> void
+PeerSelector::addGroup(std::vector<std::pair<Key, CachePeer*> > &peers, const hier_code code)
+{
+    for (auto it = peers.rbegin(); it!= peers.rend(); ++it)
+        addSelection(it->second, code, code);
+}
 
 #endif /* SQUID_PEERSELECTSTATE_H */
 

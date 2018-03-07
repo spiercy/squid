@@ -18,17 +18,10 @@ public:
     struct timeval start;
 
     struct timeval stop;
-    int reqnum;
     int n_sent;
     int n_recv;
-    int n_mcast_replies_expect;
-    int n_parent_replies_expect;
-    int n_sibling_replies_expect;
     int n_replies_expected;
     int timeout;        /* msec */
-    int mcast_rtt;
-    int parent_rtt;
-    int sibling_rtt;
     int timedout;
     int w_rtt;
     int p_rtt;

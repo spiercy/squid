@@ -30,7 +30,8 @@ void getFirstUpParent(PeerSelector *, HttpRequest *);
 CachePeer *getNextPeer(CachePeer *);
 CachePeer *getSingleParent(HttpRequest *);
 int neighborsCount(HttpRequest *);
-void getNeighbors(HttpRequest *, std::vector<CbcPointer<CachePeer> > &);
+void getNeighborsToPing(HttpRequest *, std::vector<CbcPointer<CachePeer> > &);
+int neighborsUdpPing(std::vector<CbcPointer<CachePeer> > &, HttpRequest *, StoreEntry *, IRCB *, void *, int *, int *);
 bool neighborUdpPing(CachePeer *, int, HttpRequest *, StoreEntry *, IRCB *, void *);
 void neighborAddAcl(const char *, const char *);
 

@@ -213,10 +213,7 @@ carpSelectParent(PeerSelector *ps)
     }
 
     std::sort(sortedPeers.begin(), sortedPeers.end());
-    for (auto it = sortedPeers.rbegin(); it!= sortedPeers.rend(); ++it) {
-        debugs(39, 3, "carpSelectParent: selected " << it->second->name << " score "<< it->first);
-        selector->addSelection(it->second, CARP);
-    }
+    selector->addGroup(sortedPeers, CARP);
 }
 
 static void

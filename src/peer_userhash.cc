@@ -192,11 +192,8 @@ peerUserHashSelectParent(PeerSelector *selector)
             sortedPeers.push_back(std::pair<int, CachePeer *>(score, tp));
     }
 
-    std::sort(sortedPeers.begin(), sortedPeers.end());
-    for (auto it = sortedPeers.rbegin(); it!= sortedPeers.rend(); ++it) {
-        debugs(39, 3, "peerUserHashSelectParent: selected " << it->second->name << " score "<< it->first);
-        selector->addSelection(it->second, USERHASH_PARENT);
-    }
+    std::sort(sortedPeers.begin(), sortedPeers.end(), std::greater<std::pair<int, CachePeer *> >());
+    selector->addGroup(sortedPeers, USERHASH_PARENT);
 }
 
 static void

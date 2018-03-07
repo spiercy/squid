@@ -273,15 +273,23 @@ neighborsCount(PeerSelector *ps)
 }
 
 void
-getNeighbors(HttpRequest * request, std::vector<CbcPointer<CachePeer> > &list)
+getNeighborsToPing(HttpRequest * request, std::vector<CbcPointer<CachePeer> > &list)
 {
     CachePeer *p = NULL;
+    int i;
 
-    for (p = Config.peers; p; p = p->next)
+    for (i = 0, p = first_ping; i++ < Config.npeers; p = p->next) {
+        if (p == nullptr)
+            p = Config.peers;
+
         if (peerWouldBePinged(p, request))
             list.push_back(p);
+    }
 
-    debugs(15, 3, "neighbors added: " << list.size());
+    debugs(15, 3, "candidate neighbors to ping: " << list.size());
+
+    if ((first_ping = first_ping->next) == NULL)
+        first_ping = Config.peers;
 }
 
 void
@@ -332,12 +340,9 @@ getRoundRobinParent(PeerSelector *selector)
         sortedPeers.push_back(std::pair<double, CachePeer *>(score, p));
     }
 
-    std::sort(sortedPeers.begin(), sortedPeers.end());
     // First is the smalest score
-    for (auto it = sortedPeers.begin(); it!= sortedPeers.end(); ++it) {
-        debugs(39, 3, "getRoundRobinParent: selected " << it->second->name << " score "<< it->first);
-        selector->addSelection(it->second, ROUNDROBIN_PARENT);
-    }
+    std::sort(sortedPeers.begin(), sortedPeers.end());
+    selector->addGroup(sortedPeers, ROUNDROBIN_PARENT);
 }
 
 void
@@ -368,12 +373,10 @@ getWeightedRoundRobinParent(PeerSelector *selector)
 
         sortedPeers.push_back(std::pair<int, CachePeer *>(p->rr_count, p));
     }
-    std::sort(sortedPeers.begin(), sortedPeers.end());
+
     // First is the smalest score
-    for (auto it = sortedPeers.begin(); it!= sortedPeers.end(); ++it) {
-        debugs(39, 3, "getRoundRobinParent: selected " << it->second->name << " score "<< it->first);
-        selector->addSelection(it->second, WEIGHTED_ROUNDROBIN_PARENT);
-    }
+    std::sort(sortedPeers.begin(), sortedPeers.end());
+    selector->addGroup(sortedPeers, WEIGHTED_ROUNDROBIN_PARENT);
 }
 
 void
@@ -589,88 +592,161 @@ neighbors_init(void)
     first_ping = Config.peers;
 }
 
-bool
-neighborUdpPing(CachePeer *p,
-                int reqnum,
-                HttpRequest * request,
-                StoreEntry * entry,
-                IRCB * callback,
-                void *callback_data)
+int
+neighborsUdpPing(
+                 std::vector<CbcPointer<CachePeer> > &pingPeers,
+                 HttpRequest * request,
+                 StoreEntry * entry,
+                 IRCB * callback,
+                 void *callback_data,
+                 int *exprep,
+                 int *timeout)
 {
-    int flags;
-    icp_common_t *query;
     const char *url = entry->url();
     MemObject *mem = entry->mem_obj;
-    assert(entry->swap_status == SWAPOUT_NONE);
-    assert(mem->ping_reply_callback == callback);
-    assert(mem->ircb_data == callback_data);
+    int reqnum = 0;
+    int flags;
+    icp_common_t *query;
+    int queries_sent = 0;
+    int peers_pinged = 0;
+    int parent_timeout = 0, parent_exprep = 0;
+    int sibling_timeout = 0, sibling_exprep = 0;
+    int mcast_timeout = 0, mcast_exprep = 0;
 
-    debugs(15, 5, "neighborsUdpPing: Peer " << p->host);
-    debugs(15, 4, "neighborsUdpPing: pinging peer " << p->host << " for '" << url << "'");
-    debugs(15, 3, "neighborsUdpPing: key = '" << entry->getMD5Text() << "'");
-    debugs(15, 3, "neighborsUdpPing: reqnum = " << reqnum);
+    assert(entry->swap_status == SWAPOUT_NONE);
+
+    mem->start_ping = current_time;
+
+    mem->ping_reply_callback = callback;
+
+    mem->ircb_data = callback_data;
+
+    reqnum = icpSetCacheKey((const cache_key *)entry->key);
+
+    for (auto it = pingPeers.begin(); it != pingPeers.end(); ++it) {
+
+        CachePeer *p = (*it).valid();
+
+        if (!p)
+            continue;
+
+        debugs(15, 5, "neighborsUdpPing: Peer " << p->host);
+
+        ++peers_pinged;
+
+        debugs(15, 4, "neighborsUdpPing: pinging peer " << p->host << " for '" << url << "'");
+
+        debugs(15, 3, "neighborsUdpPing: key = '" << entry->getMD5Text() << "'");
+
+        debugs(15, 3, "neighborsUdpPing: reqnum = " << reqnum);
 
 #if USE_HTCP
-    if (p->options.htcp && !p->options.htcp_only_clr) {
-        if (Config.Port.htcp <= 0) {
-            debugs(15, DBG_CRITICAL, "HTCP is disabled! Cannot send HTCP request to peer.");
-            return false;
-        }
+        if (p->options.htcp && !p->options.htcp_only_clr) {
+            if (Config.Port.htcp <= 0) {
+                debugs(15, DBG_CRITICAL, "HTCP is disabled! Cannot send HTCP request to peer.");
+                continue;
+            }
 
-        debugs(15, 3, "neighborsUdpPing: sending HTCP query");
-        if (htcpQuery(entry, request, p) <= 0)
-            return false; // unable to send.
-    } else
+            debugs(15, 3, "neighborsUdpPing: sending HTCP query");
+            if (htcpQuery(entry, request, p) <= 0)
+                continue; // unable to send.
+        } else
 #endif
-    {
-        if (Config.Port.icp <= 0 || !Comm::IsConnOpen(icpOutgoingConn)) {
-            debugs(15, DBG_CRITICAL, "ICP is disabled! Cannot send ICP request to peer.");
-            return false;
-        } else {
-
-            if (p->type == PEER_MULTICAST)
-                mcastSetTtl(icpOutgoingConn->fd, p->mcast.ttl);
-
-            if (p->icp.port == echo_port) {
-                debugs(15, 4, "neighborsUdpPing: Looks like a dumb cache, send DECHO ping");
-                query = icp_common_t::CreateMessage(ICP_DECHO, 0, url, reqnum, 0);
-                icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LOG_ICP_QUERY, 0);
+        {
+            if (Config.Port.icp <= 0 || !Comm::IsConnOpen(icpOutgoingConn)) {
+                debugs(15, DBG_CRITICAL, "ICP is disabled! Cannot send ICP request to peer.");
+                continue;
             } else {
-                flags = 0;
 
-                if (Config.onoff.query_icmp)
-                    if (p->icp.version == ICP_VERSION_2)
-                        flags |= ICP_FLAG_SRC_RTT;
+                if (p->type == PEER_MULTICAST)
+                    mcastSetTtl(icpOutgoingConn->fd, p->mcast.ttl);
 
-                query = icp_common_t::CreateMessage(ICP_QUERY, flags, url, reqnum, 0);
+                if (p->icp.port == echo_port) {
+                    debugs(15, 4, "neighborsUdpPing: Looks like a dumb cache, send DECHO ping");
+                    query = icp_common_t::CreateMessage(ICP_DECHO, 0, url, reqnum, 0);
+                    icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LOG_ICP_QUERY, 0);
+                } else {
+                    flags = 0;
 
-                icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LOG_ICP_QUERY, 0.0);
+                    if (Config.onoff.query_icmp)
+                        if (p->icp.version == ICP_VERSION_2)
+                            flags |= ICP_FLAG_SRC_RTT;
+
+                    query = icp_common_t::CreateMessage(ICP_QUERY, flags, url, reqnum, 0);
+
+                    icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LOG_ICP_QUERY, 0.0);
+                }
             }
         }
-    }
 
-    ++ p->stats.pings_sent;
+        ++queries_sent;
 
-    if (p->type != PEER_MULTICAST && !neighborUp(p)) {
-        /* Neighbor is dead; ping it anyway, but don't expect a reply */
-        /* log it once at the threshold */
+        ++ p->stats.pings_sent;
 
-        if (p->stats.logged_state == PEER_ALIVE) {
-            debugs(15, DBG_IMPORTANT, "Detected DEAD " << neighborTypeStr(p) << ": " << p->name);
-            p->stats.logged_state = PEER_DEAD;
+        if (p->type == PEER_MULTICAST) {
+            mcast_exprep += p->mcast.n_replies_expected;
+            mcast_timeout += (p->stats.rtt * p->mcast.n_replies_expected);
+        } else if (neighborUp(p)) {
+            /* its alive, expect a reply from it */
+
+            if (neighborType(p, request->url) == PEER_PARENT) {
+                ++parent_exprep;
+                parent_timeout += p->stats.rtt;
+            } else {
+                ++sibling_exprep;
+                sibling_timeout += p->stats.rtt;
+            }
+        } else {
+            /* Neighbor is dead; ping it anyway, but don't expect a reply */
+            /* log it once at the threshold */
+
+            if (p->stats.logged_state == PEER_ALIVE) {
+                debugs(15, DBG_IMPORTANT, "Detected DEAD " << neighborTypeStr(p) << ": " << p->name);
+                p->stats.logged_state = PEER_DEAD;
+            }
         }
-    }
 
-    p->stats.last_query = squid_curtime;
+        p->stats.last_query = squid_curtime;
+
+        /*
+         * keep probe_start == 0 for a multicast CachePeer,
+         * so neighborUp() never says this CachePeer is dead.
+         */
+
+        if ((p->type != PEER_MULTICAST) && (p->stats.probe_start == 0))
+            p->stats.probe_start = squid_curtime;
+    }
 
     /*
-     * keep probe_start == 0 for a multicast CachePeer,
-     * so neighborUp() never says this CachePeer is dead.
+     * How many replies to expect?
      */
+    *exprep = parent_exprep + sibling_exprep + mcast_exprep;
 
-    if ((p->type != PEER_MULTICAST) && (p->stats.probe_start == 0))
-        p->stats.probe_start = squid_curtime;
-    return true;
+    /*
+     * If there is a configured timeout, use it
+     */
+    if (Config.Timeout.icp_query)
+        *timeout = Config.Timeout.icp_query;
+    else {
+        if (*exprep > 0) {
+            if (parent_exprep)
+                *timeout = 2 * parent_timeout / parent_exprep;
+            else if (mcast_exprep)
+                *timeout = 2 * mcast_timeout / mcast_exprep;
+            else
+                *timeout = 2 * sibling_timeout / sibling_exprep;
+        } else
+            *timeout = 2000;    /* 2 seconds */
+
+        if (Config.Timeout.icp_query_max)
+            if (*timeout > Config.Timeout.icp_query_max)
+                *timeout = Config.Timeout.icp_query_max;
+
+        if (*timeout < Config.Timeout.icp_query_min)
+            *timeout = Config.Timeout.icp_query_min;
+    }
+
+    return peers_pinged;
 }
 
 /* lookup the digest of a given CachePeer */
@@ -725,7 +801,6 @@ neighborsDigestSelect(PeerSelector *selector)
     assert(ps);
     HttpRequest *request = ps->request;
 
-    CachePeer *p;
     int p_rtt;
     int i;
     int choice_count = 0;
@@ -736,7 +811,8 @@ neighborsDigestSelect(PeerSelector *selector)
     storeKeyPublicByRequest(request);
 
     std::vector<std::pair<int, CachePeer *> > sortedPeers;
-    for (i = 0, p = first_ping; i++ < Config.npeers; p = p->next) {
+    i = 0;
+    for (CachePeer *p = first_ping; i++ < Config.npeers; p = p->next) {
         lookup_t lookup;
 
         if (!p)
@@ -769,14 +845,15 @@ neighborsDigestSelect(PeerSelector *selector)
         peerNoteDigestLookup(request, nullptr, LOOKUP_MISS);
     } else {
         std::sort(sortedPeers.begin(), sortedPeers.end());
+        //selector->addGroup(sortedPeers, CD_PARENT_HIT);
         for (auto it = sortedPeers.begin(); it!= sortedPeers.end(); ++it) {
             debugs(15, 5, "neighborsDigestSelect: peer " << it->second->host << " rtt: " << it->first);
             hier_code code;
-            if (neighborType(p, request->url) == PEER_PARENT)
+            if (neighborType(it->second, request->url) == PEER_PARENT)
                 code = CD_PARENT_HIT;
             else
                 code = CD_SIBLING_HIT;
-            selector->addSelection(it->second, code);
+            selector->addSelection(it->second, code, CD_PARENT_HIT);
         }
     }
 #endif

@@ -50,14 +50,16 @@ class FwdServer
     MEMPROXY_CLASS(FwdServer);
 
 public:
-    FwdServer(CachePeer *p, hier_code c) :
+    FwdServer(CachePeer *p, hier_code c, int gid) :
         _peer(p),
         code(c),
+        groupId(gid),
         next(nullptr)
     {}
 
     CbcPointer<CachePeer> _peer;                /* NULL --> origin server */
     hier_code code;
+    int groupId;
     FwdServer *next;
 };
 
@@ -133,13 +135,10 @@ PeerSelector::~PeerSelector()
 }
 
 bool
-PeerSelector::icpPingNeighbors()
+PeerSelector::icpNeighborsToPing()
 {
     assert(entry);
     assert(direct != DIRECT_YES);
-
-    if (pingPeers.size() > 0)
-        return true;
 
     if (entry->ping_status != PING_NONE)
         return false;
@@ -153,11 +152,11 @@ PeerSelector::icpPingNeighbors()
         if (direct != DIRECT_NO)
             return false;
 
-    getNeighbors(request, pingPeers);
+    getNeighborsToPing(request, candidatePingPeers);
 
-    debugs(44, 3, "counted " << pingPeers.size() << "candidate neighbors");
+    debugs(44, 3, "counted " << candidatePingPeers.size() << "candidate neighbors");
 
-    return pingPeers.size() > 0;
+    return (candidatePingPeers.size() > 0);
 }
 
 static void
@@ -391,6 +390,18 @@ PeerSelector::selectionAborted()
     return true;
 }
 
+bool
+PeerSelector::accessCheckCached(CachePeer *p, allow_t &answer)
+{
+    for (auto it = aclPeersCache.begin(); it !=aclPeersCache.end(); ++it) {
+        if (p == it->first.valid()) {
+            answer = it->second;
+            return true;
+        }
+    }
+    return false;
+}
+
 static void
 checkLastPeerAccessWrapper(allow_t answer, void *data)
 {
@@ -401,39 +412,46 @@ checkLastPeerAccessWrapper(allow_t answer, void *data)
 void
 PeerSelector::checkLastPeerAccess(allow_t answer)
 {
-    FwdServer *fs = servers;
-    assert(fs);
-    bool peerGone = fs->_peer.raw() && ! fs->_peer.valid();
 
-    if (answer.denied() || peerGone) {
+    if (currentServer->_peer.valid())
+        aclPeersCache.push_back(std::pair<CbcPointer<CachePeer>, allow_t>(currentServer->_peer, answer));
+
+    if (!answer.allowed() || !currentServer->_peer.valid()) {
         currentServer = currentServer->next;
         selectMore();
         return;
     }
 
-    if (fs->_peer.valid()) {
-        if (fs->code == CD_PARENT_HIT || fs->code == CD_SIBLING_HIT || fs->code == CLOSEST_PARENT) {
-#if USE_CACHE_DIGESTS
-            if (fs->code == CD_PARENT_HIT || fs->code == CD_SIBLING_HIT) {
-                // Will overwrite previous state:
-                peerNoteDigestLookup(request, fs->_peer.get(), LOOKUP_HIT);
-                // If none selected and digestLookup not updates the default values
-                // in request->hier should be enough.
-            }
-#endif
-            // Do not ping for peers if any of the above peer types succeed
-            if (entry && entry->ping_status == PING_NONE)
-                entry->ping_status = PING_DONE;
-        } else if (fs->code == WEIGHTED_ROUNDROBIN_PARENT && fs->_peer->options.weighted_roundrobin)
-            updateWeightedRoundRobinParent(fs->_peer.get(), request);
-        else if (fs->code == ROUNDROBIN_PARENT && fs->_peer->options.roundrobin)
-            updateRoundRobinParent(fs->_peer.get());
-    }
+    if (currentServer->groupId)
+        groupSelect(currentServer);
+
+    updateSelectedPeer(currentServer->_peer.get(), currentServer->code);
 
     if (callback_ != nullptr) {
-        callback(fs->_peer.get(), fs->code);
+        callback(currentServer->_peer.get(), currentServer->code);
         currentServer = currentServer->next;
     }
+}
+
+void
+PeerSelector::updateSelectedPeer(CachePeer *p, hier_code code)
+{
+    if (code == CD_PARENT_HIT || code == CD_SIBLING_HIT || code == CLOSEST_PARENT) {
+#if USE_CACHE_DIGESTS
+        if (code == CD_PARENT_HIT || code == CD_SIBLING_HIT) {
+            // Will overwrite previous state:
+            peerNoteDigestLookup(request, p, LOOKUP_HIT);
+            // If none selected and digestLookup not updates the default values
+            // in request->hier should be enough.
+        }
+#endif
+        // Do not ping for peers if any of the above peer types succeed
+        if (entry && entry->ping_status == PING_NONE)
+            entry->ping_status = PING_DONE;
+    } else if (code == WEIGHTED_ROUNDROBIN_PARENT && p->options.weighted_roundrobin)
+        updateWeightedRoundRobinParent(p, request);
+    else if (code == ROUNDROBIN_PARENT && p->options.roundrobin)
+        updateRoundRobinParent(p);
 }
 
 void
@@ -472,16 +490,20 @@ PeerSelector::sendNextPeer()
         return;
     }
 
-    // Exclude from acl check pinged servers, because checked
-    // before pinged
-    bool checked = currentServer->code == PARENT_HIT ||
-        currentServer->code == SIBLING_HIT ||
-        currentServer->code == CLOSEST_PARENT_MISS ||
-        currentServer->code == FIRST_PARENT_MISS;
-    bool needsAclCheck = !checked && currentServer->_peer.valid() && currentServer->_peer->access;
-    if (needsAclCheck) {
-        ACLFilledChecklist *checklist = new ACLFilledChecklist(currentServer->_peer->access, request, NULL);
-        checklist->nonBlockingCheck(checkLastPeerAccessWrapper, this);
+    if (!currentServer->_peer.raw()) { // eg PINNED
+        callback(nullptr, currentServer->code);
+        currentServer = currentServer->next;
+        return;
+    }
+
+    if (currentServer->_peer->access) {
+        allow_t cached;
+        if (accessCheckCached(currentServer->_peer.get(), cached))
+            checkLastPeerAccess(cached);
+        else {
+            ACLFilledChecklist *checklist = new ACLFilledChecklist(currentServer->_peer->access, request, NULL);
+            checklist->nonBlockingCheck(checkLastPeerAccessWrapper, this);
+        }
     } else
         checkLastPeerAccess(ACCESS_ALLOWED);
 }
@@ -587,6 +609,7 @@ PeerSelector::selectMore()
             selectSomeNeighbor();
 
         selectionState = DoPing;
+
         if (currentServer) {
             sendNextPeer();
             return;
@@ -595,7 +618,7 @@ PeerSelector::selectMore()
 
     if (selectionState == DoPing) {
         if (entry) {
-            if (entry->ping_status == PING_NONE && doIcpPing())
+            if (entry->ping_status == PING_NONE && startIcpPing())
                 return;
 
             selectionState = DoFinal;
@@ -706,68 +729,104 @@ checkNextPingNeighborAccessWrapper(allow_t answer, void *data)
     selector->checkNextPingNeighborAccess(answer);
 }
 
+#if 0
+static void
+selectServersToPingWrapper(PeerSelector *selector)
+{
+    selector->selectServersToPing();
+}
+#endif
+
 void
 PeerSelector::checkNextPingNeighborAccess(allow_t answer)
 {
-    if (CachePeer *p = pingPeers.front().valid()) {
-        pingPeers.erase(pingPeers.begin());
-        if (neighborUdpPing(p, ping.reqnum, request, entry, HandlePingReply, this)) {
-            ++ping.n_sent;
-            entry->ping_status = PING_WAITING;
+    assert(!candidatePingPeers.empty());
+    CbcPointer<CachePeer> p = candidatePingPeers.front();
+    candidatePingPeers.erase(candidatePingPeers.begin());
 
-            if (p->type == PEER_MULTICAST) {
-                ping.n_replies_expected += p->mcast.n_replies_expected;
-                ping.n_mcast_replies_expect += p->mcast.n_replies_expected;
-                ping.mcast_rtt += (p->stats.rtt * p->mcast.n_replies_expected);
-            } else if (neighborUp(p)) {
-                /* its alive, expect a reply from it */
-                ++ping.n_replies_expected;
-                if (neighborType(p, request->url) == PEER_PARENT) {
-                    ++ping.n_parent_replies_expect;
-                    ping.parent_rtt += p->stats.rtt;
-                } else {
-                    ++ping.n_sibling_replies_expect;
-                    ping.sibling_rtt += p->stats.rtt;
-                }
-            }
-        }
+    if (p.valid())
+        aclPeersCache.push_back(std::pair<CbcPointer<CachePeer>, allow_t>(p, answer));
+
+    if (answer.allowed() && p.valid()) { //check for the next peer
+        debugs(44, 5, "Will ping peer " << p->name);
+        peersToPing.push_back(p);
     }
 
-    if (!doIcpPing()) {
-        if (ping.n_sent == 0) {
-            debugs(44, DBG_CRITICAL, "WARNING: neighborsUdpPing returned 0");
-            selectMore();
-            return;
+#if 0
+    AsyncCall::Pointer call = asyncCall(44, 5, "selectServersToPing", cbdataDialer(selectServersToPingWrapper, this));
+    ScheduleCallHere(call);
+#else
+    selectServersToPing();
+#endif
+}
+
+void
+PeerSelector::selectServersToPing()
+{
+    while (!candidatePingPeers.front().valid())
+        candidatePingPeers.erase(candidatePingPeers.begin());
+
+    if (candidatePingPeers.empty()) { // finish processing candidate peers.
+        doIcpPing();
+        return;
+    }
+
+    CachePeer *p = candidatePingPeers.front().get();
+    if (p->access) {
+        allow_t cached;
+        if (accessCheckCached(p, cached))
+            checkNextPingNeighborAccess(cached);
+        else {
+            ACLFilledChecklist *checklist = new ACLFilledChecklist(p->access, request, NULL);
+            checklist->nonBlockingCheck(checkNextPingNeighborAccessWrapper, this);
         }
+    } else
+        checkNextPingNeighborAccess(ACCESS_ALLOWED);
+}
+
+bool
+PeerSelector::startIcpPing()
+{
+    if (peersToPing.size() > 0 || candidatePingPeers.size() > 0) {
+        debugs(44, 3, "ICP ping already stared");
+        return true;
+    }
+
+    if (icpNeighborsToPing()) {
+        debugs(44, 3, "Doing ICP pings");
+        selectServersToPing();
+        return true;
+    }
+
+    entry->ping_status = PING_DONE;
+    return false;
+}
+
+void
+PeerSelector::doIcpPing()
+{
+    debugs(44, 3, "Start pinging " << peersToPing.size() << " servers");
+
+    if (peersToPing.size()) {
+        ping.start = current_time;
+        ping.n_sent = neighborsUdpPing(
+            peersToPing,
+            request,
+            entry,
+            HandlePingReply,
+            this,
+            &ping.n_replies_expected,
+            &ping.timeout);
+
+        if (ping.n_sent == 0)
+            debugs(44, DBG_CRITICAL, "WARNING: neighborsUdpPing returned 0");
 
         debugs(44, 3, ping.n_replies_expected <<
                " ICP replies expected, RTT " << ping.timeout <<
                " msec");
+
         if (ping.n_replies_expected > 0) {
-            /*
-             * If there is a configured timeout, use it
-             */
-            if (Config.Timeout.icp_query)
-                ping.timeout = Config.Timeout.icp_query;
-            else {
-                if (ping.n_replies_expected > 0) {
-                    if (ping.n_parent_replies_expect)
-                        ping.timeout = 2 * ping.parent_rtt / ping.n_parent_replies_expect;
-                    else if (ping.n_mcast_replies_expect)
-                        ping.timeout = 2 * ping.mcast_rtt / ping.n_mcast_replies_expect;
-                    else
-                        ping.timeout = 2 * ping.sibling_rtt / ping.n_sibling_replies_expect;
-                } else
-                    ping.timeout = 2000;    /* 2 seconds */
-
-                if (Config.Timeout.icp_query_max)
-                    if (ping.timeout > Config.Timeout.icp_query_max)
-                        ping.timeout = Config.Timeout.icp_query_max;
-
-                if (ping.timeout < Config.Timeout.icp_query_min)
-                    ping.timeout = Config.Timeout.icp_query_min;
-            }
-
+            entry->ping_status = PING_WAITING;
             eventAdd("PeerSelector::HandlePingTimeout",
                      HandlePingTimeout,
                      this,
@@ -775,39 +834,10 @@ PeerSelector::checkNextPingNeighborAccess(allow_t answer)
                      0);
         }
     }
-}
 
-bool
-PeerSelector::doIcpPing()
-{
-    if (icpPingNeighbors()) {
-        debugs(44, 3, "Doing ICP pings");
-        while (!pingPeers.front().valid())
-            pingPeers.erase(pingPeers.begin());
-
-        if (pingPeers.size()) {
-            CachePeer *p = pingPeers.front().get();
-            if (ping.start.tv_sec == 0) {
-                ping.start = current_time;
-                ping.reqnum = icpSetCacheKey((const cache_key *)entry->key);
-
-                MemObject *mem = entry->mem_obj;
-                assert(entry->swap_status == SWAPOUT_NONE);
-                mem->start_ping = current_time;
-                mem->ping_reply_callback = HandlePingReply;
-                mem->ircb_data = this;
-            }
-            if (p->access) {
-                ACLFilledChecklist *checklist = new ACLFilledChecklist(p->access, request, NULL);
-                checklist->nonBlockingCheck(checkNextPingNeighborAccessWrapper, this);
-            } else
-                checkNextPingNeighborAccess(ACCESS_ALLOWED);
-            return true;
-        }
-    }
-
-    entry->ping_status = PING_DONE;
-    return false;
+    if (ping.n_sent == 0)
+        selectMore();
+    // else waiting ping to finish
 }
 
 /// Selects a neighbor (parent or sibling) based on ICP/HTCP replies.
@@ -1090,16 +1120,21 @@ PeerSelector::HandlePingReply(CachePeer * p, peer_t type, AnyP::ProtocolType pro
 }
 
 void
-PeerSelector::addSelection(CachePeer *peer, const hier_code code)
+PeerSelector::addSelection(CachePeer *peer, const hier_code code, int groupId)
 {
     // Find the end of the servers list. Bail on a duplicate destination.
     auto **serversTail = &servers;
     while (const auto server = *serversTail) {
         // There can be at most one PINNED destination.
-        // Non-PINNED destinations are uniquely identified by their CachePeer
+        const bool bothPinned = (server->code == PINNED) && (code == PINNED);
+        // Non-PINNED destinations are uniquely identified by their CachePeer and groupId
         // (even though a DIRECT destination might match a cache_peer address).
-        const bool duplicate = (server->code == PINNED) ?
-                               (code == PINNED) : (server->_peer == peer);
+        // If exist the peer without groupID do not add it, but add it if
+        // peer exist with different groupId. Latter, the groupSelect will remove duplicates.
+        const bool peerMatches = (server->groupId == 0) ?
+                                 (server->_peer == peer) : (server->_peer == peer && server->groupId == groupId);
+        const bool duplicate = bothPinned || peerMatches;
+
         if (duplicate) {
             debugs(44, 3, "skipping " << PeerSelectionDumper(this, peer, code) <<
                    "; have " << PeerSelectionDumper(this, server->_peer.get(), server->code));
@@ -1109,10 +1144,28 @@ PeerSelector::addSelection(CachePeer *peer, const hier_code code)
     }
 
     debugs(44, 3, "adding " << PeerSelectionDumper(this, peer, code));
-    *serversTail = new FwdServer(peer, code);
+    *serversTail = new FwdServer(peer, code, groupId);
 
     if (currentServer == nullptr)
         currentServer = *serversTail;
+}
+
+void
+PeerSelector::groupSelect(FwdServer *fs)
+{
+    int gid = fs->groupId;
+    CbcPointer<CachePeer> p = fs->_peer;
+    fs->groupId = 0;
+    FwdServer **srv = &fs->next;
+    // Remove any other FwdServer has the same gid or pointes to the same peer
+    while (*srv) {
+        if ((*srv)->groupId == gid || (*srv)->_peer == p) {
+            auto *tmp = (*srv);
+            *srv = tmp->next;
+            delete tmp;
+        } else
+            srv = &(*srv)->next;
+    }
 }
 
 PeerSelector::PeerSelector():
@@ -1170,17 +1223,10 @@ PeerSelector::callback(CachePeer *peer, const hier_code code)
 InstanceIdDefinitions(PeerSelector, "PeerSelector");
 
 ping_data::ping_data() :
-    reqnum(0),
     n_sent(0),
     n_recv(0),
-    n_mcast_replies_expect(0),
-    n_parent_replies_expect(0),
-    n_sibling_replies_expect(0),
     n_replies_expected(0),
     timeout(0),
-    mcast_rtt(0),
-    parent_rtt(0),
-    sibling_rtt(0),
     timedout(0),
     w_rtt(0),
     p_rtt(0)
