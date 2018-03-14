@@ -26,7 +26,7 @@ class Config
 public:
     Config() = default;
     explicit Config(Config &&) = default;
-    ~Config() { assert(!schemeAccess); }
+    ~Config() { /* XXX: Bug 4832: assert(!schemeAccess); */ }
 
     /// set of auth_params directives
     Auth::ConfigVector schemes;
