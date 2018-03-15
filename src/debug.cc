@@ -48,6 +48,7 @@ int Debug::level;
 int Debug::sectionLevel;
 char *Debug::cache_log = NULL;
 int Debug::rotateNumber = -1;
+bool Debug::ForceAlert = false;
 FILE *debug_log = NULL;
 static char *debug_log_file = NULL;
 static int Ctx_Lock = 0;
@@ -169,13 +170,14 @@ _db_print_stderr(const char *format, va_list args)
 static void
 _db_print_syslog(const char *format, va_list args)
 {
-    /* level 0,1 go to syslog */
+    if (!Debug::ForceAlert) {
+        if (!Debug::log_syslog)
+            return;
 
-    if (Debug::level > 1)
-        return;
-
-    if (!Debug::log_syslog)
-        return;
+        // only levels 0 and 1 go to syslog
+        if (Debug::level > 1)
+            return;
+    }
 
     char tmpbuf[BUFSIZ];
     tmpbuf[0] = '\0';
@@ -184,7 +186,8 @@ _db_print_syslog(const char *format, va_list args)
 
     tmpbuf[BUFSIZ - 1] = '\0';
 
-    syslog(Debug::level == 0 ? LOG_WARNING : LOG_NOTICE, "%s", tmpbuf);
+    syslog(Debug::ForceAlert ? LOG_ALERT : (Debug::level == 0 ? LOG_WARNING : LOG_NOTICE), "%s", tmpbuf);
+    Debug::ForceAlert = false;
 }
 #endif /* HAVE_SYSLOG */
 

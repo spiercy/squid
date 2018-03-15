@@ -368,12 +368,13 @@ PrintRusage(void)
 void
 death(int sig)
 {
+    Debug::ForceAlert = true;
     if (sig == SIGSEGV)
-        fprintf(debug_log, "FATAL: Received Segment Violation...dying.\n");
+        debugs(1, DBG_CRITICAL, "FATAL: Received Segment Violation...dying.");
     else if (sig == SIGBUS)
-        fprintf(debug_log, "FATAL: Received Bus Error...dying.\n");
+        debugs(1, DBG_CRITICAL, "FATAL: Received Bus Error...dying.");
     else
-        fprintf(debug_log, "FATAL: Received signal %d...dying.\n", sig);
+        debugs(1, DBG_CRITICAL, "FATAL: Received signal " << sig << "...dying.");
 
 #if PRINT_STACK_TRACE
 #if _SQUID_HPUX_

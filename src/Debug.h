@@ -86,6 +86,7 @@ public:
     static int override_X;
     static int log_stderr;
     static bool log_syslog;
+    static bool ForceAlert; ///< Hack: The next debugs() will be a syslog ALERT.
 
     static std::ostream &getDebugOut();
     static void finishDebug();
