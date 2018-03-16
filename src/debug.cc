@@ -26,6 +26,7 @@ bool Debug::log_syslog = false;
 int Debug::Levels[MAX_DEBUG_SECTIONS];
 char *Debug::cache_log = NULL;
 int Debug::rotateNumber = -1;
+bool Debug::ForceAlert = false;
 FILE *debug_log = NULL;
 static char *debug_log_file = NULL;
 static int Ctx_Lock = 0;
@@ -149,11 +150,13 @@ _db_print_syslog(const char *format, va_list args)
 {
     /* level 0,1 go to syslog */
 
-    if (Debug::Level() > 1)
-        return;
+    if (!Debug::ForceAlert) {
+        if (Debug::Level() > 1)
+            return;
 
-    if (!Debug::log_syslog)
-        return;
+        if (!Debug::log_syslog)
+            return;
+    }
 
     char tmpbuf[BUFSIZ];
     tmpbuf[0] = '\0';
@@ -162,7 +165,8 @@ _db_print_syslog(const char *format, va_list args)
 
     tmpbuf[BUFSIZ - 1] = '\0';
 
-    syslog(Debug::Level() == 0 ? LOG_WARNING : LOG_NOTICE, "%s", tmpbuf);
+    syslog(Debug::ForceAlert ? LOG_ALERT : (Debug::Level() == 0 ? LOG_WARNING : LOG_NOTICE), "%s", tmpbuf);
+    Debug::ForceAlert = false;
 }
 #endif /* HAVE_SYSLOG */
 
