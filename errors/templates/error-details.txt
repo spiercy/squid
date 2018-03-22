@@ -1,3 +1,11 @@
+name: SQUID_X509_V_ERR_OCSP_INVALID
+detail: "%ssl_error_descr: %ssl_subject"
+descr: "Invalid OCSP response"
+
+name: SQUID_X509_V_ERR_OCSP_STAPLE_NOT_SUPPORTED
+detail: "%ssl_error_descr: %ssl_subject"
+descr: "OCSP must staple is not supported"
+
 name: SQUID_X509_V_ERR_INFINITE_VALIDATION
 detail: "%ssl_error_descr: %ssl_subject"
 descr: "Cert validation infinite loop detected"

@@ -123,6 +123,9 @@ CreateSession(const Security::ContextPointer &ctx, const Comm::ConnectionPointer
         errCode = ERR_get_error();
         errAction = "failed to allocate handle";
     }
+    if (type == Security::Io::BIO_TO_SERVER) {
+        SSL_set_tlsext_status_type(session.get(), TLSEXT_STATUSTYPE_ocsp);
+    }
 #elif USE_GNUTLS
     gnutls_session_t tmp;
     errCode = gnutls_init(&tmp, static_cast<unsigned int>(type) | GNUTLS_NONBLOCK);

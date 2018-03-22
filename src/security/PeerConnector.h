@@ -168,8 +168,8 @@ protected:
     /// connection or an error if PeerConnector failed.
     void callBack();
 
-    /// If called the certificates validator will not used
-    void bypassCertValidator() {useCertValidator_ = false;}
+    /// Do not do any further certificate checks for errors
+    void bypassCertChecks() {bypassCertChecks_ = true;}
 
     /// Called after negotiation finishes to record connection details for
     /// logging
@@ -202,7 +202,7 @@ private:
     AsyncCall::Pointer closeHandler; ///< we call this when the connection closed
     time_t negotiationTimeout; ///< the SSL connection timeout to use
     time_t startTime; ///< when the peer connector negotiation started
-    bool useCertValidator_; ///< whether the certificate validator should bypassed
+    bool bypassCertChecks_; ///< whether to avoid any further check for certificate errors.
     /// The list of URLs where missing certificates should be downloaded.
     std::queue<SBuf> urlsOfMissingCerts;
     unsigned int certsDownloads; ///< the number of downloaded missing certificates

@@ -24,6 +24,8 @@
 #include "ssl/cert_validate_message.h"
 #include "ssl/Config.h"
 #include "ssl/helper.h"
+#include "ssl/support.h"
+#include <openssl/ocsp.h>
 #endif
 
 CBDATA_NAMESPACED_CLASS_INIT(Security, PeerConnector);
@@ -35,7 +37,7 @@ Security::PeerConnector::PeerConnector(const Comm::ConnectionPointer &aServerCon
     callback(aCallback),
     negotiationTimeout(timeout),
     startTime(squid_curtime),
-    useCertValidator_(true),
+    bypassCertChecks_(false),
     certsDownloads(0)
 {
     debugs(83, 5, "Security::PeerConnector constructed, this=" << (void*)this);
@@ -222,8 +224,30 @@ Security::PeerConnector::negotiate()
 bool
 Security::PeerConnector::sslFinalized()
 {
+    if (!bypassCertChecks_) {
+        const int fd = serverConnection()->fd;
+        Security::SessionPointer session(fd_table[fd].ssl);
+        int err = Ssl::OcspMustStapleVerify(session);
+        if (err == SQUID_X509_V_ERR_OCSP_STAPLE_NOT_SUPPORTED) {
+            debugs(83, 5, "OCSP not supported by server");
+            // Possible handling:
+            //  1) try download OCSP status from Issuer server if
+            //     this info provided by certificate
+            //  2) Configurable value to reject sites does not support
+            //     OCSP must staple
+            //  3) Let squid acls handle this error.
+        } else if (err != X509_V_OK) {
+            debugs(83, 5, "Wrong OCSP response verify failed");
+            ErrorState *anErr = new ErrorState(ERR_SECURE_CONNECT_FAIL, Http::scServiceUnavailable, request.getRaw());
+            noteNegotiationDone(anErr);
+            bail(anErr);
+            serverConn->close();
+            return true;
+        } //else verified!
+    }
+
 #if USE_OPENSSL
-    if (Ssl::TheConfig.ssl_crt_validator && useCertValidator_) {
+    if (Ssl::TheConfig.ssl_crt_validator && !bypassCertChecks_) {
         const int fd = serverConnection()->fd;
         Security::SessionPointer session(fd_table[fd].ssl);
 

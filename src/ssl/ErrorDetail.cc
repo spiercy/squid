@@ -25,6 +25,12 @@ typedef std::map<Security::ErrorCode, const SslErrorEntry *> SslErrors;
 SslErrors TheSslErrors;
 
 static SslErrorEntry TheSslErrorArray[] = {
+    {   SQUID_X509_V_ERR_OCSP_INVALID,
+        "SQUID_X509_V_ERR_OCSP_INVALID"
+    },
+    {   SQUID_X509_V_ERR_OCSP_STAPLE_NOT_SUPPORTED,
+        "SQUID_X509_V_ERR_OCSP_STAPLE_NOT_SUPPORTED"
+    },
     {   SQUID_X509_V_ERR_INFINITE_VALIDATION,
         "SQUID_X509_V_ERR_INFINITE_VALIDATION"
     },

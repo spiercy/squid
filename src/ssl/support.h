@@ -28,6 +28,7 @@
 #if HAVE_OPENSSL_ENGINE_H
 #include <openssl/engine.h>
 #endif
+#include <openssl/ocsp.h>
 #include <queue>
 #include <map>
 
@@ -37,6 +38,8 @@
  */
 
 // Custom SSL errors; assumes all official errors are positive
+#define SQUID_X509_V_ERR_OCSP_INVALID -6
+#define SQUID_X509_V_ERR_OCSP_STAPLE_NOT_SUPPORTED -5
 #define SQUID_X509_V_ERR_INFINITE_VALIDATION -4
 #define SQUID_X509_V_ERR_CERT_CHANGE -3
 #define SQUID_ERR_SSL_HANDSHAKE -2
@@ -325,6 +328,15 @@ void InRamCertificateDbKey(const Ssl::CertificateProperties &certProperties, SBu
   TODO: Add support for reading from `buf`.
  */
 BIO *BIO_new_SBuf(SBuf *buf);
+
+/**
+   \ingroup ServerProtocolSSLAPI
+   Does OCSP must staple related checks. The errors attached to session error reporting
+   mechanism ( ssl_ex_index_ssl_errors, ssl_ex_index_ssl_error_detail)
+   \return  X509_V_OK if no error found, SQUID_X509_V_ERR_OCSP_STAPLE_NOT_SUPPORTED if the
+   OCSP must-staple  is not supported or the error.
+ */
+int OcspMustStapleVerify(Security::SessionPointer &session);
 } //namespace Ssl
 
 #if _SQUID_WINDOWS_

@@ -239,6 +239,75 @@ static inline X509 *X509_STORE_CTX_get0_cert(X509_STORE_CTX *ctx)
 }
 #endif
 
+static
+char *
+certificateSubject(const Security::CertPointer &cert)
+{
+    static char buffer[1024];
+    buffer[0] = '\0';
+    X509_NAME_oneline(X509_get_subject_name(cert.get()), buffer, sizeof(buffer));
+    return buffer;
+}
+
+static
+bool
+checkAndAccountSessionError(SSL *ssl, int error_no,  const Security::CertPointer &peerCert,  const Security::CertPointer &brokenCert, int depth)
+{
+    bool bypass = false;
+    ACLChecklist *check = (ACLChecklist*)SSL_get_ex_data(ssl, ssl_ex_index_cert_error_check);
+    Security::CertErrors *errs = static_cast<Security::CertErrors *>(SSL_get_ex_data(ssl, ssl_ex_index_ssl_errors));
+
+    Security::CertError certErr(error_no, brokenCert ? brokenCert : peerCert, depth);
+    if (!errs) {
+        errs = new Security::CertErrors(certErr);
+        if (!SSL_set_ex_data(ssl, ssl_ex_index_ssl_errors,  (void *)errs)) {
+            debugs(83, 2, "Failed to set ssl error_no: Certificate " << certificateSubject(peerCert));
+            delete errs;
+            errs = NULL;
+        }
+    } else // remember another error number
+        errs->push_back_unique(certErr);
+
+    if (const char *err_descr = Ssl::GetErrorDescr(error_no))
+        debugs(83, 5, err_descr << ": " << certificateSubject(peerCert));
+    else
+        debugs(83, DBG_IMPORTANT, "SSL unknown certificate error " << error_no << " in " << certificateSubject(peerCert));
+
+    // Check if the certificate error can be bypassed.
+    // Infinity validation loop errors can not bypassed.
+    if (error_no != SQUID_X509_V_ERR_INFINITE_VALIDATION) {
+        if (check) {
+            ACLFilledChecklist *filledCheck = Filled(check);
+            assert(!filledCheck->sslErrors);
+            filledCheck->sslErrors = new Security::CertErrors(certErr);
+            filledCheck->serverCert = peerCert;
+            if (check->fastCheck().allowed()) {
+                debugs(83, 3, "bypassing SSL error " << error_no << " in " << certificateSubject(peerCert));
+                bypass = true;
+            } else {
+                debugs(83, 5, "confirming SSL error " << error_no);
+            }
+            delete filledCheck->sslErrors;
+            filledCheck->sslErrors = NULL;
+            filledCheck->serverCert.reset();
+        }
+        // If the certificate validator is used then we need to allow all errors and
+        // pass them to certficate validator for more processing
+        else if (Ssl::TheConfig.ssl_crt_validator)
+            bypass = true;
+    }
+
+    if (!bypass && !SSL_get_ex_data(ssl, ssl_ex_index_ssl_error_detail) ) {
+        auto *errDetail = new Ssl::ErrorDetail(error_no, peerCert.get(), brokenCert.get());
+        if (!SSL_set_ex_data(ssl, ssl_ex_index_ssl_error_detail, errDetail)) {
+            debugs(83, 2, "Failed to set Ssl::ErrorDetail. Certificate " << certificateSubject(peerCert));
+            delete errDetail;
+        }
+    }
+
+    return bypass;
+}
+
 /// \ingroup ServerProtocolSSLInternal
 static int
 ssl_verify_cb(int ok, X509_STORE_CTX * ctx)
@@ -246,17 +315,14 @@ ssl_verify_cb(int ok, X509_STORE_CTX * ctx)
     // preserve original ctx->error before SSL_ calls can overwrite it
     Security::ErrorCode error_no = ok ? SSL_ERROR_NONE : X509_STORE_CTX_get_error(ctx);
 
-    char buffer[256] = "";
     SSL *ssl = (SSL *)X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
     SSL_CTX *sslctx = SSL_get_SSL_CTX(ssl);
     SBuf *server = (SBuf *)SSL_get_ex_data(ssl, ssl_ex_index_server);
-    void *dont_verify_domain = SSL_CTX_get_ex_data(sslctx, ssl_ctx_ex_index_dont_verify_domain);
-    ACLChecklist *check = (ACLChecklist*)SSL_get_ex_data(ssl, ssl_ex_index_cert_error_check);
     X509 *peeked_cert = (X509 *)SSL_get_ex_data(ssl, ssl_ex_index_ssl_peeked_cert);
     Security::CertPointer peer_cert;
     peer_cert.resetAndLock(X509_STORE_CTX_get0_cert(ctx));
-
-    X509_NAME_oneline(X509_get_subject_name(peer_cert.get()), buffer, sizeof(buffer));
+    Security::CertPointer current_cert;
+    current_cert.resetAndLock(X509_STORE_CTX_get_current_cert(ctx));
 
     // detect infinite loops
     uint32_t *validationCounter = static_cast<uint32_t *>(SSL_get_ex_data(ssl, ssl_ex_index_ssl_validation_counter));
@@ -272,16 +338,17 @@ ssl_verify_cb(int ok, X509_STORE_CTX * ctx)
         ok = 0; // or the validation loop will never stop
         error_no = SQUID_X509_V_ERR_INFINITE_VALIDATION;
         debugs(83, 2, "SQUID_X509_V_ERR_INFINITE_VALIDATION: " <<
-               *validationCounter << " iterations while checking " << buffer);
+               *validationCounter << " iterations while checking " << certificateSubject(peer_cert));
     }
 
     if (ok) {
-        debugs(83, 5, "SSL Certificate signature OK: " << buffer);
+        debugs(83, 5, "SSL Certificate signature OK: " << certificateSubject(peer_cert));
 
         // Check for domain mismatch only if the current certificate is the peer certificate.
-        if (!dont_verify_domain && server && peer_cert.get() == X509_STORE_CTX_get_current_cert(ctx)) {
+        void *dont_verify_domain = SSL_CTX_get_ex_data(sslctx, ssl_ctx_ex_index_dont_verify_domain);
+        if (!dont_verify_domain && server && peer_cert.get() == current_cert.get()) {
             if (!Ssl::checkX509ServerValidity(peer_cert.get(), server->c_str())) {
-                debugs(83, 2, "SQUID_X509_V_ERR_DOMAIN_MISMATCH: Certificate " << buffer << " does not match domainname " << server);
+                debugs(83, 2, "SQUID_X509_V_ERR_DOMAIN_MISMATCH: Certificate " << certificateSubject(peer_cert) << " does not match domainname " << server);
                 ok = 0;
                 error_no = SQUID_X509_V_ERR_DOMAIN_MISMATCH;
             }
@@ -291,59 +358,15 @@ ssl_verify_cb(int ok, X509_STORE_CTX * ctx)
     if (ok && peeked_cert) {
         // Check whether the already peeked certificate matches the new one.
         if (X509_cmp(peer_cert.get(), peeked_cert) != 0) {
-            debugs(83, 2, "SQUID_X509_V_ERR_CERT_CHANGE: Certificate " << buffer << " does not match peeked certificate");
+            debugs(83, 2, "SQUID_X509_V_ERR_CERT_CHANGE: Certificate " << certificateSubject(peer_cert) << " does not match peeked certificate");
             ok = 0;
             error_no =  SQUID_X509_V_ERR_CERT_CHANGE;
         }
     }
 
     if (!ok) {
-        Security::CertPointer broken_cert;
-        broken_cert.resetAndLock(X509_STORE_CTX_get_current_cert(ctx));
-        if (!broken_cert)
-            broken_cert = peer_cert;
-
-        Security::CertErrors *errs = static_cast<Security::CertErrors *>(SSL_get_ex_data(ssl, ssl_ex_index_ssl_errors));
         const int depth = X509_STORE_CTX_get_error_depth(ctx);
-        if (!errs) {
-            errs = new Security::CertErrors(Security::CertError(error_no, broken_cert, depth));
-            if (!SSL_set_ex_data(ssl, ssl_ex_index_ssl_errors,  (void *)errs)) {
-                debugs(83, 2, "Failed to set ssl error_no in ssl_verify_cb: Certificate " << buffer);
-                delete errs;
-                errs = NULL;
-            }
-        } else // remember another error number
-            errs->push_back_unique(Security::CertError(error_no, broken_cert, depth));
-
-        if (const char *err_descr = Ssl::GetErrorDescr(error_no))
-            debugs(83, 5, err_descr << ": " << buffer);
-        else
-            debugs(83, DBG_IMPORTANT, "SSL unknown certificate error " << error_no << " in " << buffer);
-
-        // Check if the certificate error can be bypassed.
-        // Infinity validation loop errors can not bypassed.
-        if (error_no != SQUID_X509_V_ERR_INFINITE_VALIDATION) {
-            if (check) {
-                ACLFilledChecklist *filledCheck = Filled(check);
-                assert(!filledCheck->sslErrors);
-                filledCheck->sslErrors = new Security::CertErrors(Security::CertError(error_no, broken_cert));
-                filledCheck->serverCert = peer_cert;
-                if (check->fastCheck().allowed()) {
-                    debugs(83, 3, "bypassing SSL error " << error_no << " in " << buffer);
-                    ok = 1;
-                } else {
-                    debugs(83, 5, "confirming SSL error " << error_no);
-                }
-                delete filledCheck->sslErrors;
-                filledCheck->sslErrors = NULL;
-                filledCheck->serverCert.reset();
-            }
-            // If the certificate validator is used then we need to allow all errors and
-            // pass them to certficate validator for more processing
-            else if (Ssl::TheConfig.ssl_crt_validator) {
-                ok = 1;
-            }
-        }
+        ok = checkAndAccountSessionError(ssl, error_no, peer_cert, current_cert, depth) ? 1 : 0;
     }
 
     if (Ssl::TheConfig.ssl_crt_validator) {
@@ -352,23 +375,6 @@ ssl_verify_cb(int ok, X509_STORE_CTX * ctx)
             STACK_OF(X509) *certStack = X509_STORE_CTX_get1_chain(ctx);
             if (certStack && !SSL_set_ex_data(ssl, ssl_ex_index_ssl_cert_chain, certStack))
                 sk_X509_pop_free(certStack, X509_free);
-        }
-    }
-
-    if (!ok && !SSL_get_ex_data(ssl, ssl_ex_index_ssl_error_detail) ) {
-
-        // Find the broken certificate. It may be intermediate.
-        Security::CertPointer broken_cert(peer_cert); // reasonable default if search fails
-        // Our SQUID_X509_V_ERR_DOMAIN_MISMATCH implies peer_cert is at fault.
-        if (error_no != SQUID_X509_V_ERR_DOMAIN_MISMATCH) {
-            if (auto *last_used_cert = X509_STORE_CTX_get_current_cert(ctx))
-                broken_cert.resetAndLock(last_used_cert);
-        }
-
-        auto *errDetail = new Ssl::ErrorDetail(error_no, peer_cert.get(), broken_cert.get());
-        if (!SSL_set_ex_data(ssl, ssl_ex_index_ssl_error_detail, errDetail)) {
-            debugs(83, 2, "Failed to set Ssl::ErrorDetail in ssl_verify_cb: Certificate " << buffer);
-            delete errDetail;
         }
     }
 
@@ -1338,6 +1344,101 @@ BIO *Ssl::BIO_new_SBuf(SBuf *buf)
     BIO_set_data(bio, buf);
     BIO_set_init(bio, 1);
     return bio;
+}
+
+static int
+doOcspResponseVerify(OCSP_RESPONSE *ocspResponse, Security::SessionPointer &session)
+{
+    // print details
+    if (Debug::Enabled(83, 8)) {
+        SBuf ocspStatusStr;
+        Ssl::BIO_Pointer bio(Ssl::BIO_new_SBuf(&ocspStatusStr));
+        OCSP_RESPONSE_print(bio.get(), ocspResponse, 0);
+        debugs(83, 8, "OCSP response found: " << ocspStatusStr);
+    }
+
+    int ocspStatus = OCSP_response_status(ocspResponse);
+    if (ocspStatus != OCSP_RESPONSE_STATUS_SUCCESSFUL) {
+        debugs(83, 5, "OCSP status not OK");
+        return SQUID_X509_V_ERR_OCSP_INVALID; // REVOKED?
+    }
+
+    typedef std::unique_ptr<OCSP_BASICRESP, HardFun<void, OCSP_BASICRESP*, &OCSP_BASICRESP_free>> OCSP_BASICRESP_Pointer;
+    OCSP_BASICRESP_Pointer basicResponse(OCSP_response_get1_basic(ocspResponse));
+    if (!basicResponse) {
+        debugs(83, 5, "Invalid OCSP response!");
+        return SQUID_X509_V_ERR_OCSP_INVALID; //Invalid OCSP response?
+    }
+
+    SSL_CTX *ctx = SSL_get_SSL_CTX(session.get());
+    //  verify basic response.
+    STACK_OF(X509) *chain = SSL_get_peer_cert_chain(session.get());
+    // XXX: In the case of OpenSSL-1.0.2a and earlier where an
+    // intermediate certificate is used to sign server certificate and
+    // OCSP response (must have the same issuer),  we need to add the
+    // intermediate certificate to OCSP basic response using the
+    // OCSP_basic_add1_cert(basicResponse, issuer)
+
+    X509_STORE *store = SSL_CTX_get_cert_store(ctx);
+    if(OCSP_basic_verify(basicResponse.get(), chain, store, 0) <= 0) {
+        debugs(83, 2, "OCSP response verification failed");
+        return SQUID_X509_V_ERR_OCSP_INVALID; // Invalid OCSP response?
+    }
+
+    debugs(83, 5, "OCSP response verified!");
+    for(int i = 0; i < OCSP_resp_count(basicResponse.get()); i++) {
+        OCSP_SINGLERESP *single = OCSP_resp_get0(basicResponse.get(), i);
+        if(!single)
+            continue;
+        ASN1_GENERALIZEDTIME *rev, *thisupd, *nextupd;
+        int crlReason;
+        int certStatus = OCSP_single_get0_status(single, &crlReason, &rev,
+                                                 &thisupd, &nextupd);
+        debugs(83, 2, "Certificate status:" << OCSP_cert_status_str(certStatus) << "(" << certStatus << ")");
+        if (!OCSP_check_validity(thisupd, nextupd, 300L, -1L)) {
+            debugs(83, 2, "OCSP response has expired");
+            return SQUID_X509_V_ERR_OCSP_INVALID; // OCSP expired?
+        }
+
+        if (certStatus == V_OCSP_CERTSTATUS_REVOKED) {
+            debugs(83, 2, "Certificate revoked, reason: " << OCSP_crl_reason_str(crlReason));
+            return X509_V_ERR_CERT_REVOKED;
+        } else if (certStatus != V_OCSP_CERTSTATUS_GOOD) {
+            debugs(83, 2, "Certificate verification failed for unknown reason");
+            return SQUID_X509_V_ERR_OCSP_INVALID; // Unknown OCSP error?
+        }
+    }
+    return X509_V_OK;
+}
+
+int
+Ssl::OcspMustStapleVerify(Security::SessionPointer &session)
+{
+    const unsigned char *p;
+    int len = SSL_get_tlsext_status_ocsp_resp(session.get(), &p);
+    if (!p) {
+        // Should this error must checked with acl checks and reported to
+        // the client and logs? In this case should passed to
+        // checkAndAccountSessionError()
+        return SQUID_X509_V_ERR_OCSP_STAPLE_NOT_SUPPORTED;
+    }
+
+    int err = X509_V_OK;
+    if (OCSP_RESPONSE *ocspResponse = d2i_OCSP_RESPONSE(NULL, &p, len)) {
+        err =  doOcspResponseVerify(ocspResponse, session);
+        OCSP_RESPONSE_free(ocspResponse);
+    } else
+        err = SQUID_X509_V_ERR_OCSP_INVALID;
+
+    if (err != X509_V_OK) {
+        Security::CertPointer peerCert;
+        Security::CertPointer nil;
+        peerCert.resetAndLock(SSL_get_peer_certificate(session.get()));
+        if (checkAndAccountSessionError(session.get(), err, peerCert, nil, 0))
+            err = X509_V_OK; //ignore error
+    }
+
+    return err;
 }
 
 #endif /* USE_OPENSSL */
