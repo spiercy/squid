@@ -795,7 +795,7 @@ peerDigestLookup(CachePeer * p, PeerSelector * ps)
 
 /* select best CachePeer based on cache digests */
 void
-neighborsDigestSelect(PeerSelector *selector)
+neighborsDigestSelect(PeerSelector *ps)
 {
 #if USE_CACHE_DIGESTS
     assert(ps);
@@ -818,9 +818,6 @@ neighborsDigestSelect(PeerSelector *selector)
         if (!p)
             p = Config.peers;
 
-        if (i == 1)
-            first_ping = p;
-
         lookup = peerDigestLookup(p, ps);
 
         if (lookup == LOOKUP_NONE)
@@ -837,6 +834,9 @@ neighborsDigestSelect(PeerSelector *selector)
 
         sortedPeers.push_back(std::pair<double, CachePeer *>(p_rtt, p));
     }
+
+    if ((first_ping = first_ping->next) == NULL)
+        first_ping = Config.peers;
 
     if (sortedPeers.size() == 0 && choice_count != 0) {
         // This is may cause some LOOKUP_NONE be logged

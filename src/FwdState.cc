@@ -953,7 +953,7 @@ FwdState::connectStart()
 
     GetMarkingsToServer(request.getRaw(), *serverDestinations[0]);
 
-    debugs(17, 3, HERE << "trying connect to " << serverDestinations[0]);
+    debugs(17, 3, "trying connect to " << serverDestinations[0]);
 
     calls.connector = commCbCall(17,3, "fwdConnectDoneWrapper", CommConnectCbPtrFun(fwdConnectDoneWrapper, this));
     const time_t connTimeout = serverDestinations[0]->connectTimeout(start_t);
