@@ -977,8 +977,7 @@ FwdState::connectStart()
             ch.syncAle(request, nullptr);
             retriable = ch.fastCheck().allowed();
         }
-        if (!retriable)
-            cs->notRetriable();
+        cs->setRetriable(retriable);
         cs->allowPersistent(pconnRace != raceHappened);
         GetMarkings(request, cs->useTos, cs->useNfmark);
         connOpener = cs;
