@@ -484,21 +484,30 @@ StoreEntry::unlock(const char *context)
     if (lock_count)
         return (int) lock_count;
 
-    if (store_status == STORE_PENDING)
-        setReleaseFlag();
+    abandon(context);
+    return 0;
+}
+
+/// keep the unlocked StoreEntry object in the local store_table (if needed) or
+/// delete it (otherwise)
+void
+StoreEntry::doAbandon(const char *context)
+{
+    debugs(20, 5, *this << " via " << (context ? context : "somebody"));
+    assert(!locked());
 
     assert(storePendingNClients(this) == 0);
 
     if (EBIT_TEST(flags, RELEASE_REQUEST)) {
         this->release();
-        return 0;
+        return;
     }
 
     if (EBIT_TEST(flags, KEY_PRIVATE))
         debugs(20, DBG_IMPORTANT, "WARNING: " << __FILE__ << ":" << __LINE__ << ": found KEY_PRIVATE");
 
     Store::Root().handleIdleEntry(*this); // may delete us
-    return 0;
+    return;
 }
 
 void
@@ -2038,6 +2047,30 @@ StoreEntry::disk() const
     const RefCount<Store::Disk> &sd = INDEXSD(swap_dirn);
     assert(sd);
     return *sd;
+}
+
+bool
+StoreEntry::hasDisk(const sdirno dirn, const sfileno filen) const
+{
+    checkDisk();
+    if (dirn < 0 && filen < 0)
+        return swap_dirn >= 0;
+    Must(dirn >= 0);
+    const bool matchingDisk = (swap_dirn == dirn);
+    return filen < 0 ? matchingDisk : (matchingDisk && swap_filen == filen);
+}
+
+void
+StoreEntry::checkDisk() const
+{
+    const bool ok = (swap_dirn < 0) == (swap_filen < 0) &&
+                    (swap_dirn < 0) == (swap_status == SWAPOUT_NONE) &&
+                    (swap_dirn < 0 || swap_dirn < Config.cacheSwap.n_configured);
+
+    if (!ok) {
+        debugs(88, DBG_IMPORTANT, "ERROR: inconsistent disk entry state " << *this);
+        throw std::runtime_error("inconsistent disk entry state ");
+    }
 }
 
 /*
