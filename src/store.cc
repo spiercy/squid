@@ -1862,7 +1862,7 @@ StoreEntry::startWriting()
     assert(rep);
 
     buffer();
-    rep->packHeadersInto(this);
+    rep->packHeadersIntoSlow(*this);
     mem_obj->markEndOfReplyHeaders();
     EBIT_CLR(flags, ENTRY_FWD_HDR_WAIT);
 
