@@ -3717,7 +3717,7 @@ clientAclChecklistFill(ACLFilledChecklist &checklist, ClientHttpRequest *http)
     ConnStateData * conn = http->getConn();
     const char *ident = (cbdataReferenceValid(conn) &&
                          conn && conn->clientConnection) ?
-                         conn->clientConnection->rfc931 : dash_str;
+                        conn->clientConnection->rfc931 : dash_str;
     checklist.setIdent(ident);
 }
 

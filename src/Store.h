@@ -91,9 +91,9 @@ public:
     void clearPublicKeyScope();
     /// \returns public key (if the entry has it) or nil (otherwise)
     const cache_key *publicKey() const {
-       return (!EBIT_TEST(flags, KEY_PRIVATE)) ?
-              reinterpret_cast<const cache_key*>(key): // may be nil
-              nullptr;
+        return (!EBIT_TEST(flags, KEY_PRIVATE)) ?
+               reinterpret_cast<const cache_key*>(key): // may be nil
+               nullptr;
     }
     void setPrivateKey();
     void expireNow();
@@ -240,7 +240,6 @@ public:
     /// Unlike release(), does not trigger eviction of underlying store entries,
     /// but, unlike destroyStoreEntry(), does honor an earlier release request.
     void abandon(const char *context) { if (!locked()) doAbandon(context); }
-
 
 #if USE_ADAPTATION
     /// call back producer when more buffer space is available
