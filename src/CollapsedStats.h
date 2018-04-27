@@ -12,14 +12,14 @@
 /// Stats how many collapsed requests a transaction client participated in.
 class CollapsedStats
 {
-    public:
+public:
 
-        bool isCollapsed() const { return collapsed || revalidationCollapsed; }
+    bool isCollapsed() const { return collapsed || revalidationCollapsed; }
 
-        /// common CF counter
-        int collapsed = 0;
-        /// revalidation CF counter
-        int revalidationCollapsed = 0;
+    /// common CF counter
+    int collapsed = 0;
+    /// revalidation CF counter
+    int revalidationCollapsed = 0;
 };
 
 #endif
