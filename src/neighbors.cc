@@ -660,7 +660,7 @@ neighborsUdpPing(HttpRequest * request,
                 if (p->icp.port == echo_port) {
                     debugs(15, 4, "neighborsUdpPing: Looks like a dumb cache, send DECHO ping");
                     query = _icp_common_t::createMessage(ICP_DECHO, 0, url, reqnum, 0);
-                    icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LOG_ICP_QUERY, 0, nullptr);
+                    icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LogTags(LOG_ICP_QUERY), 0, nullptr);
                 } else {
                     flags = 0;
 
@@ -670,7 +670,7 @@ neighborsUdpPing(HttpRequest * request,
 
                     query = _icp_common_t::createMessage(ICP_QUERY, flags, url, reqnum, 0);
 
-                    icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LOG_ICP_QUERY, 0, nullptr);
+                    icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LogTags(LOG_ICP_QUERY), 0, nullptr);
                 }
             }
         }
@@ -1426,7 +1426,7 @@ peerCountMcastPeersStart(void *data)
     p->mcast.id = mem->id;
     reqnum = icpSetCacheKey((const cache_key *)fake->key);
     query = _icp_common_t::createMessage(ICP_QUERY, 0, url, reqnum, 0);
-    icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LOG_ICP_QUERY, 0, nullptr);
+    icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LogTags(LOG_ICP_QUERY), 0, nullptr);
     fake->ping_status = PING_WAITING;
     eventAdd("peerCountMcastPeersDone",
              peerCountMcastPeersDone,

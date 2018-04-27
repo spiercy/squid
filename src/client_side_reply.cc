@@ -279,7 +279,7 @@ clientReplyContext::processExpired()
         return;
     }
 
-    http->logType = LOG_TCP_REFRESH;
+    http->logType.assign(LOG_TCP_REFRESH, collapsedStats);
     http->request->flags.refresh = true;
 #if STORE_CLIENT_LIST_DEBUG
     /* Prevent a race with the store client memory free routines
@@ -298,6 +298,7 @@ clientReplyContext::processExpired()
     if (collapsingAllowed) {
         if (const auto e = storeGetPublicByRequest(http->request, ksRevalidation)) {
             if (e->collapsingInitiator() && mayCollapseOn(*e)) {
+                collapsedStats.revalidationCollapsed++;
                 entry = e;
                 entry->lock("clientReplyContext::processExpired#alreadyRevalidating");
             } else {
@@ -427,7 +428,7 @@ clientReplyContext::handleIMSReply(StoreIOBuffer result)
         debugs(88, 3, "CF slave hit private " << *http->storeEntry() << ". MISS");
         // restore context to meet processMiss() expectations
         restoreState();
-        http->logType = LOG_TCP_MISS;
+        http->logType.assign(LOG_TCP_MISS, collapsedStats);
         processMiss();
         return;
     }
@@ -440,7 +441,7 @@ clientReplyContext::handleIMSReply(StoreIOBuffer result)
     // request to origin was aborted
     if (EBIT_TEST(http->storeEntry()->flags, ENTRY_ABORTED)) {
         debugs(88, 3, "request to origin aborted '" << http->storeEntry()->url() << "', sending old entry to client");
-        http->logType = LOG_TCP_REFRESH_FAIL_OLD;
+        http->logType.assign(LOG_TCP_REFRESH_FAIL_OLD, collapsedStats);
         sendClientOldEntry();
     }
 
@@ -448,7 +449,7 @@ clientReplyContext::handleIMSReply(StoreIOBuffer result)
 
     // origin replied 304
     if (status == Http::scNotModified) {
-        http->logType = LOG_TCP_REFRESH_UNMODIFIED;
+        http->logType.assign(LOG_TCP_REFRESH_UNMODIFIED, collapsedStats);
         http->request->flags.staleIfHit = false; // old_entry is no longer stale
 
         // update headers on existing entry
@@ -480,7 +481,7 @@ clientReplyContext::handleIMSReply(StoreIOBuffer result)
                    old_rep->sline.status() << ") to client");
             sendClientOldEntry();
         } else {
-            http->logType = LOG_TCP_REFRESH_MODIFIED;
+            http->logType.assign(LOG_TCP_REFRESH_MODIFIED, collapsedStats);
             debugs(88, 3, "origin replied " << status <<
                    ", replacing existing entry and forwarding to client");
 
@@ -493,13 +494,13 @@ clientReplyContext::handleIMSReply(StoreIOBuffer result)
 
     // origin replied with an error
     else if (http->request->flags.failOnValidationError) {
-        http->logType = LOG_TCP_REFRESH_FAIL_ERR;
+        http->logType.assign(LOG_TCP_REFRESH_FAIL_ERR, collapsedStats);
         debugs(88, 3, "origin replied with error " << status <<
                ", forwarding to client due to fail_on_validation_err");
         sendClientUpstreamResponse();
     } else {
         // ignore and let client have old entry
-        http->logType = LOG_TCP_REFRESH_FAIL_OLD;
+        http->logType.assign(LOG_TCP_REFRESH_FAIL_OLD, collapsedStats);
         debugs(88, 3, "origin replied with error " <<
                status << ", sending old entry (" << old_rep->sline.status() << ") to client");
         sendClientOldEntry();
@@ -547,7 +548,7 @@ clientReplyContext::cacheHit(StoreIOBuffer result)
     } else if (result.flags.error) {
         /* swap in failure */
         debugs(88, 3, "clientCacheHit: swapin failure for " << http->uri);
-        http->logType = LOG_TCP_SWAPFAIL_MISS;
+        http->logType.assign(LOG_TCP_SWAPFAIL_MISS, collapsedStats);
         removeClientStoreReference(&sc, http);
         processMiss();
         return;
@@ -558,7 +559,7 @@ clientReplyContext::cacheHit(StoreIOBuffer result)
     // happen to regular hits because we are called asynchronously.
     if (EBIT_TEST(e->flags, KEY_PRIVATE)) {
         debugs(88, 3, "unsharable " << *e << ". MISS");
-        http->logType = LOG_TCP_MISS;
+        http->logType.assign(LOG_TCP_MISS, collapsedStats);
         processMiss();
         return;
     }
@@ -569,7 +570,7 @@ clientReplyContext::cacheHit(StoreIOBuffer result)
          * object
          */
         /* treat as a miss */
-        http->logType = LOG_TCP_MISS;
+        http->logType.assign(LOG_TCP_MISS, collapsedStats);
         processMiss();
         return;
     }
@@ -585,7 +586,7 @@ clientReplyContext::cacheHit(StoreIOBuffer result)
 
     if (http->request->storeId().cmp(e->mem_obj->storeId()) != 0) {
         debugs(33, DBG_IMPORTANT, "clientProcessHit: URL mismatch, '" << e->mem_obj->storeId() << "' != '" << http->request->storeId() << "'");
-        http->logType = LOG_TCP_MISS; // we lack a more precise LOG_*_MISS code
+        http->logType.assign(LOG_TCP_MISS, collapsedStats); // we lack a more precise LOG_*_MISS code
         processMiss();
         return;
     }
@@ -617,7 +618,7 @@ clientReplyContext::cacheHit(StoreIOBuffer result)
     case VARY_CANCEL:
         /* varyEvaluateMatch found a object loop. Process as miss */
         debugs(88, DBG_IMPORTANT, "clientProcessHit: Vary object loop!");
-        http->logType = LOG_TCP_MISS; // we lack a more precise LOG_*_MISS code
+        http->logType.assign(LOG_TCP_MISS, collapsedStats); // we lack a more precise LOG_*_MISS code
         processMiss();
         return;
     }
@@ -632,12 +633,12 @@ clientReplyContext::cacheHit(StoreIOBuffer result)
 
     if (e->checkNegativeHit() && !r->flags.noCacheHack()) {
         debugs(88, 5, "negative-HIT");
-        http->logType = LOG_TCP_NEGATIVE_HIT;
+        http->logType.assign(LOG_TCP_NEGATIVE_HIT, collapsedStats);
         sendMoreData(result);
         return;
     } else if (blockedHit()) {
         debugs(88, 5, "send_hit forces a MISS");
-        http->logType = LOG_TCP_MISS;
+        http->logType.assign(LOG_TCP_MISS, collapsedStats);
         processMiss();
         return;
     } else if (!http->flags.internal && refreshCheckHTTP(e, r)) {
@@ -661,7 +662,7 @@ clientReplyContext::cacheHit(StoreIOBuffer result)
              * modification time.
              * XXX: BUG 1890 objects without Date do not get one added.
              */
-            http->logType = LOG_TCP_MISS;
+            http->logType.assign(LOG_TCP_MISS, collapsedStats);
             processMiss();
         } else if (r->flags.noCache) {
             debugs(88, 3, "validate HIT object? NO. Client sent CC:no-cache. Do CLIENT_REFRESH_MISS");
@@ -669,7 +670,7 @@ clientReplyContext::cacheHit(StoreIOBuffer result)
              * This did not match a refresh pattern that overrides no-cache
              * we should honour the client no-cache header.
              */
-            http->logType = LOG_TCP_CLIENT_REFRESH_MISS;
+            http->logType.assign(LOG_TCP_CLIENT_REFRESH_MISS, collapsedStats);
             processMiss();
         } else if (r->url.getScheme() == AnyP::PROTO_HTTP) {
             debugs(88, 3, "validate HIT object? YES.");
@@ -684,7 +685,7 @@ clientReplyContext::cacheHit(StoreIOBuffer result)
              * We don't know how to re-validate other protocols. Handle
              * them as if the object has expired.
              */
-            http->logType = LOG_TCP_MISS;
+            http->logType.assign(LOG_TCP_MISS, collapsedStats);
             processMiss();
         }
         return;
@@ -701,13 +702,13 @@ clientReplyContext::cacheHit(StoreIOBuffer result)
 
 #if USE_DELAY_POOLS
     if (e->store_status != STORE_OK)
-        http->logType = LOG_TCP_MISS;
+        http->logType.assign(LOG_TCP_MISS, collapsedStats);
     else
 #endif
         if (e->mem_status == IN_MEMORY)
-            http->logType = LOG_TCP_MEM_HIT;
+            http->logType.assign(LOG_TCP_MEM_HIT, collapsedStats);
         else if (Config.onoff.offline)
-            http->logType = LOG_TCP_OFFLINE_HIT;
+            http->logType.assign(LOG_TCP_OFFLINE_HIT, collapsedStats);
 
     sendMoreData(result);
 }
@@ -769,7 +770,7 @@ clientReplyContext::processMiss()
 
         if (http->redirect.status) {
             HttpReply *rep = new HttpReply;
-            http->logType = LOG_TCP_REDIRECT;
+            http->logType.assign(LOG_TCP_REDIRECT, collapsedStats);
             http->storeEntry()->releaseRequest();
             rep->redirect(http->redirect.status, http->redirect.location);
             http->storeEntry()->replaceHttpReply(rep);
@@ -810,7 +811,7 @@ clientReplyContext::processConditional(StoreIOBuffer &result)
 
     if (e->getReply()->sline.status() != Http::scOkay) {
         debugs(88, 4, "Reply code " << e->getReply()->sline.status() << " != 200");
-        http->logType = LOG_TCP_MISS;
+        http->logType.assign(LOG_TCP_MISS, collapsedStats);
         processMiss();
         return true;
     }
@@ -937,6 +938,7 @@ clientReplyContext::purgeAllCached()
 void
 clientReplyContext::created(StoreEntry *newEntry)
 {
+    StoreClient::created(newEntry);
     if (lookingforstore == 1)
         purgeFoundGet(newEntry);
     else if (lookingforstore == 2)
@@ -974,7 +976,7 @@ clientReplyContext::purgeFoundObject(StoreEntry *entry)
     assert (entry && !entry->isNull());
 
     if (EBIT_TEST(entry->flags, ENTRY_SPECIAL)) {
-        http->logType = LOG_TCP_DENIED;
+        http->logType.assign(LOG_TCP_DENIED, collapsedStats);
         ErrorState *err = clientBuildError(ERR_ACCESS_DENIED, Http::scForbidden, NULL,
                                            http->getConn()->clientConnection->remote, http->request);
         startError(err);
@@ -991,7 +993,7 @@ clientReplyContext::purgeFoundObject(StoreEntry *entry)
 
     sc = storeClientListAdd(http->storeEntry(), this);
 
-    http->logType = LOG_TCP_HIT;
+    http->logType.assign(LOG_TCP_HIT, collapsedStats);
 
     reqofs = 0;
 
@@ -1012,7 +1014,7 @@ clientReplyContext::purgeRequest()
            Config2.onoff.enable_purge);
 
     if (!Config2.onoff.enable_purge) {
-        http->logType = LOG_TCP_DENIED;
+        http->logType.assign(LOG_TCP_DENIED, collapsedStats);
         ErrorState *err = clientBuildError(ERR_ACCESS_DENIED, Http::scForbidden, NULL, http->getConn()->clientConnection->remote, http->request);
         startError(err);
         return;
@@ -1030,7 +1032,7 @@ clientReplyContext::purgeRequest()
 void
 clientReplyContext::purgeDoMissPurge()
 {
-    http->logType = LOG_TCP_MISS;
+    http->logType.assign(LOG_TCP_MISS, collapsedStats);
     lookingforstore = 3;
     StoreEntry::getPublicByRequestMethod(this,http->request, Http::METHOD_GET);
 }
@@ -1723,7 +1725,7 @@ clientReplyContext::identifyFoundObject(StoreEntry *newEntry)
     if (NULL == http->storeEntry()) {
         /** \li If no StoreEntry object is current assume this object isn't in the cache set MISS*/
         debugs(85, 3, "StoreEntry is NULL -  MISS");
-        http->logType = LOG_TCP_MISS;
+        http->logType.assign(LOG_TCP_MISS, collapsedStats);
         doGetMoreData();
         return;
     }
@@ -1731,7 +1733,7 @@ clientReplyContext::identifyFoundObject(StoreEntry *newEntry)
     if (Config.onoff.offline) {
         /** \li If we are running in offline mode set to HIT */
         debugs(85, 3, "offline HIT " << *e);
-        http->logType = LOG_TCP_HIT;
+        http->logType.assign(LOG_TCP_HIT, collapsedStats);
         doGetMoreData();
         return;
     }
@@ -1740,7 +1742,7 @@ clientReplyContext::identifyFoundObject(StoreEntry *newEntry)
         /** \li If redirection status is True force this to be a MISS */
         debugs(85, 3, "REDIRECT status forced StoreEntry to NULL (no body on 3XX responses) " << *e);
         forgetHit();
-        http->logType = LOG_TCP_REDIRECT;
+        http->logType.assign(LOG_TCP_REDIRECT, collapsedStats);
         doGetMoreData();
         return;
     }
@@ -1748,7 +1750,7 @@ clientReplyContext::identifyFoundObject(StoreEntry *newEntry)
     if (!e->validToSend()) {
         debugs(85, 3, "!storeEntryValidToSend MISS " << *e);
         forgetHit();
-        http->logType = LOG_TCP_MISS;
+        http->logType.assign(LOG_TCP_MISS, collapsedStats);
         doGetMoreData();
         return;
     }
@@ -1756,7 +1758,7 @@ clientReplyContext::identifyFoundObject(StoreEntry *newEntry)
     if (EBIT_TEST(e->flags, ENTRY_SPECIAL)) {
         /* \li Special entries are always hits, no matter what the client says */
         debugs(85, 3, "ENTRY_SPECIAL HIT " << *e);
-        http->logType = LOG_TCP_HIT;
+        http->logType.assign(LOG_TCP_HIT, collapsedStats);
         doGetMoreData();
         return;
     }
@@ -1764,7 +1766,7 @@ clientReplyContext::identifyFoundObject(StoreEntry *newEntry)
     if (r->flags.noCache) {
         debugs(85, 3, "no-cache REFRESH MISS " << *e);
         forgetHit();
-        http->logType = LOG_TCP_CLIENT_REFRESH_MISS;
+        http->logType.assign(LOG_TCP_CLIENT_REFRESH_MISS, collapsedStats);
         doGetMoreData();
         return;
     }
@@ -1772,13 +1774,13 @@ clientReplyContext::identifyFoundObject(StoreEntry *newEntry)
     if (e->collapsingInitiator() && !mayCollapseOn(*e)) {
         debugs(85, 3, "prohibited CF MISS " << *e);
         forgetHit();
-        http->logType = LOG_TCP_MISS;
+        http->logType.assign(LOG_TCP_MISS, collapsedStats);
         doGetMoreData();
         return;
     }
 
     debugs(85, 3, "default HIT " << *e);
-    http->logType = LOG_TCP_HIT;
+    http->logType.assign(LOG_TCP_HIT, collapsedStats);
     doGetMoreData();
 }
 
@@ -1834,7 +1836,7 @@ clientGetMoreData(clientStreamNode * aNode, ClientHttpRequest * http)
         }
 
         /* continue forwarding, not finished yet. */
-        http->logType = LOG_TCP_MISS;
+        http->logType.assign(LOG_TCP_MISS, context->collapsed());
 
         context->doGetMoreData();
     } else
@@ -1983,7 +1985,7 @@ clientReplyContext::sendBodyTooLargeError()
 {
     Ip::Address tmp_noaddr;
     tmp_noaddr.setNoAddr(); // TODO: make a global const
-    http->logType = LOG_TCP_DENIED_REPLY;
+    http->logType.assign(LOG_TCP_DENIED_REPLY, collapsedStats);
     ErrorState *err = clientBuildError(ERR_TOO_BIG, Http::scForbidden, NULL,
                                        http->getConn() != NULL ? http->getConn()->clientConnection->remote : tmp_noaddr,
                                        http->request);
@@ -1997,7 +1999,7 @@ clientReplyContext::sendBodyTooLargeError()
 void
 clientReplyContext::sendPreconditionFailedError()
 {
-    http->logType = LOG_TCP_HIT;
+    http->logType.assign(LOG_TCP_HIT, collapsedStats);
     ErrorState *const err =
         clientBuildError(ERR_PRECONDITION_FAILED, Http::scPreconditionFailed,
                          NULL, http->getConn()->clientConnection->remote, http->request);
@@ -2016,9 +2018,9 @@ clientReplyContext::sendNotModified()
     // log as TCP_INM_HIT if code 304 generated for
     // If-None-Match request
     if (!http->request->flags.ims)
-        http->logType = LOG_TCP_INM_HIT;
+        http->logType.assign(LOG_TCP_INM_HIT, collapsedStats);
     else
-        http->logType = LOG_TCP_IMS_HIT;
+        http->logType.assign(LOG_TCP_IMS_HIT, collapsedStats);
     removeClientStoreReference(&sc, http);
     createStoreEntry(http->request->method, RequestFlags());
     e = http->storeEntry();
@@ -2104,7 +2106,7 @@ clientReplyContext::processReplyAccessResult(const allow_t &accessAllowed)
         err_type page_id;
         page_id = aclGetDenyInfoPage(&Config.denyInfoList, AclMatchedName, 1);
 
-        http->logType = LOG_TCP_DENIED_REPLY;
+        http->logType.assign(LOG_TCP_DENIED_REPLY, collapsedStats);
 
         if (page_id == ERR_NONE)
             page_id = ERR_ACCESS_DENIED;
