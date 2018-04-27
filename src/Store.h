@@ -89,6 +89,12 @@ public:
     /// releasing the old default-scope entry (if any).
     /// Does nothing if the existing public key already has default scope.
     void clearPublicKeyScope();
+    /// \returns public key (if the entry has it) or nil (otherwise)
+    const cache_key *publicKey() const {
+        return (!EBIT_TEST(flags, KEY_PRIVATE)) ?
+               reinterpret_cast<const cache_key*>(key): // may be nil
+               nullptr;
+    }
     void setPrivateKey();
     void expireNow();
     void releaseRequest();
@@ -151,6 +157,18 @@ public:
     /// the disk this entry is [being] cached on; asserts for entries w/o a disk
     Store::Disk &disk() const;
 
+    /// whether one of this StoreEntry owners has locked the corresponding
+    /// disk entry (at the specified disk entry coordinates, if any)
+    bool hasDisk(const sdirno dirn = -1, const sfileno filen = -1) const;
+    /// whether there is a corresponding locked transients table entry
+    bool hasTransients() const { return mem_obj && mem_obj->xitTable.index >= 0; }
+    /// whether there is a corresponding locked shared memory table entry
+    bool hasMemStore() const { return mem_obj && mem_obj->memCache.index >= 0; }
+
+    /// whether this is a collapsed forwarding-created public entry that still
+    /// has not received its response headers; new requests may collapse on it
+    bool collapsingInitiator() const;
+
     MemObject *mem_obj;
     RemovalPolicyNode repl;
     /* START OF ON-DISK STORE_META_STD TLV field */
@@ -184,9 +202,7 @@ public:
     static void getPublicByRequest(StoreClient * aClient, HttpRequest * request);
     static void getPublic(StoreClient * aClient, const char *uri, const HttpRequestMethod& method);
 
-    virtual bool isNull() {
-        return false;
-    };
+    virtual bool isNull() const { return false; } // TODO: Replace with nullptr.
 
     void *operator new(size_t byteCount);
     void operator delete(void *address);
@@ -212,7 +228,18 @@ public:
     /// update last reference timestamp and related Store metadata
     void touch();
 
+    /// One of the three methods to get rid of an unlocked StoreEntry object.
+    /// Removes all unlocked (and marks for eventual removal all locked) Store
+    /// entries, including attached and unattached entries that have our key.
+    /// Also destroys us if we are unlocked or makes us private otherwise.
+    /// TODO: remove virtual.
     virtual void release();
+
+    /// One of the three methods to get rid of an unlocked StoreEntry object.
+    /// May destroy this object if it is unlocked; does nothing otherwise.
+    /// Unlike release(), does not trigger eviction of underlying store entries,
+    /// but, unlike destroyStoreEntry(), does honor an earlier release request.
+    void abandon(const char *context) { if (!locked()) doAbandon(context); }
 
 #if USE_ADAPTATION
     /// call back producer when more buffer space is available
@@ -229,8 +256,11 @@ public:
 
 protected:
     void transientsAbandonmentCheck();
+    /// does nothing except throwing if disk-associated data members are inconsistent
+    void checkDisk() const;
 
 private:
+    void doAbandon(const char *context);
     bool checkTooBig() const;
     void forcePublicKey(const cache_key *newkey);
     void adjustVary();
@@ -257,9 +287,6 @@ class NullStoreEntry:public StoreEntry
 
 public:
     static NullStoreEntry *getInstance();
-    bool isNull() {
-        return true;
-    }
 
     const char *getMD5Text() const;
     HttpReply const *getReply() const { return NULL; }
@@ -267,6 +294,8 @@ public:
 
     bool isEmpty () const {return true;}
 
+    /* StoreEntry API */
+    virtual bool isNull() const { return true; }
     virtual size_t bytesWanted(Range<size_t> const aRange, bool) const { return aRange.end; }
 
     void operator delete(void *address);
@@ -354,6 +383,10 @@ void storeFsDone(void);
 void storeReplAdd(const char *, REMOVALPOLICYCREATE *);
 
 /// \ingroup StoreAPI
+/// One of the three methods to get rid of an unlocked StoreEntry object.
+/// This low-level method ignores lock()ing and release() promises. It never
+/// leaves the entry in the local store_table.
+/// TODO: Hide by moving its functionality into the StoreEntry destructor.
 extern FREE destroyStoreEntry;
 
 /// \ingroup StoreAPI
