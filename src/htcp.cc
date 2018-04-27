@@ -933,6 +933,7 @@ htcpSpecifier::checkHit()
 void
 htcpSpecifier::created(StoreEntry *e)
 {
+    StoreClient::created(e);
     StoreEntry *hit = nullptr;
 
     if (!e || e->isNull()) {
@@ -959,7 +960,7 @@ void
 htcpSpecifier::fillChecklist(ACLFilledChecklist &checklist) const
 {
     checklist.setRequest(request.getRaw());
-    htcpSyncAle(al, from, dhdr->opcode, LOG_TAG_NONE, uri);
+    htcpSyncAle(al, from, dhdr->opcode, LogTags(LOG_TAG_NONE), uri);
     checklist.al = al;
 }
 
@@ -1107,7 +1108,7 @@ htcpHandleTstRequest(htcpDataHeader * dhdr, char *buf, int sz, Ip::Address &from
 
     if (!s) {
         debugs(31, 3, "htcpHandleTstRequest: htcpUnpackSpecifier failed");
-        htcpLogHtcp(from, dhdr->opcode, LOG_UDP_INVALID, dash_str, nullptr);
+        htcpLogHtcp(from, dhdr->opcode, LogTags(LOG_UDP_INVALID), dash_str, nullptr);
         return;
     } else {
         s->setFrom(from);
@@ -1116,13 +1117,13 @@ htcpHandleTstRequest(htcpDataHeader * dhdr, char *buf, int sz, Ip::Address &from
 
     if (!s->request) {
         debugs(31, 3, "htcpHandleTstRequest: failed to parse request");
-        htcpLogHtcp(from, dhdr->opcode, LOG_UDP_INVALID, dash_str, nullptr);
+        htcpLogHtcp(from, dhdr->opcode, LogTags(LOG_UDP_INVALID), dash_str, nullptr);
         return;
     }
 
     if (!htcpAccessAllowed(Config.accessList.htcp, s, from)) {
         debugs(31, 3, "htcpHandleTstRequest: Access denied");
-        htcpLogHtcp(from, dhdr->opcode, LOG_UDP_DENIED, s->uri, nullptr);
+        htcpLogHtcp(from, dhdr->opcode, LogTags(LOG_UDP_DENIED), s->uri, nullptr);
         return;
     }
 
@@ -1136,10 +1137,10 @@ htcpSpecifier::checkedHit(StoreEntry *e)
 {
     if (e) {
         htcpTstReply(dhdr, e, this, from);      /* hit */
-        htcpLogHtcp(from, dhdr->opcode, LOG_UDP_HIT, uri, al);
+        htcpLogHtcp(from, dhdr->opcode, LogTags(LOG_UDP_HIT, collapsedStats), uri, al);
     } else {
         htcpTstReply(dhdr, NULL, NULL, from);   /* cache miss */
-        htcpLogHtcp(from, dhdr->opcode, LOG_UDP_MISS, uri, al);
+        htcpLogHtcp(from, dhdr->opcode, LogTags(LOG_UDP_MISS), uri, al);
     }
 }
 
@@ -1156,7 +1157,7 @@ htcpHandleClr(htcpDataHeader * hdr, char *buf, int sz, Ip::Address &from)
 
     if (sz == 0) {
         debugs(31, 4, "htcpHandleClr: nothing to do");
-        htcpLogHtcp(from, hdr->opcode, LOG_UDP_INVALID, dash_str, nullptr);
+        htcpLogHtcp(from, hdr->opcode, LogTags(LOG_UDP_INVALID), dash_str, nullptr);
         return;
     }
 
@@ -1164,19 +1165,19 @@ htcpHandleClr(htcpDataHeader * hdr, char *buf, int sz, Ip::Address &from)
 
     if (!s) {
         debugs(31, 3, "htcpHandleClr: htcpUnpackSpecifier failed");
-        htcpLogHtcp(from, hdr->opcode, LOG_UDP_INVALID, dash_str, nullptr);
+        htcpLogHtcp(from, hdr->opcode, LogTags(LOG_UDP_INVALID), dash_str, nullptr);
         return;
     }
 
     if (!s->request) {
         debugs(31, 3, "htcpHandleTstRequest: failed to parse request");
-        htcpLogHtcp(from, hdr->opcode, LOG_UDP_INVALID, dash_str, nullptr);
+        htcpLogHtcp(from, hdr->opcode, LogTags(LOG_UDP_INVALID), dash_str, nullptr);
         return;
     }
 
     if (!htcpAccessAllowed(Config.accessList.htcp_clr, s, from)) {
         debugs(31, 3, "htcpHandleClr: Access denied");
-        htcpLogHtcp(from, hdr->opcode, LOG_UDP_DENIED, s->uri, nullptr);
+        htcpLogHtcp(from, hdr->opcode, LogTags(LOG_UDP_DENIED), s->uri, nullptr);
         return;
     }
 
@@ -1191,12 +1192,12 @@ htcpHandleClr(htcpDataHeader * hdr, char *buf, int sz, Ip::Address &from)
 
     case 1:
         htcpClrReply(hdr, 1, from); /* hit */
-        htcpLogHtcp(from, hdr->opcode, LOG_UDP_HIT, s->uri, nullptr);
+        htcpLogHtcp(from, hdr->opcode, LogTags(LOG_UDP_HIT), s->uri, nullptr);
         break;
 
     case 0:
         htcpClrReply(hdr, 0, from); /* miss */
-        htcpLogHtcp(from, hdr->opcode, LOG_UDP_MISS, s->uri, nullptr);
+        htcpLogHtcp(from, hdr->opcode, LogTags(LOG_UDP_MISS), s->uri, nullptr);
         break;
 
     default:
