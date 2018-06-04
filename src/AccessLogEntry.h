@@ -273,7 +273,11 @@ public:
     const SBuf *effectiveVirginUrl() const;
 
     /// Remember Client URI (or equivalent) when there is no HttpRequest.
-    void setVirginUrlForMissingRequest(const char *);
+    void setVirginUrlForMissingRequest(const char *vu)
+    {
+        if (!request)
+            virginUrlForMissingRequest_ = vu;
+    }
 
 private:
     /// Client URI (or equivalent) for effectiveVirginUrl() when HttpRequest is

@@ -97,9 +97,3 @@ AccessLogEntry::effectiveVirginUrl() const
     return effectiveUrl;
 }
 
-void
-AccessLogEntry::setVirginUrlForMissingRequest(const char *anUrl)
-{
-    if (!request)
-        virginUrlForMissingRequest_ = anUrl;
-}
