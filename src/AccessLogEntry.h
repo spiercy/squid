@@ -268,7 +268,7 @@ public:
 
     /// Effective URI of the received client (or equivalent) HTTP request or,
     /// in rare cases where that information was not collected, a nil pointer.
-    /// Receiver errors are represented by "error: ..." URIs.
+    /// Receiver errors are represented by "error:..." URIs.
     /// Adaptations and redirections do not affect this URI.
     const SBuf *effectiveVirginUrl() const;
 
