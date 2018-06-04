@@ -1092,6 +1092,8 @@ findTrailingHTTPVersion(const char *uriAndHTTPVersion, const char *end)
 void
 setLogUri(ClientHttpRequest * http, char const *uri, bool cleanUrl)
 {
+    // TODO: Store the URL directly in http->al->url, removing http->log_uri.
+
     safe_free(http->log_uri);
 
     if (!cleanUrl)
