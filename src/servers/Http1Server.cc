@@ -120,6 +120,7 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
             // else use default ERR_INVALID_REQ set above.
             break;
         }
+        http->al->setVirginUrlForMissingRequest(http->uri);
         // setLogUri should called before repContext->setReplyToError
         setLogUri(http, http->uri, true);
         const char * requestErrorBytes = inBuf.c_str();
@@ -134,6 +135,7 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
 
     if ((request = HttpRequest::CreateFromUrl(http->uri, parser_->method())) == NULL) {
         debugs(33, 5, "Invalid URL: " << http->uri);
+        http->al->setVirginUrlForMissingRequest(http->uri);
         // setLogUri should called before repContext->setReplyToError
         setLogUri(http, http->uri, true);
 

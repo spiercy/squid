@@ -67,6 +67,7 @@ icpSyncAle(AccessLogEntryPointer &al, const Ip::Address &caddr, LogTags logcode,
     al->cache.caddr = caddr;
     al->cache.code = logcode;
     al->url = url;
+    al->setVirginUrlForMissingRequest(url);
     // XXX: move to use icp.clientReply instead
     al->http.clientReplySz.payloadData = len;
     al->cache.start_time = current_time;

@@ -1034,10 +1034,8 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             break;
 
         case LFT_CLIENT_REQ_URI:
-            // original client URI
-            if (al->request) {
-                const SBuf &s = al->request->effectiveRequestUri();
-                sb.append(s.rawContent(), s.length());
+            if (const auto uri = al->effectiveVirginUrl()) {
+                sb.append(uri->rawContent(), uri->length());
                 out = sb.termedBuf();
                 quote = 1;
             }

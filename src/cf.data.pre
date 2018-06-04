@@ -4213,7 +4213,7 @@ DOC_START
 		[http::]>rm	Request method from client
 		[http::]<rm	Request method sent to server or peer
 		[http::]ru	Request URL from client (historic, filtered for logging)
-		[http::]>ru	Request URL from client
+		[http::]>ru	Request URL from client (virgin)
 		[http::]<ru	Request URL sent to server or peer
 		[http::]>rs	Request URL scheme from client
 		[http::]<rs	Request URL scheme sent to server or peer
