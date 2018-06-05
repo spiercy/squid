@@ -93,7 +93,7 @@ AccessLogEntry::effectiveVirginUrl() const
 {
     const SBuf *effectiveUrl = request ? &request->url.absolute() : &virginUrlForMissingRequest_;
     if (!effectiveUrl || effectiveUrl->isEmpty())
-       return nullptr;
+        return nullptr;
     return effectiveUrl;
 }
 
