@@ -4212,8 +4212,37 @@ DOC_START
 		[http::]rm	Request method (GET/POST etc)
 		[http::]>rm	Request method from client
 		[http::]<rm	Request method sent to server or peer
-		[http::]ru	Request URL from client (historic, filtered for logging)
-		[http::]>ru	Request URL from client
+
+		[http::]ru	Request URL received (or computed) and sanitized
+
+				Logs request URI received from the client, a
+				request adaptation service, or a request
+				redirector (whichever was applied last). For
+				historical reasons, whitespace in this field
+				is sanitized according to uri_whitespace. That
+				cleanup happens before field encoding is
+				applied, leading to confusing double-encoding
+				results in some non-default configurations.
+
+				This field is not encoded by default.
+
+				Computed URLs are URIs of internally generated
+				requests and various error:... URIs.
+
+		[http::]>ru	Request URL received from the client (or computed)
+
+				Unlike %ru, this request URI is not affected
+				by request adaptation and URL rewriting
+				services. This field is not sanitized
+				according to uri_whitespace either.
+
+				By default, all "unsafe" and "control"
+				characters (see RFC 1738) are URL-encoded
+				except for the percent (%) which is untouched.
+
+				Computed URLs are URIs of internally generated
+				requests and various error:... URIs.
+
 		[http::]<ru	Request URL sent to server or peer
 		[http::]>rs	Request URL scheme from client
 		[http::]<rs	Request URL scheme sent to server or peer
