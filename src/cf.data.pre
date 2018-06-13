@@ -4232,9 +4232,9 @@ DOC_START
 		[http::]>ru	Request URL received from the client (or computed)
 
 				Unlike %ru, this request URI is not affected
-				by request adaptation and URL rewriting
-				services. This field is not sanitized
-				according to uri_whitespace either.
+				by request adaptation and URL rewriting services.
+				But, like %ru, whitespace in this field is
+				sanitized according to uri_whitespace.
 
 				By default, all "unsafe" and "control"
 				characters (see RFC 1738) are URL-encoded
