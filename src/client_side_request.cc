@@ -393,8 +393,7 @@ clientBeginRequest(const HttpRequestMethod& method, char const *url, CSCB * stre
 
     request->http_ver = Http::ProtocolVersion();
 
-    http->request = request;
-    HTTPMSGLOCK(http->request);
+    http->initRequest(request, true);
 
     /* optional - skip the access check ? */
     http->calloutContext = new ClientRequestContext(http);
@@ -1637,6 +1636,29 @@ ClientHttpRequest::loggingEntry(StoreEntry *newEntry)
         loggingEntry_->lock("ClientHttpRequest::loggingEntry");
 }
 
+void
+ClientHttpRequest::initRequest(HttpRequest *aRequest, const bool initAle)
+{
+    assert(aRequest);
+    assert(!request);
+    request = aRequest;
+    HTTPMSGLOCK(request);
+    if (initAle)
+        initAleRequest();
+}
+
+void
+ClientHttpRequest::initAleRequest()
+{
+    assert(al);
+    assert(request);
+    if (!al->request) {
+        al->request = request;
+        HTTPMSGLOCK(al->request);
+        SyncNotes(*al, *request);
+    }
+}
+
 /*
  * doCallouts() - This function controls the order of "callout"
  * executions, including non-blocking access control checks, the
@@ -1677,18 +1699,8 @@ ClientHttpRequest::doCallouts()
 {
     assert(calloutContext);
 
-    /*Save the original request for logging purposes*/
-    if (!calloutContext->http->al->request) {
-        calloutContext->http->al->request = request;
-        HTTPMSGLOCK(calloutContext->http->al->request);
-
-        NotePairs &notes = SyncNotes(*calloutContext->http->al, *calloutContext->http->request);
-        // Make the previously set client connection ID available as annotation.
-        if (ConnStateData *csd = calloutContext->http->getConn()) {
-            if (!csd->connectionTag().isEmpty())
-                notes.add("clt_conn_tag", SBuf(csd->connectionTag()).c_str());
-        }
-    }
+    // unlikely: al->request should be initialized already.
+    initAleRequest();
 
     if (!calloutContext->error) {
         // CVE-2009-0801: verify the Host: header is consistent with other known details.

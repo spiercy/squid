@@ -62,6 +62,12 @@ public:
     _SQUID_INLINE_ ConnStateData * getConn() const;
     _SQUID_INLINE_ void setConn(ConnStateData *);
 
+    /// initializes request, al->request and al->notes fields
+    /// \param initAle whether to initialize al
+    void initRequest(HttpRequest *aRequest, const bool initAle);
+    /// initializes al->request and al->notes fields
+    void initAleRequest();
+
     /** Details of the client socket which produced us.
      * Treat as read-only for the lifetime of this HTTP request.
      */

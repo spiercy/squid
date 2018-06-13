@@ -751,14 +751,10 @@ Ftp::Server::parseOneRequest()
     }
 
     ClientHttpRequest *const http = new ClientHttpRequest(this);
-    http->request = request;
-    HTTPMSGLOCK(http->request);
     http->req_sz = tok.parsedSize();
     http->uri = newUri;
-    if (!http->al->request) { // should be nil -- ClientHttpRequest() creates al
-        http->al->request = request;
-        HTTPMSGLOCK(http->al->request);
-    }
+    // http->al->request should be nil; ClientHttpRequest() creates al
+    http->initRequest(request, true);
 
     Http::Stream *const result =
         new Http::Stream(clientConnection, http);

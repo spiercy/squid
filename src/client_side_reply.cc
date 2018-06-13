@@ -2306,10 +2306,8 @@ clientReplyContext::createStoreEntry(const HttpRequestMethod& m, RequestFlags re
      * so make a fake one.
      */
 
-    if (http->request == NULL) {
-        http->request = new HttpRequest(m, AnyP::PROTO_NONE, "http", null_string);
-        HTTPMSGLOCK(http->request);
-    }
+    if (http->request == NULL)
+        http->initRequest(new HttpRequest(m, AnyP::PROTO_NONE, "http", null_string), false);
 
     StoreEntry *e = storeCreateEntry(storeId(), http->log_uri, reqFlags, m);
 

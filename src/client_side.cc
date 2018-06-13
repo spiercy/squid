@@ -1505,10 +1505,7 @@ bool ConnStateData::serveDelayedError(Http::Stream *context)
         repContext->setReplyToStoreEntry(sslServerBump->entry, "delayed SslBump error");
 
         // save the original request for logging purposes
-        if (!context->http->al->request) {
-            context->http->al->request = http->request;
-            HTTPMSGLOCK(context->http->al->request);
-        }
+        context->http->initAleRequest();
 
         // Get error details from the fake certificate-peeking request.
         http->request->detailError(sslServerBump->request->errType, sslServerBump->request->errDetail);
@@ -1552,10 +1549,7 @@ bool ConnStateData::serveDelayedError(Http::Stream *context)
                     srvCert.get(), nullptr);
                 err->detail = errDetail;
                 // Save the original request for logging purposes.
-                if (!context->http->al->request) {
-                    context->http->al->request = request;
-                    HTTPMSGLOCK(context->http->al->request);
-                }
+                context->http->initAleRequest();
                 repContext->setReplyToError(request->method, err);
                 assert(context->http->out.offset == 0);
                 context->pullData();
@@ -3425,8 +3419,7 @@ ConnStateData::buildFakeRequest(Http::MethodType const method, SBuf &useHost, un
     request->method = method;
     request->url.host(useHost.c_str());
     request->url.port(usePort);
-    http->request = request.getRaw();
-    HTTPMSGLOCK(http->request);
+    http->initRequest(request.getRaw(), false);
 
     request->clientConnectionManager = this;
 

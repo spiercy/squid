@@ -152,8 +152,7 @@ Downloader::buildRequest()
            "\n----------");
 
     ClientHttpRequest *const http = new ClientHttpRequest(nullptr);
-    http->request = request;
-    HTTPMSGLOCK(http->request);
+    http->initRequest(request, true);
     http->req_sz = 0;
     http->uri = uri;
     setLogUri (http, urlCanonicalClean(request));

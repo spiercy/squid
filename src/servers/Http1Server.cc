@@ -189,8 +189,8 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
         request->header.putStr(Http::HOST, tmp.c_str());
     }
 
-    http->request = request.getRaw();
-    HTTPMSGLOCK(http->request);
+    // http->al->request should be nil; ClientHttpRequest() creates al
+    http->initRequest(request.getRaw(), true);
 
     return true;
 }
