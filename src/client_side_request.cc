@@ -1650,12 +1650,13 @@ ClientHttpRequest::initRequest(HttpRequest *aRequest, const bool initAle)
 void
 ClientHttpRequest::initAleRequest()
 {
+    // al is created in the constructor
     assert(al);
     assert(request);
     if (!al->request) {
         al->request = request;
         HTTPMSGLOCK(al->request);
-        SyncNotes(*al, *request);
+        (void)SyncNotes(*al, *request);
     }
 }
 
