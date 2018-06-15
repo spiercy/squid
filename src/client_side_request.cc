@@ -1643,6 +1643,14 @@ ClientHttpRequest::initRequest(HttpRequest *aRequest, const bool initAle)
     assert(!request);
     request = aRequest;
     HTTPMSGLOCK(request);
+    if (ConnStateData *csd = getConn()) {
+        if (!csd->connectionTag().isEmpty()) {
+            if (!request->notes)
+                request->notes = new NotePairs;
+            // TODO: assert if "clt_conn_tag" already added?
+            request->notes->add("clt_conn_tag", SBuf(csd->connectionTag()).c_str());
+        }
+    }
     if (initAle)
         initAleRequest();
 }
