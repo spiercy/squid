@@ -168,6 +168,8 @@ class HttpRequestMethod;
 void urlInitialize(void);
 HttpRequest *urlParse(const HttpRequestMethod&, char *, HttpRequest *request = NULL);
 char *urlCanonicalClean(const HttpRequest *);
+/// \param stripQuery whether to purge the query string from the url
+char *urlCanonicalClean(const SBuf &url, const bool stripQuery);
 const char *urlCanonicalFakeHttps(const HttpRequest * request);
 bool urlIsRelative(const char *);
 char *urlMakeAbsolute(const HttpRequest *, const char *);

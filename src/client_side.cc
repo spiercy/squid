@@ -1089,56 +1089,73 @@ findTrailingHTTPVersion(const char *uriAndHTTPVersion, const char *end)
     return NULL;
 }
 
+static void
+cleanupUri(char **cleanedUri, char const *uri)
+{
+    int flags = 0;
+    switch (Config.uri_whitespace) {
+    case URI_WHITESPACE_ALLOW:
+        flags |= RFC1738_ESCAPE_NOSPACE;
+
+    case URI_WHITESPACE_ENCODE:
+        flags |= RFC1738_ESCAPE_UNESCAPED;
+        *cleanedUri = xstrndup(rfc1738_do_escape(uri, flags), MAX_URL);
+        break;
+
+    case URI_WHITESPACE_CHOP: {
+        flags |= RFC1738_ESCAPE_NOSPACE;
+        flags |= RFC1738_ESCAPE_UNESCAPED;
+        *cleanedUri = xstrndup(rfc1738_do_escape(uri, flags), MAX_URL);
+        int pos = strcspn(*cleanedUri, w_space);
+        (*cleanedUri)[pos] = '\0';
+    }
+    break;
+
+    case URI_WHITESPACE_DENY:
+    case URI_WHITESPACE_STRIP:
+    default: {
+        const char *t;
+        char *tmp_uri = static_cast<char*>(xmalloc(strlen(uri) + 1));
+        char *q = tmp_uri;
+        t = uri;
+        while (*t) {
+            if (!xisspace(*t)) {
+                *q = *t;
+                ++q;
+            }
+            ++t;
+        }
+        *q = '\0';
+        *cleanedUri = xstrndup(rfc1738_escape_unescaped(tmp_uri), MAX_URL);
+        xfree(tmp_uri);
+    }
+    break;
+    }
+}
+
 void
 setLogUri(ClientHttpRequest * http, char const *uri, bool cleanUrl)
 {
     // TODO: Store the URL directly in http->al->url, removing http->log_uri.
+    assert(http);
+    assert(http->request || uri);
 
     safe_free(http->log_uri);
 
+    char const *canonicalUri = http->request ? urlCanonicalClean(http->request) :
+        urlCanonicalClean(SBuf(uri), Config.onoff.strip_query_terms);
+
     if (!cleanUrl)
-        // The uri is already clean just dump it.
-        http->log_uri = xstrndup(uri, MAX_URL);
-    else {
-        int flags = 0;
-        switch (Config.uri_whitespace) {
-        case URI_WHITESPACE_ALLOW:
-            flags |= RFC1738_ESCAPE_NOSPACE;
+        http->log_uri = xstrndup(canonicalUri, MAX_URL);
+    else
+        cleanupUri(&http->log_uri, canonicalUri);
 
-        case URI_WHITESPACE_ENCODE:
-            flags |= RFC1738_ESCAPE_UNESCAPED;
-            http->log_uri = xstrndup(rfc1738_do_escape(uri, flags), MAX_URL);
-            break;
-
-        case URI_WHITESPACE_CHOP: {
-            flags |= RFC1738_ESCAPE_NOSPACE;
-            flags |= RFC1738_ESCAPE_UNESCAPED;
-            http->log_uri = xstrndup(rfc1738_do_escape(uri, flags), MAX_URL);
-            int pos = strcspn(http->log_uri, w_space);
-            http->log_uri[pos] = '\0';
-        }
-        break;
-
-        case URI_WHITESPACE_DENY:
-        case URI_WHITESPACE_STRIP:
-        default: {
-            const char *t;
-            char *tmp_uri = static_cast<char*>(xmalloc(strlen(uri) + 1));
-            char *q = tmp_uri;
-            t = uri;
-            while (*t) {
-                if (!xisspace(*t)) {
-                    *q = *t;
-                    ++q;
-                }
-                ++t;
-            }
-            *q = '\0';
-            http->log_uri = xstrndup(rfc1738_escape_unescaped(tmp_uri), MAX_URL);
-            xfree(tmp_uri);
-        }
-        break;
-        }
+    if (!http->request) {
+        char *logUri = nullptr;
+        cleanupUri(&logUri, uri);
+        assert(logUri);
+        http->al->setVirginUrlForMissingRequest(logUri);
+        safe_free(logUri);
     }
 }
 
@@ -1681,7 +1698,7 @@ clientProcessRequest(ConnStateData *conn, const Http1::RequestParserPointer &hp,
     }
 
     request->flags.internal = http->flags.internal;
-    setLogUri (http, urlCanonicalClean(request.getRaw()));
+    setLogUri (http, nullptr);
     request->client_addr = conn->clientConnection->remote; // XXX: remove reuest->client_addr member.
 #if FOLLOW_X_FORWARDED_FOR
     // indirect client gets stored here because it is an HTTP header result (from X-Forwarded-For:)
@@ -3419,7 +3436,7 @@ ConnStateData::buildFakeRequest(Http::MethodType const method, SBuf &useHost, un
     request->method = method;
     request->url.host(useHost.c_str());
     request->url.port(usePort);
-    http->initRequest(request.getRaw(), false);
+    http->initRequest(request.getRaw());
 
     request->clientConnectionManager = this;
 
@@ -3442,7 +3459,7 @@ ConnStateData::buildFakeRequest(Http::MethodType const method, SBuf &useHost, un
     inBuf = payload;
     flags.readMore = false;
 
-    setLogUri(http, urlCanonicalClean(request.getRaw()));
+    setLogUri(http, nullptr);
     return http;
 }
 

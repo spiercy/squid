@@ -4219,10 +4219,12 @@ DOC_START
 				request adaptation service, or a request
 				redirector (whichever was applied last). For
 				historical reasons, whitespace in this field
-				is sanitized according to uri_whitespace. That
-				cleanup happens before field encoding is
-				applied, leading to confusing double-encoding
-				results in some non-default configurations.
+				is sanitized according to uri_whitespace. Also,
+				the URI query string is stripped out according to
+				strip_query_terms. That cleanup happens before
+				field encoding is applied, leading to confusing
+				double-encoding results in some non-default
+				configurations.
 
 				This field is not encoded by default.
 
@@ -4233,8 +4235,9 @@ DOC_START
 
 				Unlike %ru, this request URI is not affected
 				by request adaptation and URL rewriting services.
-				But, like %ru, whitespace in this field is
-				sanitized according to uri_whitespace.
+				Also, its query string is not stripped out according
+				to strip_query_terms. But, like %ru, whitespace in
+				this field is sanitized according to uri_whitespace.
 
 				By default, all "unsafe" and "control"
 				characters (see RFC 1738) are URL-encoded

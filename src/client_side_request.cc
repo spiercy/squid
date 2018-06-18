@@ -393,7 +393,7 @@ clientBeginRequest(const HttpRequestMethod& method, char const *url, CSCB * stre
 
     request->http_ver = Http::ProtocolVersion();
 
-    http->initRequest(request, true);
+    http->initRequest(request);
 
     /* optional - skip the access check ? */
     http->calloutContext = new ClientRequestContext(http);
@@ -1637,7 +1637,7 @@ ClientHttpRequest::loggingEntry(StoreEntry *newEntry)
 }
 
 void
-ClientHttpRequest::initRequest(HttpRequest *aRequest, const bool initAle)
+ClientHttpRequest::initRequest(HttpRequest *aRequest)
 {
     assert(aRequest);
     assert(!request);
@@ -1651,8 +1651,7 @@ ClientHttpRequest::initRequest(HttpRequest *aRequest, const bool initAle)
             request->notes->add("clt_conn_tag", SBuf(csd->connectionTag()).c_str());
         }
     }
-    if (initAle)
-        initAleRequest();
+    initAleRequest();
 }
 
 void
@@ -1936,7 +1935,7 @@ ClientHttpRequest::handleAdaptedHeader(HttpMsg *msg)
          */
         xfree(uri);
         uri = SBufToCstring(request->effectiveRequestUri());
-        setLogUri(this, urlCanonicalClean(request));
+        setLogUri(this, nullptr);
         assert(request->method.id());
     } else if (HttpReply *new_rep = dynamic_cast<HttpReply*>(msg)) {
         debugs(85,3,HERE << "REQMOD reply is HTTP reply");

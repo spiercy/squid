@@ -63,8 +63,7 @@ public:
     _SQUID_INLINE_ void setConn(ConnStateData *);
 
     /// initializes request, al->request and al->notes fields
-    /// \param initAle whether to initialize al
-    void initRequest(HttpRequest *aRequest, const bool initAle);
+    void initRequest(HttpRequest *aRequest);
     /// initializes al->request and al->notes fields
     void initAleRequest();
 

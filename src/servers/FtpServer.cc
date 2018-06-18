@@ -753,7 +753,7 @@ Ftp::Server::parseOneRequest()
     ClientHttpRequest *const http = new ClientHttpRequest(this);
     http->req_sz = tok.parsedSize();
     http->uri = newUri;
-    http->initRequest(request, true);
+    http->initRequest(request);
 
     Http::Stream *const result =
         new Http::Stream(clientConnection, http);

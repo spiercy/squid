@@ -152,10 +152,10 @@ Downloader::buildRequest()
            "\n----------");
 
     ClientHttpRequest *const http = new ClientHttpRequest(nullptr);
-    http->initRequest(request, true);
+    http->initRequest(request);
     http->req_sz = 0;
     http->uri = uri;
-    setLogUri (http, urlCanonicalClean(request));
+    setLogUri (http, nullptr);
 
     context_ = new DownloaderContext(this, http);
     StoreIOBuffer tempBuffer;

@@ -536,16 +536,15 @@ URL::absolute() const
  *        After copying it on in the first place! Would be less code to merge the two with a flag parameter.
  *        and never copy the query-string part in the first place
  */
+
 char *
-urlCanonicalClean(const HttpRequest * request)
+urlCanonicalClean(const SBuf &url, const bool stripQuery)
 {
     LOCAL_ARRAY(char, buf, MAX_URL);
-
-    snprintf(buf, sizeof(buf), SQUIDSBUFPH, SQUIDSBUFPRINT(request->effectiveRequestUri()));
+    snprintf(buf, sizeof(buf), SQUIDSBUFPH, SQUIDSBUFPRINT(url));
     buf[sizeof(buf)-1] = '\0';
 
-    // URN, CONNECT method, and non-stripped URIs can go straight out
-    if (Config.onoff.strip_query_terms && !(request->method == Http::METHOD_CONNECT || request->url.getScheme() == AnyP::PROTO_URN)) {
+    if (stripQuery) {
         // strip anything AFTER a question-mark
         // leaving the '?' in place
         if (auto t = strchr(buf, '?')) {
@@ -557,6 +556,15 @@ urlCanonicalClean(const HttpRequest * request)
         xstrncpy(buf, rfc1738_escape_unescaped(buf), MAX_URL);
 
     return buf;
+}
+
+char *
+urlCanonicalClean(const HttpRequest * request)
+{
+    // URN, CONNECT method, and non-stripped URIs can go straight out
+    const bool stripQuery = (Config.onoff.strip_query_terms &&
+            !(request->method == Http::METHOD_CONNECT || request->url.getScheme() == AnyP::PROTO_URN));
+    return urlCanonicalClean(request->effectiveRequestUri(), stripQuery);
 }
 
 /**

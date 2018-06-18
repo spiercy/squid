@@ -122,7 +122,6 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
         }
         // setLogUri should called before repContext->setReplyToError
         setLogUri(http, http->uri, true);
-        http->al->setVirginUrlForMissingRequest(http->log_uri);
         const char * requestErrorBytes = inBuf.c_str();
         if (!clientTunnelOnError(this, context, request, parser_->method(), errPage)) {
             setReplyError(context, request, parser_->method(), errPage, parser_->parseStatusCode, requestErrorBytes);
@@ -137,7 +136,6 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
         debugs(33, 5, "Invalid URL: " << http->uri);
         // setLogUri should called before repContext->setReplyToError
         setLogUri(http, http->uri, true);
-        http->al->setVirginUrlForMissingRequest(http->log_uri);
 
         const char * requestErrorBytes = inBuf.c_str();
         if (!clientTunnelOnError(this, context, request, parser_->method(), ERR_INVALID_URL)) {
@@ -156,7 +154,7 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
 
         debugs(33, 5, "Unsupported HTTP version discovered. :\n" << parser_->messageProtocol());
         // setLogUri should called before repContext->setReplyToError
-        setLogUri(http, http->uri,  true);
+        setLogUri(http, http->uri, true);
 
         const char * requestErrorBytes = NULL; //HttpParserHdrBuf(parser_);
         if (!clientTunnelOnError(this, context, request, parser_->method(), ERR_UNSUP_HTTPVERSION)) {
@@ -189,7 +187,7 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
         request->header.putStr(Http::HOST, tmp.c_str());
     }
 
-    http->initRequest(request.getRaw(), true);
+    http->initRequest(request.getRaw());
 
     return true;
 }
@@ -236,7 +234,7 @@ Http::One::Server::processParsedRequest(Http::StreamPointer &context)
             clientStreamNode *node = context->getClientReplyContext();
             quitAfterError(request.getRaw());
             // setLogUri should called before repContext->setReplyToError
-            setLogUri(http, urlCanonicalClean(request.getRaw()));
+            setLogUri(http, nullptr);
             clientReplyContext *repContext = dynamic_cast<clientReplyContext *>(node->data.getRaw());
             assert (repContext);
             repContext->setReplyToError(ERR_INVALID_REQ, Http::scExpectationFailed, request->method, http->uri,
