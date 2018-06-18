@@ -2119,7 +2119,7 @@ StoreEntry::collapsed() const
         return false;
     if (!publicKey())
         return false;
-    const bool empty = isEmpty();
+    const bool empty = mem_obj && isEmpty();
     assert(!empty || (empty && collapsingInitiator()));
     return empty;
 }
