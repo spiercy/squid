@@ -155,7 +155,7 @@ Downloader::buildRequest()
     http->initRequest(request);
     http->req_sz = 0;
     http->uri = uri;
-    setLogUri (http, nullptr);
+    http->setLogUriToRequestUri();
 
     context_ = new DownloaderContext(this, http);
     StoreIOBuffer tempBuffer;

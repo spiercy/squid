@@ -167,9 +167,12 @@ class HttpRequestMethod;
 
 void urlInitialize(void);
 HttpRequest *urlParse(const HttpRequestMethod&, char *, HttpRequest *request = NULL);
-char *urlCanonicalClean(const HttpRequest *);
-/// \param stripQuery whether to purge the query string from the url
-char *urlCanonicalClean(const SBuf &url, const bool stripQuery);
+/// Removes query string from the URL and encodes unsafe characters, if needed.
+/// If HttpRequest is available, use requestUrlCanonicalClean() instead.
+/// \returns a pointer to a local static buffer
+char *urlCanonicalClean(const SBuf &url, const HttpRequestMethod &, const AnyP::UriScheme &);
+/// urlCanonicalClean() adapter for HttpRequest
+char *requestUrlCanonicalClean(const HttpRequest *);
 const char *urlCanonicalFakeHttps(const HttpRequest * request);
 bool urlIsRelative(const char *);
 char *urlMakeAbsolute(const HttpRequest *, const char *);

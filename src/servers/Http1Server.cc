@@ -120,8 +120,8 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
             // else use default ERR_INVALID_REQ set above.
             break;
         }
-        // setLogUri should called before repContext->setReplyToError
-        setLogUri(http, http->uri, true);
+        // should be called before repContext->setReplyToError
+        http->setLogUriToErrorUri(http->uri);
         const char * requestErrorBytes = inBuf.c_str();
         if (!clientTunnelOnError(this, context, request, parser_->method(), errPage)) {
             setReplyError(context, request, parser_->method(), errPage, parser_->parseStatusCode, requestErrorBytes);
@@ -134,8 +134,8 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
 
     if ((request = HttpRequest::CreateFromUrl(http->uri, parser_->method())) == NULL) {
         debugs(33, 5, "Invalid URL: " << http->uri);
-        // setLogUri should called before repContext->setReplyToError
-        setLogUri(http, http->uri, true);
+        // should be called before repContext->setReplyToError
+        http->setLogUriToRawUri(http->uri, parser_->method());
 
         const char * requestErrorBytes = inBuf.c_str();
         if (!clientTunnelOnError(this, context, request, parser_->method(), ERR_INVALID_URL)) {
@@ -153,8 +153,8 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
             (parser_->messageProtocol().major > 1) ) {
 
         debugs(33, 5, "Unsupported HTTP version discovered. :\n" << parser_->messageProtocol());
-        // setLogUri should called before repContext->setReplyToError
-        setLogUri(http, http->uri, true);
+        // should be called before repContext->setReplyToError
+        http->setLogUriToRawUri(http->uri, parser_->method());
 
         const char * requestErrorBytes = NULL; //HttpParserHdrBuf(parser_);
         if (!clientTunnelOnError(this, context, request, parser_->method(), ERR_UNSUP_HTTPVERSION)) {
@@ -167,8 +167,8 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
     /* compile headers */
     if (parser_->messageProtocol().major >= 1 && !request->parseHeader(*parser_.getRaw())) {
         debugs(33, 5, "Failed to parse request headers:\n" << parser_->mimeHeader());
-        // setLogUri should called before repContext->setReplyToError
-        setLogUri(http, http->uri, true);
+        // should be called before repContext->setReplyToError
+        http->setLogUriToRawUri(http->uri, parser_->method());
         const char * requestErrorBytes = NULL; //HttpParserHdrBuf(parser_);
         if (!clientTunnelOnError(this, context, request, parser_->method(), ERR_INVALID_REQ)) {
             setReplyError(context, request, parser_->method(), ERR_INVALID_REQ, Http::scBadRequest, requestErrorBytes);
@@ -233,8 +233,8 @@ Http::One::Server::processParsedRequest(Http::StreamPointer &context)
         if (!supportedExpect) {
             clientStreamNode *node = context->getClientReplyContext();
             quitAfterError(request.getRaw());
-            // setLogUri should called before repContext->setReplyToError
-            setLogUri(http, nullptr);
+            // should be called before repContext->setReplyToError
+            http->setLogUriToRequestUri();
             clientReplyContext *repContext = dynamic_cast<clientReplyContext *>(node->data.getRaw());
             assert (repContext);
             repContext->setReplyToError(ERR_INVALID_REQ, Http::scExpectationFailed, request->method, http->uri,

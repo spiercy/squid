@@ -117,6 +117,16 @@ public:
     ClientRequestContext *calloutContext;
     void doCallouts();
 
+    // Three methods below prepare URIs for future logging. Use one of them
+    // depending on the caller context.
+
+    /// Works only for already cleanupped URIs, taken from the parsed HttpRequest
+    void setLogUriToRequestUri();
+    /// Works only for internal-generated "error:..." URIs
+    void setLogUriToErrorUri(const char *errorUri);
+    /// Works only for not yet cleanupped URIs
+    void setLogUriToRawUri(const char *uri, const HttpRequestMethod &);
+
     /// Build an error reply. For use with the callouts.
     void calloutsError(const err_type error, const int errDetail);
 

@@ -48,6 +48,7 @@
 #include "Parsing.h"
 #include "profiler/Profiler.h"
 #include "redirect.h"
+#include "rfc1738.h"
 #include "SquidConfig.h"
 #include "SquidTime.h"
 #include "Store.h"
@@ -359,7 +360,7 @@ clientBeginRequest(const HttpRequestMethod& method, char const *url, CSCB * stre
     if (header)
         request->header.update(header);
 
-    http->log_uri = xstrdup(urlCanonicalClean(request));
+    http->log_uri = xstrdup(requestUrlCanonicalClean(request));
 
     /* http struct now ready */
 
@@ -1871,6 +1872,99 @@ ClientHttpRequest::doCallouts()
 #endif
 }
 
+static char *
+cleanupUri(const char *uri)
+{
+    int flags = 0;
+    char *cleanedUri = nullptr;
+    switch (Config.uri_whitespace) {
+    case URI_WHITESPACE_ALLOW:
+        flags |= RFC1738_ESCAPE_NOSPACE;
+        // fall through to next case
+    case URI_WHITESPACE_ENCODE:
+        flags |= RFC1738_ESCAPE_UNESCAPED;
+        cleanedUri = xstrndup(rfc1738_do_escape(uri, flags), MAX_URL);
+        break;
+
+    case URI_WHITESPACE_CHOP: {
+        flags |= RFC1738_ESCAPE_UNESCAPED;
+        const auto pos = strcspn(uri, w_space);
+        char *choppedUri = nullptr;
+        if (pos < strlen(uri))
+            choppedUri = xstrndup(uri, pos + 1);
+        cleanedUri = xstrndup(rfc1738_do_escape(choppedUri ? choppedUri : uri, flags), MAX_URL);
+        cleanedUri[pos] = '\0';
+        xfree(choppedUri);
+    }
+    break;
+
+    case URI_WHITESPACE_DENY:
+    case URI_WHITESPACE_STRIP:
+    default: {
+        // TODO: avoid duplication with urlParse()
+        const char *t;
+        char *tmp_uri = static_cast<char*>(xmalloc(strlen(uri) + 1));
+        char *q = tmp_uri;
+        t = uri;
+        while (*t) {
+            if (!xisspace(*t)) {
+                *q = *t;
+                ++q;
+            }
+            ++t;
+        }
+        *q = '\0';
+        cleanedUri = xstrndup(rfc1738_escape_unescaped(tmp_uri), MAX_URL);
+        xfree(tmp_uri);
+    }
+    break;
+    }
+
+    assert(cleanedUri);
+    return cleanedUri;
+}
+
+void
+ClientHttpRequest::setLogUriToRequestUri()
+{
+    assert(request);
+    // TODO: Store the URL directly in al->url, removing log_uri.
+    safe_free(log_uri);
+
+    char const *canonicalUri = requestUrlCanonicalClean(request);
+
+    log_uri = xstrndup(canonicalUri, MAX_URL);
+}
+
+void
+ClientHttpRequest::setLogUriToErrorUri(const char *errorUri)
+{
+    assert(errorUri);
+    assert(!request);
+    safe_free(log_uri);
+
+    // TODO: SBuf() performance regression, fix by converting rawUri to SBuf
+    log_uri = urlCanonicalClean(SBuf(errorUri), HttpRequestMethod(), AnyP::UriScheme());
+
+    al->setVirginUrlForMissingRequest(errorUri);
+}
+
+void
+ClientHttpRequest::setLogUriToRawUri(const char *rawUri, const HttpRequestMethod &method)
+{
+    assert(rawUri);
+    assert(!request);
+    safe_free(log_uri);
+
+    // TODO: SBuf() performance regression, fix by converting rawUri to SBuf
+    char *canonicalUri = urlCanonicalClean(SBuf(rawUri), method, AnyP::UriScheme());
+    log_uri = cleanupUri(canonicalUri);
+
+    char *logUri = cleanupUri(rawUri);
+    al->setVirginUrlForMissingRequest(logUri);
+    safe_free(logUri);
+}
+
 #if !_USE_INLINE_
 #include "client_side_request.cci"
 #endif
@@ -1935,7 +2029,7 @@ ClientHttpRequest::handleAdaptedHeader(HttpMsg *msg)
          */
         xfree(uri);
         uri = SBufToCstring(request->effectiveRequestUri());
-        setLogUri(this, nullptr);
+        setLogUriToRequestUri();
         assert(request->method.id());
     } else if (HttpReply *new_rep = dynamic_cast<HttpReply*>(msg)) {
         debugs(85,3,HERE << "REQMOD reply is HTTP reply");
