@@ -74,7 +74,7 @@ public:
 
     HttpRequest *request;       /* Parsed URL ... */
     char *uri;
-    char *log_uri;
+    char *log_uri; // TODO: remove and store the URL directly in al->url
     String store_id; /* StoreID for transactions where the request member is nil */
 
     struct Out {

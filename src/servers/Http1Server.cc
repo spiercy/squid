@@ -120,8 +120,9 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
             // else use default ERR_INVALID_REQ set above.
             break;
         }
-        // should be called before repContext->setReplyToError
-        http->setLogUriToErrorUri(http->uri);
+
+        assert(http->log_uri && http->al->effectiveVirginUrl()); // already initialized via ConnStateData::abortRequestParsing()
+
         const char * requestErrorBytes = inBuf.c_str();
         if (!clientTunnelOnError(this, context, request, parser_->method(), errPage)) {
             setReplyError(context, request, parser_->method(), errPage, parser_->parseStatusCode, requestErrorBytes);

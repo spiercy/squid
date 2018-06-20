@@ -1928,10 +1928,9 @@ void
 ClientHttpRequest::setLogUriToRequestUri()
 {
     assert(request);
-    // TODO: Store the URL directly in al->url, removing log_uri.
     safe_free(log_uri);
 
-    char const *canonicalUri = requestUrlCanonicalClean(request);
+    const char *canonicalUri = requestUrlCanonicalClean(request);
 
     log_uri = xstrndup(canonicalUri, MAX_URL);
 }
@@ -1943,8 +1942,9 @@ ClientHttpRequest::setLogUriToErrorUri(const char *errorUri)
     assert(!request);
     safe_free(log_uri);
 
-    // TODO: SBuf() performance regression, fix by converting rawUri to SBuf
-    log_uri = urlCanonicalClean(SBuf(errorUri), HttpRequestMethod(), AnyP::UriScheme());
+    // TODO: SBuf() performance regression, fix by converting errorUri to SBuf
+    const char *canonicalUri = urlCanonicalClean(SBuf(errorUri), HttpRequestMethod(), AnyP::UriScheme());
+    log_uri = xstrndup(canonicalUri, MAX_URL);
 
     al->setVirginUrlForMissingRequest(errorUri);
 }
@@ -1960,9 +1960,9 @@ ClientHttpRequest::setLogUriToRawUri(const char *rawUri, const HttpRequestMethod
     char *canonicalUri = urlCanonicalClean(SBuf(rawUri), method, AnyP::UriScheme());
     log_uri = cleanupUri(canonicalUri);
 
-    char *logUri = cleanupUri(rawUri);
-    al->setVirginUrlForMissingRequest(logUri);
-    safe_free(logUri);
+    char *cleanedRawUri = cleanupUri(rawUri);
+    al->setVirginUrlForMissingRequest(cleanedRawUri);
+    xfree(cleanedRawUri);
 }
 
 #if !_USE_INLINE_
