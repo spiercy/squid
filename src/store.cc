@@ -2120,8 +2120,7 @@ StoreEntry::collapsed() const
     if (!publicKey())
         return false;
     const bool empty = mem_obj && isEmpty();
-    assert(!empty || (empty && collapsingInitiator()));
-    return empty;
+    return empty && collapsingInitiator(); // XXX: Imprecise condition.
 }
 
 std::ostream &operator <<(std::ostream &os, const StoreEntry &e)
