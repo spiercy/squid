@@ -360,8 +360,6 @@ clientBeginRequest(const HttpRequestMethod& method, char const *url, CSCB * stre
     if (header)
         request->header.update(header);
 
-    http->log_uri = xstrdup(requestUrlCanonicalClean(request));
-
     /* http struct now ready */
 
     /*
@@ -1292,9 +1290,8 @@ ClientRequestContext::clientRedirectDone(const Helper::Reply &reply)
                     // update the current working ClientHttpRequest fields
                     xfree(http->uri);
                     http->uri = SBufToCstring(new_request->effectiveRequestUri());
-                    HTTPMSGUNLOCK(old_request);
-                    http->request = new_request;
-                    HTTPMSGLOCK(http->request);
+                    http->setRequest(new_request);
+                    old_request = nullptr;
                 } else {
                     debugs(85, DBG_CRITICAL, "ERROR: URL-rewrite produces invalid request: " <<
                            old_request->method << " " << urlNote << " " << old_request->http_ver);
@@ -1642,9 +1639,8 @@ ClientHttpRequest::initRequest(HttpRequest *aRequest)
 {
     assert(aRequest);
     assert(!request);
-    request = aRequest;
-    HTTPMSGLOCK(request);
-    if (ConnStateData *csd = getConn()) {
+    setRequest(aRequest);
+    if (const auto csd = getConn()) {
         if (!csd->connectionTag().isEmpty()) {
             if (!request->notes)
                 request->notes = new NotePairs;
@@ -1652,15 +1648,8 @@ ClientHttpRequest::initRequest(HttpRequest *aRequest)
             request->notes->add("clt_conn_tag", SBuf(csd->connectionTag()).c_str());
         }
     }
-    initAleRequest();
-}
-
-void
-ClientHttpRequest::initAleRequest()
-{
     // al is created in the constructor
     assert(al);
-    assert(request);
     if (!al->request) {
         al->request = request;
         HTTPMSGLOCK(al->request);
@@ -1668,6 +1657,19 @@ ClientHttpRequest::initAleRequest()
     }
 }
 
+void
+ClientHttpRequest::setRequest(HttpRequest *newRequest)
+{
+    HttpRequest *oldRequest = request;
+    HTTPMSGUNLOCK(oldRequest);
+    *(const_cast<HttpRequest **>(&request)) = newRequest;
+    if (request) {
+        HTTPMSGLOCK(request);
+        setLogUriToRequestUri();
+    } else {
+        setLogUri(nullptr);
+    }
+}
 /*
  * doCallouts() - This function controls the order of "callout"
  * executions, including non-blocking access control checks, the
@@ -1708,8 +1710,8 @@ ClientHttpRequest::doCallouts()
 {
     assert(calloutContext);
 
-    // unlikely: al->request should be initialized already.
-    initAleRequest();
+    // al->request should be initialized already. TODO: remove
+    assert(al->request);
 
     if (!calloutContext->error) {
         // CVE-2009-0801: verify the Host: header is consistent with other known details.
@@ -1928,41 +1930,44 @@ void
 ClientHttpRequest::setLogUriToRequestUri()
 {
     assert(request);
-    safe_free(log_uri);
-
-    const char *canonicalUri = requestUrlCanonicalClean(request);
-
-    log_uri = xstrndup(canonicalUri, MAX_URL);
+    const auto canonicalUri = requestUrlCanonicalClean(request);
+    setLogUri(xstrndup(canonicalUri, MAX_URL));
 }
 
 void
 ClientHttpRequest::setLogUriToErrorUri(const char *errorUri)
 {
     assert(errorUri);
-    assert(!request);
-    safe_free(log_uri);
+    // Should(!request);
 
     // TODO: SBuf() performance regression, fix by converting errorUri to SBuf
-    const char *canonicalUri = urlCanonicalClean(SBuf(errorUri), HttpRequestMethod(), AnyP::UriScheme());
-    log_uri = xstrndup(canonicalUri, MAX_URL);
+    const auto canonicalUri = urlCanonicalClean(SBuf(errorUri), HttpRequestMethod(), AnyP::UriScheme());
+    setLogUri(xstrndup(canonicalUri, MAX_URL));
 
-    al->setVirginUrlForMissingRequest(errorUri);
+    al->setVirginUrlForMissingRequest(SBuf(errorUri));
 }
 
 void
 ClientHttpRequest::setLogUriToRawUri(const char *rawUri, const HttpRequestMethod &method)
 {
     assert(rawUri);
-    assert(!request);
-    safe_free(log_uri);
+    // Should(!request);
 
     // TODO: SBuf() performance regression, fix by converting rawUri to SBuf
     char *canonicalUri = urlCanonicalClean(SBuf(rawUri), method, AnyP::UriScheme());
-    log_uri = cleanupUri(canonicalUri);
+
+    setLogUri(cleanupUri(canonicalUri));
 
     char *cleanedRawUri = cleanupUri(rawUri);
-    al->setVirginUrlForMissingRequest(cleanedRawUri);
+    al->setVirginUrlForMissingRequest(SBuf(cleanedRawUri));
     xfree(cleanedRawUri);
+}
+
+void
+ClientHttpRequest::setLogUri(char *anUri)
+{
+    xfree(log_uri);
+    *(const_cast<char **>(&log_uri)) = anUri;
 }
 
 #if !_USE_INLINE_
@@ -2016,9 +2021,7 @@ ClientHttpRequest::handleAdaptedHeader(HttpMsg *msg)
         /*
          * Replace the old request with the new request.
          */
-        HTTPMSGUNLOCK(request);
-        request = new_req;
-        HTTPMSGLOCK(request);
+        setRequest(new_req);
 
         // update the new message to flag whether URL re-writing was done on it
         if (request->effectiveRequestUri().cmp(uri) != 0)
@@ -2029,7 +2032,6 @@ ClientHttpRequest::handleAdaptedHeader(HttpMsg *msg)
          */
         xfree(uri);
         uri = SBufToCstring(request->effectiveRequestUri());
-        setLogUriToRequestUri();
         assert(request->method.id());
     } else if (HttpReply *new_rep = dynamic_cast<HttpReply*>(msg)) {
         debugs(85,3,HERE << "REQMOD reply is HTTP reply");

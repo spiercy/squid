@@ -479,10 +479,10 @@ void
 ClientHttpRequest::freeResources()
 {
     safe_free(uri);
-    safe_free(log_uri);
+
     safe_free(redirect.location);
     range_iter.boundary.clean();
-    HTTPMSGUNLOCK(request);
+    setRequest(nullptr);
 
     if (client_stream.tail)
         clientStreamAbort((clientStreamNode *)client_stream.tail->data, this);
@@ -1451,9 +1451,6 @@ bool ConnStateData::serveDelayedError(Http::Stream *context)
         debugs(33, 5, "Responding with delated error for " << http->uri);
         repContext->setReplyToStoreEntry(sslServerBump->entry, "delayed SslBump error");
 
-        // save the original request for logging purposes
-        context->http->initAleRequest();
-
         // Get error details from the fake certificate-peeking request.
         http->request->detailError(sslServerBump->request->errType, sslServerBump->request->errDetail);
         context->pullData();
@@ -1495,8 +1492,6 @@ bool ConnStateData::serveDelayedError(Http::Stream *context)
                     SQUID_X509_V_ERR_DOMAIN_MISMATCH,
                     srvCert.get(), nullptr);
                 err->detail = errDetail;
-                // Save the original request for logging purposes.
-                context->http->initAleRequest();
                 repContext->setReplyToError(request->method, err);
                 assert(context->http->out.offset == 0);
                 context->pullData();
@@ -1623,12 +1618,12 @@ clientProcessRequest(ConnStateData *conn, const Http1::RequestParserPointer &hp,
             request->url.host(internalHostname());
             request->url.port(getMyPort());
             http->flags.internal = true;
+            http->setLogUriToRequestUri();
         } else
             debugs(33, 2, "internal URL found: " << request->url.getScheme() << "://" << request->url.authority(true) << " (not this proxy)");
     }
 
     request->flags.internal = http->flags.internal;
-    http->setLogUriToRequestUri();
     request->client_addr = conn->clientConnection->remote; // XXX: remove reuest->client_addr member.
 #if FOLLOW_X_FORWARDED_FOR
     // indirect client gets stored here because it is an HTTP header result (from X-Forwarded-For:)
@@ -3388,8 +3383,6 @@ ConnStateData::buildFakeRequest(Http::MethodType const method, SBuf &useHost, un
 
     inBuf = payload;
     flags.readMore = false;
-
-    http->setLogUriToRequestUri();
     return http;
 }
 

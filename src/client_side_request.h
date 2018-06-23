@@ -62,19 +62,25 @@ public:
     _SQUID_INLINE_ ConnStateData * getConn() const;
     _SQUID_INLINE_ void setConn(ConnStateData *);
 
-    /// initializes request, al->request and al->notes fields
-    void initRequest(HttpRequest *aRequest);
-    /// initializes al->request and al->notes fields
-    void initAleRequest();
+    /// Initializes request, al->request, al->notes and log_uri fields.
+    /// Should be called once as soon as the virgin request is known.
+    void initRequest(HttpRequest *);
+    /// Updates request and log_uri fields.
+    /// May be called several times due to adaptation or redirection.
+    void setRequest(HttpRequest *);
 
     /** Details of the client socket which produced us.
      * Treat as read-only for the lifetime of this HTTP request.
      */
     Comm::ConnectionPointer clientConnection;
 
-    HttpRequest *request;       /* Parsed URL ... */
+    /// A virgin request or a request after adaptation/redirection (if applied).
+    HttpRequest * const request;
     char *uri;
-    char *log_uri; // TODO: remove and store the URL directly in al->url
+    /// A request URI after cleanup (a virgin, or after adaptation/redirection) or a
+    /// computed URI of internally generated requests and various "error:..." URIs.
+    // TODO: remove and store the URL directly in al->url
+    char * const log_uri;
     String store_id; /* StoreID for transactions where the request member is nil */
 
     struct Out {
@@ -126,6 +132,8 @@ public:
     void setLogUriToErrorUri(const char *errorUri);
     /// Works only for not yet cleanupped URIs
     void setLogUriToRawUri(const char *uri, const HttpRequestMethod &);
+
+    void setLogUri(char *uri);
 
     /// Build an error reply. For use with the callouts.
     void calloutsError(const err_type error, const int errDetail);

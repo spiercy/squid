@@ -234,8 +234,6 @@ Http::One::Server::processParsedRequest(Http::StreamPointer &context)
         if (!supportedExpect) {
             clientStreamNode *node = context->getClientReplyContext();
             quitAfterError(request.getRaw());
-            // should be called before repContext->setReplyToError
-            http->setLogUriToRequestUri();
             clientReplyContext *repContext = dynamic_cast<clientReplyContext *>(node->data.getRaw());
             assert (repContext);
             repContext->setReplyToError(ERR_INVALID_REQ, Http::scExpectationFailed, request->method, http->uri,
