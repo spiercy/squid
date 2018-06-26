@@ -62,19 +62,25 @@ public:
     _SQUID_INLINE_ ConnStateData * getConn() const;
     _SQUID_INLINE_ void setConn(ConnStateData *);
 
-    /// Initializes request, al->request, al->notes and log_uri fields.
-    /// Should be called once as soon as the virgin request is known.
+    /// Initializes the current request with the virgin request.
+    /// Call this method when the virgin request becomes known.
+    /// To update the current request later, use resetRequest().
     void initRequest(HttpRequest *);
-    /// Updates request and log_uri fields.
-    /// May be called several times due to adaptation or redirection.
-    void setRequest(HttpRequest *);
+
+    /// Resets the current request to the latest adapted or redirected
+    /// request. Call this every time adaptation or redirection changes
+    /// the request. To set the virgin request, use initRequest().
+    /// \param resetUri whether also initialize uri with the request
+    void resetRequest(HttpRequest *, const bool resetUri);
 
     /** Details of the client socket which produced us.
      * Treat as read-only for the lifetime of this HTTP request.
      */
     Comm::ConnectionPointer clientConnection;
 
-    /// A virgin request or a request after adaptation/redirection (if applied).
+    /// Request currently being handled by ClientHttpRequest.
+    /// Starts as a virgin request; see initRequest().
+    /// Adaptation and redirections replace it; see resetRequest().
     HttpRequest * const request;
     char *uri;
     /// A request URI after cleanup (a virgin, or after adaptation/redirection) or a
@@ -123,17 +129,17 @@ public:
     ClientRequestContext *calloutContext;
     void doCallouts();
 
-    // Three methods below prepare URIs for future logging. Use one of them
-    // depending on the caller context.
+    // The three methods below prepare log_uri for future logging. Call the most
+    // appropriate method whenever the current request or its URI changes.
 
-    /// Works only for already cleanupped URIs, taken from the parsed HttpRequest
+    /// sets log_uri when we know the current request
     void setLogUriToRequestUri();
-    /// Works only for internal-generated "error:..." URIs
-    void setLogUriToErrorUri(const char *errorUri);
-    /// Works only for not yet cleanupped URIs
-    void setLogUriToRawUri(const char *uri, const HttpRequestMethod &);
-
-    void setLogUri(char *uri);
+    /// sets log_uri to a parsed request URI when Squid fails to parse or
+    /// validate other request components, yielding no current request
+    void setLogUriToRawUri(const char *rawUri, const HttpRequestMethod &);
+    /// sets log_uri and uri to an internally-generated "error:..." URI when
+    /// neither the current request nor the parsed request URI are known
+    void setErrorUri(const char *errorUri);
 
     /// Build an error reply. For use with the callouts.
     void calloutsError(const err_type error, const int errDetail);
@@ -192,6 +198,11 @@ private:
     void endRequestSatisfaction();
     /// called by StoreEntry when it has more buffer space available
     void resumeBodyStorage();
+
+    // assigns log_uri with anUri without copying the entire C-string
+    void absorbLogUri(char *anUri);
+    // resets the current request and log_uri to nil
+    void clearRequest();
 
 private:
     CbcPointer<Adaptation::Initiate> virginHeadSource;

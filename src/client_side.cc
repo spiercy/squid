@@ -479,10 +479,9 @@ void
 ClientHttpRequest::freeResources()
 {
     safe_free(uri);
-
     safe_free(redirect.location);
     range_iter.boundary.clean();
-    setRequest(nullptr);
+    clearRequest();
 
     if (client_stream.tail)
         clientStreamAbort((clientStreamNode *)client_stream.tail->data, this);
@@ -1016,8 +1015,7 @@ ConnStateData::abortRequestParsing(const char *const uri)
 {
     ClientHttpRequest *http = new ClientHttpRequest(this);
     http->req_sz = inBuf.length();
-    http->uri = xstrdup(uri);
-    http->setLogUriToErrorUri(uri);
+    http->setErrorUri(uri);
     auto *context = new Http::Stream(clientConnection, http);
     StoreIOBuffer tempBuffer;
     tempBuffer.data = context->reqbuf;
@@ -4050,9 +4048,7 @@ ConnStateData::checkLogging()
     /* Create a temporary ClientHttpRequest object. Its destructor will log. */
     ClientHttpRequest http(this);
     http.req_sz = inBuf.length();
-    char const *uri = "error:transaction-end-before-headers";
-    http.uri = xstrdup(uri);
-    http.setLogUriToErrorUri(http.uri);
+    http.setErrorUri("error:transaction-end-before-headers");
 }
 
 bool

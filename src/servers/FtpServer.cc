@@ -1706,7 +1706,6 @@ Ftp::Server::setReply(const int code, const char *msg)
     ClientHttpRequest *const http = context->http;
     assert(http != NULL);
     assert(http->storeEntry() == NULL);
-    assert(http->log_uri); // already initialized via parseOneRequest(). TODO: remove
 
     HttpReply *const reply = Ftp::HttpReplyWrapper(code, msg, Http::scNoContent, 0);
 

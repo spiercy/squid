@@ -538,17 +538,14 @@ URL::absolute() const
  */
 
 char *
-urlCanonicalClean(const SBuf &url, const HttpRequestMethod &method, const AnyP::UriScheme &scheme)
+urlCanonicalCleanWithoutRequest(const SBuf &url, const HttpRequestMethod &method, const AnyP::UriScheme &scheme)
 {
     LOCAL_ARRAY(char, buf, MAX_URL);
     snprintf(buf, sizeof(buf), SQUIDSBUFPH, SQUIDSBUFPRINT(url));
     buf[sizeof(buf)-1] = '\0';
 
     // URN, CONNECT method, and non-stripped URIs can go straight out
-    const bool stripQuery = (Config.onoff.strip_query_terms &&
-            !(method == Http::METHOD_CONNECT || scheme == AnyP::PROTO_URN));
-
-    if (stripQuery) {
+    if (Config.onoff.strip_query_terms && !(method == Http::METHOD_CONNECT || scheme == AnyP::PROTO_URN)) {
         // strip anything AFTER a question-mark
         // leaving the '?' in place
         if (auto t = strchr(buf, '?')) {
@@ -563,9 +560,9 @@ urlCanonicalClean(const SBuf &url, const HttpRequestMethod &method, const AnyP::
 }
 
 char *
-requestUrlCanonicalClean(const HttpRequest * request)
+urlCanonicalClean(const HttpRequest &request)
 {
-    return urlCanonicalClean(request->effectiveRequestUri(), request->method, request->url.getScheme());
+    return urlCanonicalCleanWithoutRequest(request.effectiveRequestUri(), request.method, request.url.getScheme());
 }
 
 /**
@@ -586,7 +583,7 @@ urlCanonicalFakeHttps(const HttpRequest * request)
     }
 
     // else do the normal complete canonical thing.
-    return requestUrlCanonicalClean(request);
+    return urlCanonicalClean(*request);
 }
 
 /*

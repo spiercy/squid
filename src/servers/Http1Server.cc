@@ -135,7 +135,7 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
 
     if ((request = HttpRequest::CreateFromUrl(http->uri, parser_->method())) == NULL) {
         debugs(33, 5, "Invalid URL: " << http->uri);
-        // should be called before repContext->setReplyToError
+        // setReplyToError() requires log_uri
         http->setLogUriToRawUri(http->uri, parser_->method());
 
         const char * requestErrorBytes = inBuf.c_str();
@@ -154,7 +154,7 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
             (parser_->messageProtocol().major > 1) ) {
 
         debugs(33, 5, "Unsupported HTTP version discovered. :\n" << parser_->messageProtocol());
-        // should be called before repContext->setReplyToError
+        // setReplyToError() requires log_uri
         http->setLogUriToRawUri(http->uri, parser_->method());
 
         const char * requestErrorBytes = NULL; //HttpParserHdrBuf(parser_);
@@ -168,7 +168,7 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
     /* compile headers */
     if (parser_->messageProtocol().major >= 1 && !request->parseHeader(*parser_.getRaw())) {
         debugs(33, 5, "Failed to parse request headers:\n" << parser_->mimeHeader());
-        // should be called before repContext->setReplyToError
+        // setReplyToError() requires log_uri
         http->setLogUriToRawUri(http->uri, parser_->method());
         const char * requestErrorBytes = NULL; //HttpParserHdrBuf(parser_);
         if (!clientTunnelOnError(this, context, request, parser_->method(), ERR_INVALID_REQ)) {

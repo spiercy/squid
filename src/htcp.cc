@@ -277,7 +277,7 @@ htcpSyncAle(AccessLogEntryPointer &al, const Ip::Address &caddr, int opcode, Log
     al->htcp.opcode = htcpOpcodeStr[opcode];
     al->cache.code = logcode;
     al->url = url;
-    al->setVirginUrlForMissingRequest(SBuf(url));
+    al->setVirginUrlForMissingRequest(al->url);
     // HTCP transactions do not wait
     al->cache.start_time = current_time;
     al->cache.trTime.tv_sec = 0;
