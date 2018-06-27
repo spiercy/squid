@@ -1287,7 +1287,7 @@ ClientRequestContext::clientRedirectDone(const Helper::Reply &reply)
                                " from request " << old_request << " to " << new_request);
                     }
 
-                    http->resetRequest(new_request, true);
+                    http->resetRequest(new_request);
                     old_request = nullptr;
                 } else {
                     debugs(85, DBG_CRITICAL, "ERROR: URL-rewrite produces invalid request: " <<
@@ -1634,10 +1634,7 @@ ClientHttpRequest::loggingEntry(StoreEntry *newEntry)
 void
 ClientHttpRequest::initRequest(HttpRequest *aRequest)
 {
-    assert(aRequest);
-    assert(!request);
-    // TODO: also reset uri if possible
-    resetRequest(aRequest, false);
+    assignRequest(aRequest);
     if (const auto csd = getConn()) {
         if (!csd->connectionTag().isEmpty()) {
             if (!request->notes)
@@ -1656,18 +1653,24 @@ ClientHttpRequest::initRequest(HttpRequest *aRequest)
 }
 
 void
-ClientHttpRequest::resetRequest(HttpRequest *newRequest, const bool resetUri)
+ClientHttpRequest::resetRequest(HttpRequest *newRequest)
 {
     assert(newRequest);
-    HttpRequest *oldRequest = request;
-    assert(oldRequest != newRequest);
+    assert(request != newRequest);
     clearRequest();
     const_cast<HttpRequest *&>(request) = newRequest;
     HTTPMSGLOCK(request);
-    if (resetUri) {
-        xfree(uri);
-        uri = SBufToCstring(request->effectiveRequestUri());
-    }
+    xfree(uri);
+    uri = SBufToCstring(request->effectiveRequestUri());
+}
+
+void
+ClientHttpRequest::assignRequest(HttpRequest *newRequest)
+{
+    assert(newRequest);
+    assert(!request);
+    const_cast<HttpRequest *&>(request) = newRequest;
+    HTTPMSGLOCK(request);
     setLogUriToRequestUri();
 }
 
@@ -1959,22 +1962,22 @@ ClientHttpRequest::setLogUriToRawUri(const char *rawUri, const HttpRequestMethod
 }
 
 void
-ClientHttpRequest::absorbLogUri(char *anUri)
+ClientHttpRequest::absorbLogUri(char *aUri)
 {
     xfree(log_uri);
-    const_cast<char *&>(log_uri) = anUri;
+    const_cast<char *&>(log_uri) = aUri;
 }
 
 void
-ClientHttpRequest::setErrorUri(const char *anUri)
+ClientHttpRequest::setErrorUri(const char *aUri)
 {
     assert(!uri);
-    assert(anUri);
+    assert(aUri);
     // Should(!request);
 
-    uri = xstrdup(anUri);
+    uri = xstrdup(aUri);
     // TODO: SBuf() performance regression, fix by converting errorUri to SBuf
-    SBuf errorUri(anUri);
+    const SBuf errorUri(aUri);
     const auto canonicalUri = urlCanonicalCleanWithoutRequest(errorUri, HttpRequestMethod(), AnyP::UriScheme());
     absorbLogUri(xstrndup(canonicalUri, MAX_URL));
 
@@ -2029,13 +2032,10 @@ ClientHttpRequest::handleAdaptedHeader(HttpMsg *msg)
     assert(msg);
 
     if (HttpRequest *new_req = dynamic_cast<HttpRequest*>(msg)) {
-
-        resetRequest(new_req, true);
-
         // update the new message to flag whether URL re-writing was done on it
-        if (request->effectiveRequestUri().cmp(uri) != 0)
-            request->flags.redirected = 1;
-
+        if (request->effectiveRequestUri() != new_req->effectiveRequestUri())
+            new_req->flags.redirected = true;
+        resetRequest(new_req);
         assert(request->method.id());
     } else if (HttpReply *new_rep = dynamic_cast<HttpReply*>(msg)) {
         debugs(85,3,HERE << "REQMOD reply is HTTP reply");

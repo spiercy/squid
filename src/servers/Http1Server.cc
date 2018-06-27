@@ -120,8 +120,9 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
             // else use default ERR_INVALID_REQ set above.
             break;
         }
-
-        assert(http->log_uri && http->al->effectiveVirginUrl()); // already initialized via ConnStateData::abortRequestParsing()
+        // setReplyToError() requires log_uri
+        // must be already initialized via ConnStateData::abortRequestParsing()
+        assert(http->log_uri);
 
         const char * requestErrorBytes = inBuf.c_str();
         if (!clientTunnelOnError(this, context, request, parser_->method(), errPage)) {
@@ -234,6 +235,8 @@ Http::One::Server::processParsedRequest(Http::StreamPointer &context)
         if (!supportedExpect) {
             clientStreamNode *node = context->getClientReplyContext();
             quitAfterError(request.getRaw());
+            // setReplyToError() requires log_uri
+            assert(http->log_uri);
             clientReplyContext *repContext = dynamic_cast<clientReplyContext *>(node->data.getRaw());
             assert (repContext);
             repContext->setReplyToError(ERR_INVALID_REQ, Http::scExpectationFailed, request->method, http->uri,

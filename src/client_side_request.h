@@ -70,8 +70,7 @@ public:
     /// Resets the current request to the latest adapted or redirected
     /// request. Call this every time adaptation or redirection changes
     /// the request. To set the virgin request, use initRequest().
-    /// \param resetUri whether also initialize uri with the request
-    void resetRequest(HttpRequest *, const bool resetUri);
+    void resetRequest(HttpRequest *);
 
     /** Details of the client socket which produced us.
      * Treat as read-only for the lifetime of this HTTP request.
@@ -83,9 +82,10 @@ public:
     /// Adaptation and redirections replace it; see resetRequest().
     HttpRequest * const request;
     char *uri;
-    /// A request URI after cleanup (a virgin, or after adaptation/redirection) or a
-    /// computed URI of internally generated requests and various "error:..." URIs.
-    // TODO: remove and store the URL directly in al->url
+    // TODO: remove this field and store the URI directly in al->url
+    /// Cleaned up URI of the current (virgin or adapted/redirected) request,
+    /// computed URI of an internally-generated requests, or
+    /// one of the hard-coded "error:..." URIs.
     char * const log_uri;
     String store_id; /* StoreID for transactions where the request member is nil */
 
@@ -129,8 +129,8 @@ public:
     ClientRequestContext *calloutContext;
     void doCallouts();
 
-    // The three methods below prepare log_uri for future logging. Call the most
-    // appropriate method whenever the current request or its URI changes.
+    // The three methods below prepare log_uri and friends for future logging.
+    // Call the best-fit method whenever the current request or its URI changes.
 
     /// sets log_uri when we know the current request
     void setLogUriToRequestUri();
@@ -199,10 +199,12 @@ private:
     /// called by StoreEntry when it has more buffer space available
     void resumeBodyStorage();
 
-    // assigns log_uri with anUri without copying the entire C-string
-    void absorbLogUri(char *anUri);
-    // resets the current request and log_uri to nil
+    /// assigns log_uri with aUri without copying the entire C-string
+    void absorbLogUri(char *aUri);
+    /// resets the current request and log_uri to nil
     void clearRequest();
+    /// initializes the current unassigned request to the virgin request
+    void assignRequest(HttpRequest *aRequest);
 
 private:
     CbcPointer<Adaptation::Initiate> virginHeadSource;
