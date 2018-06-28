@@ -120,9 +120,9 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
             // else use default ERR_INVALID_REQ set above.
             break;
         }
-        http->al->setVirginUrlForMissingRequest(http->uri);
         // setLogUri should called before repContext->setReplyToError
         setLogUri(http, http->uri, true);
+        http->al->setVirginUrlForMissingRequest(http->log_uri);
         const char * requestErrorBytes = inBuf.c_str();
         if (!clientTunnelOnError(this, context, request, parser_->method(), errPage)) {
             setReplyError(context, request, parser_->method(), errPage, parser_->parseStatusCode, requestErrorBytes);
@@ -135,9 +135,9 @@ Http::One::Server::buildHttpRequest(Http::StreamPointer &context)
 
     if ((request = HttpRequest::CreateFromUrl(http->uri, parser_->method())) == NULL) {
         debugs(33, 5, "Invalid URL: " << http->uri);
-        http->al->setVirginUrlForMissingRequest(http->uri);
         // setLogUri should called before repContext->setReplyToError
         setLogUri(http, http->uri, true);
+        http->al->setVirginUrlForMissingRequest(http->log_uri);
 
         const char * requestErrorBytes = inBuf.c_str();
         if (!clientTunnelOnError(this, context, request, parser_->method(), ERR_INVALID_URL)) {

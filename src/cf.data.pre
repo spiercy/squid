@@ -4094,19 +4094,42 @@ DOC_START
 
 	The <format specification> is a string with embedded % format codes
 
-	% format codes all follow the same basic structure where all but
-	the formatcode is optional. Output strings are automatically escaped
-	as required according to their context and the output format
-	modifiers are usually not needed, but can be specified if an explicit
-	output format is desired.
+	% format codes all follow the same basic structure where all
+	components but the formatcode are optional and usually unnecessary,
+	especially when dealing with common codes.
 
-		% ["|[|'|#|/] [-] [[0]width] [{arg}] formatcode [{arg}]
+		% [encoding] [-] [[0]width] [{arg}] formatcode [{arg}]
 
-		"	output in quoted string format
-		[	output in squid text log format as used by log_mime_hdrs
-		#	output in URL quoted format
-		/	output in shell \-escaped format
-		'	output as-is
+		encoding escapes or otherwise protects "special" characters:
+
+			"	Quoted string encoding where quote(") and
+				backslash(\) characters are \-escaped while
+				CR, LF, and TAB characters are encoded as \r,
+				\n, and \t two-character sequences.
+
+			[	Custom Squid encoding where percent(%), square
+				brackets([]), backslash(\) and characters with
+				codes outside of [32,126] range are %-encoded.
+				SP is not encoded. Used by log_mime_hdrs.
+
+			#	URL encoding (a.k.a. percent-encoding) where
+				all URL unsafe and control characters (per RFC
+				1738) are %-encoded.
+
+			/	Shell-like encoding where quote(") and
+				backslash(\) characters are \-escaped while CR
+				and LF characters are encoded as \r and \n
+				two-character sequences. Values containing SP
+				character(s) are surrounded by quotes(").
+
+			'	Raw/as-is encoding with no escaping/quoting.
+
+			Default encoding: When no explicit encoding is
+			specified, each %code determines its own encoding.
+			Most %codes use raw/as-is encoding, but some codes use
+			a so called "pass-through URL encoding" where all URL
+			unsafe and control characters (per RFC 1738) are
+			%-encoded, but the percent character(%) is left as is.
 
 		-	left aligned
 
@@ -4217,31 +4240,36 @@ DOC_START
 
 				Logs request URI received from the client, a
 				request adaptation service, or a request
-				redirector (whichever was applied last). For
-				historical reasons, whitespace in this field
-				is sanitized according to uri_whitespace. That
-				cleanup happens before field encoding is
-				applied, leading to confusing double-encoding
-				results in some non-default configurations.
-
-				This field is not encoded by default.
+				redirector (whichever was applied last).
+				XXX: Redirector changes may be ignored.
 
 				Computed URLs are URIs of internally generated
-				requests and various error:... URIs.
+				requests and various "error:..." URIs.
+
+				Honors strip_query_terms and uri_whitespace.
+				XXX: Large URLs ignore strip_query_terms.
+
+				This field is not encoded by default. Encoding
+				this field using variants of %-encoding will
+				clash with uri_whitespace modifications that
+				also use %-encoding.
 
 		[http::]>ru	Request URL received from the client (or computed)
 
-				Unlike %ru, this request URI is not affected
-				by request adaptation and URL rewriting
-				services. This field is not sanitized
-				according to uri_whitespace either.
-
-				By default, all "unsafe" and "control"
-				characters (see RFC 1738) are URL-encoded
-				except for the percent (%) which is untouched.
-
 				Computed URLs are URIs of internally generated
-				requests and various error:... URIs.
+				requests and various "error:..." URIs.
+
+				Unlike %ru, this request URI is not affected
+				by request adaptation, URL rewriting services,
+				and strip_query_terms.
+
+				Honors uri_whitespace.
+
+				This field is using pass-through URL encoding
+				by default. Encoding this field using other
+				variants of %-encoding will clash with
+				uri_whitespace modifications that also use
+				%-encoding.
 
 		[http::]<ru	Request URL sent to server or peer
 		[http::]>rs	Request URL scheme from client
