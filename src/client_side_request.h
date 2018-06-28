@@ -204,6 +204,7 @@ private:
     /// resets the current request and log_uri to nil
     void clearRequest();
     /// initializes the current unassigned request to the virgin request
+    /// sets the current request, asserting that it was unset
     void assignRequest(HttpRequest *aRequest);
 
 private:

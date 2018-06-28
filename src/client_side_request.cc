@@ -1655,11 +1655,9 @@ ClientHttpRequest::initRequest(HttpRequest *aRequest)
 void
 ClientHttpRequest::resetRequest(HttpRequest *newRequest)
 {
-    assert(newRequest);
     assert(request != newRequest);
     clearRequest();
-    const_cast<HttpRequest *&>(request) = newRequest;
-    HTTPMSGLOCK(request);
+    assignRequest(newRequest);
     xfree(uri);
     uri = SBufToCstring(request->effectiveRequestUri());
 }

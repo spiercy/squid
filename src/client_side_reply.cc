@@ -2308,7 +2308,8 @@ clientReplyContext::createStoreEntry(const HttpRequestMethod& m, RequestFlags re
 
     if (http->request == NULL) {
         // XXX: These fake URI parameters shadow the real (or error:...) URI.
-        // TODO: Pass URI(void) and teach %>ru logging code to ignore such URIs.
+        // TODO: Either always set the request earlier and assert here OR use
+        // http->uri (converted to Anyp::Uri) to create this catch-all request.
         const_cast<HttpRequest *&>(http->request) = new HttpRequest(m, AnyP::PROTO_NONE, "http", null_string);
         HTTPMSGLOCK(http->request);
     }
