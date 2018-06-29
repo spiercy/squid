@@ -461,7 +461,8 @@ Security::PeerConnector::noteWantRead()
 
     // read timeout to avoid getting stuck while reading from a silent server
     AsyncCall::Pointer nil;
-    Comm::SetClientObjectReadTimeout(serverConnection(), startTime, negotiationTimeout, nil);
+    time_t timeout = Comm::MortalReadTimeout(startTime, negotiationTimeout);
+    commSetConnTimeout(serverConnection(), timeout, nil);
 
     Comm::SetSelect(fd, COMM_SELECT_READ, &NegotiateSsl, this, 0);
 }
