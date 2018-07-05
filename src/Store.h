@@ -38,7 +38,24 @@ class RequestFlags;
 
 extern StoreIoStats store_io_stats;
 
-class StoreEntry : public hash_link, public Packable
+class StoreEntry;
+
+class StoreEntryPacker : public Packable
+{
+public:
+	StoreEntryPacker(StoreEntry &e) : entry(&e) {}
+
+    virtual void append(char const *, int) override;
+    virtual void vappendf(const char *, va_list) override;
+    virtual void buffer() override;
+    virtual void flush() override;
+
+private:
+    StoreEntry *entry;
+};
+
+class StoreEntry : public hash_link
+//, public Packable
 {
 
 public:
@@ -194,6 +211,9 @@ public:
     /// allow or forbid collapsed requests feeding
     void setCollapsingRequirement(const bool required);
 
+    Packable *packer() { return packer_; }
+    void packer(Packable *);
+
     MemObject *mem_obj;
     RemovalPolicyNode repl;
     /* START OF ON-DISK STORE_META_STD TLV field */
@@ -275,11 +295,10 @@ public:
     void kickProducer();
 #endif
 
-    /* Packable API */
-    virtual void append(char const *, int);
-    virtual void vappendf(const char *, va_list);
-    virtual void buffer();
-    virtual void flush();
+    void append(char const *, int);
+    void vappendf(const char *, va_list);
+    void buffer();
+    void flush();
 
 protected:
     typedef Store::EntryGuard EntryGuard;
@@ -305,6 +324,7 @@ private:
     /// they previously locked? This member should not affect transactions
     /// that already started reading from the entry.
     bool shareableWhenPrivate;
+    Packable *packer_;
 
 #if USE_ADAPTATION
     /// producer callback registered with deferProducer

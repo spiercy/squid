@@ -344,7 +344,7 @@ HttpRequest::swapOut(StoreEntry * e)
 {
     assert(e);
     e->buffer();
-    pack(e);
+    pack(e->packer());
     e->flush();
 }
 

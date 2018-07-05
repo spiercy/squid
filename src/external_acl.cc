@@ -1093,7 +1093,7 @@ externalAclStats(StoreEntry * sentry)
         storeAppendPrintf(sentry, "External ACL Statistics: %s\n", p->name);
         storeAppendPrintf(sentry, "Cache size: %d\n", p->cache->count);
         assert(p->theHelper);
-        p->theHelper->packStatsInto(sentry);
+        p->theHelper->packStatsInto(sentry->packer());
         storeAppendPrintf(sentry, "\n");
     }
 }

@@ -75,6 +75,7 @@ testEvent::testDump()
     CalledEvent event;
     CalledEvent event2;
     CapturingStoreEntry * anEntry = new CapturingStoreEntry();
+    anEntry->packer(new CapturingStoreEntryPacker(*anEntry));
     String expect =  "Last event to run: last event\n"
                      "\n"
                      "Operation                \tNext Execution \tWeight\tCallback Valid?\n"

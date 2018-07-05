@@ -2388,7 +2388,7 @@ dump_cachemgrpasswd(StoreEntry * entry, const char *name, Mgr::ActionPasswordLis
             storeAppendPrintf(entry, "%s %s", name, list->passwd);
 
         for (auto w : list->actions)
-            entry->appendf(" " SQUIDSBUFPH, SQUIDSBUFPRINT(w));
+            entry->packer()->appendf(" " SQUIDSBUFPH, SQUIDSBUFPRINT(w));
 
         storeAppendPrintf(entry, "\n");
         list = list->next;
@@ -3934,7 +3934,7 @@ dump_generic_port(StoreEntry * e, const char *n, const AnyP::PortCfgPointer &s)
         storeAppendPrintf(e, " ssl-bump");
 #endif
 
-    s->secure.dumpCfg(e, "tls-");
+    s->secure.dumpCfg(e->packer(), "tls-");
 }
 
 static void

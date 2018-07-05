@@ -206,7 +206,7 @@ static void
 authenticateNegotiateStats(StoreEntry * sentry)
 {
     if (negotiateauthenticators)
-        negotiateauthenticators->packStatsInto(sentry, "Negotiate Authenticator Statistics");
+        negotiateauthenticators->packStatsInto(sentry->packer(), "Negotiate Authenticator Statistics");
 }
 
 /*

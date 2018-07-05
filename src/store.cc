@@ -337,7 +337,8 @@ StoreEntry::StoreEntry() :
     store_status(STORE_PENDING),
     swap_status(SWAPOUT_NONE),
     lock_count(0),
-    shareableWhenPrivate(false)
+    shareableWhenPrivate(false),
+    packer_(new StoreEntryPacker(*this))
 {
     debugs(20, 5, "StoreEntry constructed, this=" << this);
 }
@@ -345,6 +346,8 @@ StoreEntry::StoreEntry() :
 StoreEntry::~StoreEntry()
 {
     debugs(20, 5, "StoreEntry destructed, this=" << this);
+    assert(packer_);
+    delete packer_;
 }
 
 #if USE_ADAPTATION
@@ -818,6 +821,30 @@ StoreEntry::write (StoreIOBuffer writeBuffer)
     invokeHandlers();
 }
 
+void
+StoreEntryPacker::append(char const *buf, int len)
+{
+    entry->append(buf, len);
+}
+
+void
+StoreEntryPacker::vappendf(const char *fmt, va_list vargs)
+{
+    entry->vappendf(fmt, vargs);
+}
+
+void
+StoreEntryPacker::buffer()
+{
+    entry->buffer();
+}
+
+void
+StoreEntryPacker::flush()
+{
+    entry->flush();
+}
+
 /* Append incoming data from a primary server to an entry. */
 void
 StoreEntry::append(char const *buf, int len)
@@ -876,7 +903,7 @@ storeAppendPrintf(StoreEntry * e, const char *fmt,...)
 {
     va_list args;
     va_start(args, fmt);
-    e->vappendf(fmt, args);
+    e->packer()->vappendf(fmt, args);
     va_end(args);
 }
 
@@ -1651,6 +1678,14 @@ StoreEntry::flush()
     }
 }
 
+void
+StoreEntry::packer(Packable *p)
+{
+    assert(packer_);
+    delete packer_;
+    packer_ = p;
+}
+
 int64_t
 StoreEntry::objectLen() const
 {
@@ -1807,10 +1842,10 @@ StoreEntry::startWriting()
     assert(rep);
 
     buffer();
-    rep->packHeadersInto(this);
+    rep->packHeadersInto(packer_);
     mem_obj->markEndOfReplyHeaders();
 
-    rep->body.packInto(this);
+    rep->body.packInto(packer_);
     flush();
 
     // The entry headers are written, new clients

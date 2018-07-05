@@ -29,7 +29,7 @@ Ssl::CertificateStorageAction::Create(const Mgr::Command::Pointer &aCmd)
 
 void Ssl::CertificateStorageAction::dump (StoreEntry *sentry)
 {
-    PackableStream stream(*sentry);
+    PackableStream stream(*sentry->packer());
     const char delimiter = '\t';
     const char endString = '\n';
     // Page title.

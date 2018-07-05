@@ -203,7 +203,7 @@ testRock::addEntry(const int i)
     StoreEntry *const pe = createEntry(i);
 
     pe->buffer();
-    pe->getReply()->packHeadersInto(pe);
+    pe->getReply()->packHeadersInto(pe->packer());
     pe->flush();
     pe->timestampsSet();
     pe->complete();

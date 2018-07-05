@@ -152,7 +152,7 @@ testUfs::testUfsSearch()
         pe->setPublicKey();
 
         pe->buffer();
-        pe->getReply()->packHeadersInto(pe);
+        pe->getReply()->packHeadersInto(pe->packer());
         pe->flush();
         pe->timestampsSet();
         pe->complete();

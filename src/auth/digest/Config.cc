@@ -631,7 +631,7 @@ static void
 authenticateDigestStats(StoreEntry * sentry)
 {
     if (digestauthenticators)
-        digestauthenticators->packStatsInto(sentry, "Digest Authenticator Statistics");
+        digestauthenticators->packStatsInto(sentry->packer(), "Digest Authenticator Statistics");
 }
 
 /* NonceUserUnlink: remove the reference to auth_user and unlink the node from the list */
