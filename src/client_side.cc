@@ -3097,9 +3097,11 @@ ConnStateData::getSslContextDone(Security::ContextPointer &ctx)
 }
 
 void
-ConnStateData::switchToHttps(HttpRequest *request, Ssl::BumpMode bumpServerMode)
+ConnStateData::switchToHttps(ClientHttpRequest *http, Ssl::BumpMode bumpServerMode)
 {
     assert(!switchedToHttps_);
+    Must(http->request);
+    auto &request = http->request;
 
     sslConnectHostOrIp = request->url.host();
     resetSslCommonName(request->url.host());
@@ -3117,10 +3119,10 @@ ConnStateData::switchToHttps(HttpRequest *request, Ssl::BumpMode bumpServerMode)
     // without even peeking at the origin server certificate.
     if (bumpServerMode == Ssl::bumpServerFirst && !sslServerBump) {
         request->flags.sslPeek = true;
-        sslServerBump = new Ssl::ServerBump(request);
+        sslServerBump = new Ssl::ServerBump(http);
     } else if (bumpServerMode == Ssl::bumpPeek || bumpServerMode == Ssl::bumpStare) {
         request->flags.sslPeek = true;
-        sslServerBump = new Ssl::ServerBump(request, NULL, bumpServerMode);
+        sslServerBump = new Ssl::ServerBump(http, NULL, bumpServerMode);
     }
 
     // commSetConnTimeout() was called for this request before we switched.
