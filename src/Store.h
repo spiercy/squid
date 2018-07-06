@@ -40,10 +40,11 @@ extern StoreIoStats store_io_stats;
 
 class StoreEntry;
 
+// Implements Packable API for StoreEntry
 class StoreEntryPacker : public Packable
 {
 public:
-	StoreEntryPacker(StoreEntry &e) : entry(&e) {}
+    StoreEntryPacker(StoreEntry &e) : entry(e) {}
 
     virtual void append(char const *, int) override;
     virtual void vappendf(const char *, va_list) override;
@@ -51,11 +52,10 @@ public:
     virtual void flush() override;
 
 private:
-    StoreEntry *entry;
+    StoreEntry &entry;
 };
 
 class StoreEntry : public hash_link
-//, public Packable
 {
 
 public:
@@ -211,7 +211,8 @@ public:
     /// allow or forbid collapsed requests feeding
     void setCollapsingRequirement(const bool required);
 
-    Packable *packer() { return packer_; }
+    Packable *packer();
+
     void packer(Packable *);
 
     MemObject *mem_obj;

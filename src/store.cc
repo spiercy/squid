@@ -338,7 +338,7 @@ StoreEntry::StoreEntry() :
     swap_status(SWAPOUT_NONE),
     lock_count(0),
     shareableWhenPrivate(false),
-    packer_(new StoreEntryPacker(*this))
+    packer_(nullptr)
 {
     debugs(20, 5, "StoreEntry constructed, this=" << this);
 }
@@ -824,25 +824,25 @@ StoreEntry::write (StoreIOBuffer writeBuffer)
 void
 StoreEntryPacker::append(char const *buf, int len)
 {
-    entry->append(buf, len);
+    entry.append(buf, len);
 }
 
 void
 StoreEntryPacker::vappendf(const char *fmt, va_list vargs)
 {
-    entry->vappendf(fmt, vargs);
+    entry.vappendf(fmt, vargs);
 }
 
 void
 StoreEntryPacker::buffer()
 {
-    entry->buffer();
+    entry.buffer();
 }
 
 void
 StoreEntryPacker::flush()
 {
-    entry->flush();
+    entry.flush();
 }
 
 /* Append incoming data from a primary server to an entry. */
@@ -1684,6 +1684,14 @@ StoreEntry::packer(Packable *p)
     assert(packer_);
     delete packer_;
     packer_ = p;
+}
+
+Packable *
+StoreEntry::packer()
+{
+    if (!packer_)
+        packer_ = new StoreEntryPacker(*this);
+    return packer_;
 }
 
 int64_t
