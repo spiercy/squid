@@ -79,14 +79,20 @@ public:
 
     /// Request currently being handled by ClientHttpRequest.
     /// Starts as a virgin request; see initRequest().
+    /// Usually remains nil until the virgin request header is parsed or faked.
     /// Adaptation and redirections replace it; see resetRequest().
     HttpRequest * const request;
+    /// Usually starts as a URI received from the client, with scheme and host
+    /// added if needed. Is used to create the virgin request for initRequest().
+    /// URIs of adapted/redirected requests replace it via resetRequest().
     char *uri;
+
     // TODO: remove this field and store the URI directly in al->url
     /// Cleaned up URI of the current (virgin or adapted/redirected) request,
     /// computed URI of an internally-generated requests, or
     /// one of the hard-coded "error:..." URIs.
     char * const log_uri;
+
     String store_id; /* StoreID for transactions where the request member is nil */
 
     struct Out {
@@ -153,6 +159,14 @@ public:
 #endif
 
 private:
+    /// assigns log_uri with aUri without copying the entire C-string
+    void absorbLogUri(char *aUri);
+    /// resets the current request and log_uri to nil
+    void clearRequest();
+    /// initializes the current unassigned request to the virgin request
+    /// sets the current request, asserting that it was unset
+    void assignRequest(HttpRequest *aRequest);
+
     int64_t maxReplyBodySize_;
     StoreEntry *entry_;
     StoreEntry *loggingEntry_;
@@ -198,14 +212,6 @@ private:
     void endRequestSatisfaction();
     /// called by StoreEntry when it has more buffer space available
     void resumeBodyStorage();
-
-    /// assigns log_uri with aUri without copying the entire C-string
-    void absorbLogUri(char *aUri);
-    /// resets the current request and log_uri to nil
-    void clearRequest();
-    /// initializes the current unassigned request to the virgin request
-    /// sets the current request, asserting that it was unset
-    void assignRequest(HttpRequest *aRequest);
 
 private:
     CbcPointer<Adaptation::Initiate> virginHeadSource;

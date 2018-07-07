@@ -667,3 +667,9 @@ HttpRequest::effectiveRequestUri() const
     return url.absolute();
 }
 
+char *
+HttpRequest::canonicalCleanUrl() const
+{
+    return urlCanonicalCleanWithoutRequest(effectiveRequestUri(), method, url.getScheme());
+}
+

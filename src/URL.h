@@ -173,6 +173,7 @@ char *urlCanonicalClean(const HttpRequest &);
 /// call urlCanonicalClean() instead if you have HttpRequest
 /// \returns a pointer to a local static buffer containing request URI
 /// that honors strip_query_terms and %-encodes unsafe URI characters
+/// call HttpRequest::canonicalCleanUrl() instead if you have HttpRequest
 char *urlCanonicalCleanWithoutRequest(const SBuf &url, const HttpRequestMethod &, const AnyP::UriScheme &);
 const char *urlCanonicalFakeHttps(const HttpRequest * request);
 bool urlIsRelative(const char *);

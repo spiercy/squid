@@ -559,12 +559,6 @@ urlCanonicalCleanWithoutRequest(const SBuf &url, const HttpRequestMethod &method
     return buf;
 }
 
-char *
-urlCanonicalClean(const HttpRequest &request)
-{
-    return urlCanonicalCleanWithoutRequest(request.effectiveRequestUri(), request.method, request.url.getScheme());
-}
-
 /**
  * Yet another alternative to urlCanonical.
  * This one adds the https:// parts to Http::METHOD_CONNECT URL
@@ -583,7 +577,7 @@ urlCanonicalFakeHttps(const HttpRequest * request)
     }
 
     // else do the normal complete canonical thing.
-    return urlCanonicalClean(*request);
+    return request->canonicalCleanUrl();
 }
 
 /*
