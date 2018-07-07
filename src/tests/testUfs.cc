@@ -152,7 +152,8 @@ testUfs::testUfsSearch()
         pe->setPublicKey();
 
         pe->buffer();
-        pe->getReply()->packHeadersInto(pe->packer());
+        StoreEntryPacker packer(*pe);
+        pe->getReply()->packHeadersInto(&packer);
         pe->flush();
         pe->timestampsSet();
         pe->complete();

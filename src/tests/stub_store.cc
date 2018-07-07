@@ -134,4 +134,8 @@ void storeFsDone(void) STUB
 void storeReplAdd(const char *, REMOVALPOLICYCREATE *) STUB
 void destroyStoreEntry(void *) STUB
 void storeGetMemSpace(int size) STUB
+void StoreEntryPacker::append(char const *, int) STUB
+void StoreEntryPacker::vappendf(const char *, va_list) STUB
+void StoreEntryPacker::buffer() STUB
+void StoreEntryPacker::flush() STUB
 

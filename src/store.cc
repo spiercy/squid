@@ -337,8 +337,7 @@ StoreEntry::StoreEntry() :
     store_status(STORE_PENDING),
     swap_status(SWAPOUT_NONE),
     lock_count(0),
-    shareableWhenPrivate(false),
-    packer_(nullptr)
+    shareableWhenPrivate(false)
 {
     debugs(20, 5, "StoreEntry constructed, this=" << this);
 }
@@ -346,8 +345,6 @@ StoreEntry::StoreEntry() :
 StoreEntry::~StoreEntry()
 {
     debugs(20, 5, "StoreEntry destructed, this=" << this);
-    assert(packer_);
-    delete packer_;
 }
 
 #if USE_ADAPTATION
@@ -897,17 +894,18 @@ StoreEntry::vappendf(const char *fmt, va_list vargs)
     delete[] buf2;
 }
 
-// deprecated. use StoreEntry::appendf() instead.
+// deprecated. use StoreEntryPacker::appendf() instead.
 void
 storeAppendPrintf(StoreEntry * e, const char *fmt,...)
 {
     va_list args;
     va_start(args, fmt);
-    e->packer()->vappendf(fmt, args);
+    StoreEntryPacker packer(*e);
+    packer.vappendf(fmt, args);
     va_end(args);
 }
 
-// deprecated. use StoreEntry::appendf() instead.
+// Unused, TODO: remove.
 void
 storeAppendVPrintf(StoreEntry * e, const char *fmt, va_list vargs)
 {
@@ -1678,22 +1676,6 @@ StoreEntry::flush()
     }
 }
 
-void
-StoreEntry::packer(Packable *p)
-{
-    assert(packer_);
-    delete packer_;
-    packer_ = p;
-}
-
-Packable *
-StoreEntry::packer()
-{
-    if (!packer_)
-        packer_ = new StoreEntryPacker(*this);
-    return packer_;
-}
-
 int64_t
 StoreEntry::objectLen() const
 {
@@ -1850,10 +1832,11 @@ StoreEntry::startWriting()
     assert(rep);
 
     buffer();
-    rep->packHeadersInto(packer_);
+    StoreEntryPacker packer(*this);
+    rep->packHeadersInto(&packer);
     mem_obj->markEndOfReplyHeaders();
 
-    rep->body.packInto(packer_);
+    rep->body.packInto(&packer);
     flush();
 
     // The entry headers are written, new clients

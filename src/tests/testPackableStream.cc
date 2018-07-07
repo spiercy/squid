@@ -34,10 +34,10 @@ testPackableStream::testGetStream()
     Store::Init();
 
     CapturingStoreEntry * anEntry = new CapturingStoreEntry();
-    anEntry->packer(new CapturingStoreEntryPacker(*anEntry));
+    CapturingStoreEntryPacker packer(*anEntry);
     {
         anEntry->lock("test");
-        PackableStream stream(*anEntry->packer());
+        PackableStream stream(packer);
         CPPUNIT_ASSERT_EQUAL(1, anEntry->_buffer_calls);
         CPPUNIT_ASSERT_EQUAL(0, anEntry->_flush_calls);
 

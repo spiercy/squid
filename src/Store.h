@@ -211,10 +211,6 @@ public:
     /// allow or forbid collapsed requests feeding
     void setCollapsingRequirement(const bool required);
 
-    Packable *packer();
-
-    void packer(Packable *);
-
     MemObject *mem_obj;
     RemovalPolicyNode repl;
     /* START OF ON-DISK STORE_META_STD TLV field */
@@ -325,7 +321,6 @@ private:
     /// they previously locked? This member should not affect transactions
     /// that already started reading from the entry.
     bool shareableWhenPrivate;
-    Packable *packer_;
 
 #if USE_ADAPTATION
     /// producer callback registered with deferProducer

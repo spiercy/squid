@@ -75,7 +75,6 @@ testEvent::testDump()
     CalledEvent event;
     CalledEvent event2;
     CapturingStoreEntry * anEntry = new CapturingStoreEntry();
-    anEntry->packer(new CapturingStoreEntryPacker(*anEntry));
     String expect =  "Last event to run: last event\n"
                      "\n"
                      "Operation                \tNext Execution \tWeight\tCallback Valid?\n"
@@ -89,7 +88,8 @@ testEvent::testDump()
     AsyncCallQueue::Instance().fire();
     scheduler.schedule("test event", CalledEvent::Handler, &event, 0, 0, false);
     scheduler.schedule("test event2", CalledEvent::Handler, &event2, 0, 0, false);
-    scheduler.dump(anEntry);
+    CapturingStoreEntryPacker packer(*anEntry);
+    scheduler.dump(anEntry, packer);
 
     /* loop over the strings, showing exactly where they differ (if at all) */
     printf("Actual Text:\n");
