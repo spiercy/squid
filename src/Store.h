@@ -292,10 +292,10 @@ public:
     void kickProducer();
 #endif
 
-    void append(char const *, int);
-    void vappendf(const char *, va_list);
-    void buffer();
-    void flush();
+    virtual void append(char const *, int);
+    virtual void vappendf(const char *, va_list);
+    virtual void buffer();
+    virtual void flush();
 
 protected:
     typedef Store::EntryGuard EntryGuard;
