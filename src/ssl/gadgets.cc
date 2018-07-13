@@ -214,7 +214,7 @@ printX509Signature(const Ssl::X509_Pointer &cert, std::string &out)
     X509_ALGOR *sig_alg;
     X509_get0_signature(&sig, &sig_alg, cert.get());
 #else
-    sig = cert->signature;
+    sig = cert.get()->signature;
 #endif
 
     if (sig && sig->data) {

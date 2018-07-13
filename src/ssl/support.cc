@@ -2369,7 +2369,7 @@ void Ssl::InRamCertificateDbKey(const Ssl::CertificateProperties &certProperties
         X509_ALGOR *sig_alg;
         X509_get0_signature(&sig, &sig_alg, certProperties.mimicCert.get());
 #else
-        sig = certProperties.mimicCert->signature;
+        sig = certProperties.mimicCert.get()->signature;
 #endif
         if (sig) {
             origSignatureAsKey = true;
