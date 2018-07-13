@@ -2388,8 +2388,8 @@ void Ssl::InRamCertificateDbKey(const Ssl::CertificateProperties &certProperties
     key.append(certProperties.signHash ? EVP_MD_name(certProperties.signHash) : "-");
 
     if (certProperties.mimicCert.get()) {
-        BIO *bio = BIO_new_SBuf(&key);
-        ASN1_item_i2d_bio(ASN1_ITEM_rptr(X509), bio, (ASN1_VALUE *)certProperties.mimicCert.get());
+        Ssl::BIO_Pointer bio(BIO_new_SBuf(&key));
+        ASN1_item_i2d_bio(ASN1_ITEM_rptr(X509), bio.get(), (ASN1_VALUE *)certProperties.mimicCert.get());
     }
 }
 
@@ -2413,6 +2413,7 @@ int
 bio_sbuf_write(BIO* bio, const char* data, int len)
 {
     SBuf *buf = static_cast<SBuf *>(bio->ptr);
+    // TODO: Convert exceptions into BIO errors
     buf->append(data, len);
     return len;
 }
@@ -2420,6 +2421,7 @@ bio_sbuf_write(BIO* bio, const char* data, int len)
 int
 bio_sbuf_puts(BIO* bio, const char* data)
 {
+    // TODO: use bio_sbuf_write() instead
     SBuf *buf = static_cast<SBuf *>(bio->ptr);
     size_t oldLen = buf->length();
     buf->append(data);
@@ -2431,6 +2433,7 @@ bio_sbuf_ctrl(BIO* bio, int cmd, long num, void* ptr) {
     SBuf *buf = static_cast<SBuf *>(bio->ptr);
     switch (cmd) {
     case BIO_CTRL_RESET:
+        // TODO: Convert exceptions into BIO errors
         buf->clear();
         return 1;
     case BIO_CTRL_FLUSH:
@@ -2440,28 +2443,10 @@ bio_sbuf_ctrl(BIO* bio, int cmd, long num, void* ptr) {
     }
 }
 
-
-#if HAVE_LIBCRYPTO_BIO_METH_NEW
-static BIO_METHOD *BioSBufMethods = nullptr;
-#else
-static BIO_METHOD BioSBufMethods = {
-    BIO_TYPE_MEM,
-    "Squid SBuf",
-    bio_sbuf_write,
-    nullptr,
-    bio_sbuf_puts,
-    nullptr,
-    bio_sbuf_ctrl,
-    bio_sbuf_create,
-    bio_sbuf_destroy,
-    NULL,
-
-};
-#endif
-
 BIO *Ssl::BIO_new_SBuf(SBuf *buf)
 {
 #if HAVE_LIBCRYPTO_BIO_METH_NEW
+    static BIO_METHOD *BioSBufMethods = nullptr;
     if (!BioSBufMethods) {
         BioSBufMethods = BIO_meth_new(BIO_TYPE_MEM, "Squid-SBuf");
         BIO_meth_set_write(BioSBufMethods, bio_sbuf_write);
@@ -2473,8 +2458,20 @@ BIO *Ssl::BIO_new_SBuf(SBuf *buf)
         BIO_meth_set_destroy(BioSBufMethods, bio_sbuf_destroy);
     }
 #else
-    BIO *bio = BIO_new(&BioSBufMethods);
+    static BIO_METHOD *BioSBufMethods = new BIO_METHOD({
+        BIO_TYPE_MEM,
+        "Squid SBuf",
+        bio_sbuf_write,
+        nullptr,
+        bio_sbuf_puts,
+        nullptr,
+        bio_sbuf_ctrl,
+        bio_sbuf_create,
+        bio_sbuf_destroy,
+        NULL
+    });
 #endif
+    BIO *bio = BIO_new(BioSBufMethods);
     if (!bio)
         return nullptr;
     bio->ptr = buf;
