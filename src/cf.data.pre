@@ -748,6 +748,14 @@ DOC_START
 	  		list separator. ; can be any non-alphanumeric
 			character.
 
+	  %>handshake	Raw client handshake. Initial client bytes received
+			by Squid on a newly accepted TCP connection.
+			Current support is limited to the https_port
+			connections (and CONNECT tunnels) that are subject
+			to the ssl_bump peek or stare action.
+			To protect binary handshake data, this field is always
+			base64-encoded (RFC 4648 Section 4)
+
 	  %ACL		The name of the ACL being tested.
 	  %DATA		The ACL arguments. If not used then any arguments
 			is automatically added at the end of the line
