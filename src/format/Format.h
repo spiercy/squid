@@ -31,6 +31,7 @@ class AccessLogEntry;
 typedef RefCount<AccessLogEntry> AccessLogEntryPointer;
 class MemBuf;
 class StoreEntry;
+class SBuf;
 
 namespace Format
 {
@@ -56,6 +57,7 @@ public:
     /// dump this whole list of formats into the provided StoreEntry
     void dump(StoreEntry * entry, const char *directiveName);
 
+    static const char *Base64Encode(const SBuf &);
 private:
 #if USE_OPENSSL
     char *sslErrorName(Ssl::ssl_error_t, char *buf, size_t size) const;

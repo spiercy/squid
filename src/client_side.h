@@ -410,6 +410,9 @@ public:
     virtual void startShutdown();
     virtual void endingShutdown();
 
+    /// Initial handshake preserved client data
+    SBuf preservedClientData;
+
 protected:
     void startDechunkingRequest();
     void finishDechunkingRequest(bool withSuccess);

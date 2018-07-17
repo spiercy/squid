@@ -4324,6 +4324,10 @@ clientPeekAndSpliceSSL(int fd, void *data)
             }
         }
 
+        // Preserve hello for future use
+        MemBuf const &rbuf = bio->rBufData();
+        conn->preservedClientData.assign(rbuf.content(), rbuf.contentSize());
+
         debugs(83, 5, "I got hello. Start forwarding the request!!! ");
         Comm::SetSelect(fd, COMM_SELECT_READ, NULL, NULL, 0);
         Comm::SetSelect(fd, COMM_SELECT_WRITE, NULL, NULL, 0);
@@ -4399,10 +4403,7 @@ void httpsSslBumpStep2AccessCheckDone(allow_t answer, void *data)
             context->connIsFinished();
 
             // fake a CONNECT request to force connState to tunnel
-            // XXX: copy from MemBuf reallocates, not a regression since old code did too
-            SBuf temp;
-            temp.append(rbuf.content(), rbuf.contentSize());
-            connState->fakeAConnectRequest("intercepted TLS spliced", temp);
+            connState->fakeAConnectRequest("intercepted TLS spliced", connState->preservedClientData);
         } else {
             // in.buf still has the "CONNECT ..." request data, reset it to SSL hello message
             connState->in.buf.append(rbuf.content(), rbuf.contentSize());

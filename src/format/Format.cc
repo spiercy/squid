@@ -8,6 +8,7 @@
 
 #include "squid.h"
 #include "AccessLogEntry.h"
+#include "base64.h"
 #include "client_side.h"
 #include "comm/Connection.h"
 #include "err_detail_type.h"
@@ -497,6 +498,13 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             if (al->hier.tcpServer != NULL) {
                 snprintf(tmp, sizeof(tmp), "0x%x", al->hier.tcpServer->nfmark);
                 out = tmp;
+            }
+            break;
+
+        case LFT_CLIENT_HANDSHAKE:
+            if (al->request && al->request->clientConnectionManager.valid()) {
+                const auto &handshake = al->request->clientConnectionManager->preservedClientData;
+                out = Base64Encode(handshake);
             }
             break;
 
@@ -1441,3 +1449,18 @@ Format::Format::sslErrorName(Ssl::ssl_error_t err, char *buf, size_t size) const
     return buf;
 }
 #endif
+
+const char *
+Format::Format::Base64Encode(const SBuf &data)
+{
+    if (int rawLength = data.length()) {
+        int outLength = base64_encode_len(rawLength);
+        static SBuf outStr;
+        outStr.clear();
+        char *outBuf = outStr.rawSpace(outLength + 1);
+        auto encLength = base64_encode(outBuf, outLength, data.rawContent(), rawLength);
+        outStr.forceSize(encLength);
+        return outStr.c_str();
+    }
+    return nullptr;
+}

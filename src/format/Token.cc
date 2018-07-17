@@ -141,6 +141,7 @@ static TokenTableEntry TokenTableMisc[] = {
     {"<qos", LFT_SERVER_LOCAL_TOS},
     {">nfmark", LFT_CLIENT_LOCAL_NFMARK},
     {"<nfmark", LFT_SERVER_LOCAL_NFMARK},
+    {">handshake", LFT_CLIENT_HANDSHAKE},
     {"err_code", LFT_SQUID_ERROR },
     {"err_detail", LFT_SQUID_ERROR_DETAIL },
     {"note", LFT_NOTE },

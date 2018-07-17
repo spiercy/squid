@@ -11,6 +11,7 @@
 #include "squid.h"
 #include "acl/Acl.h"
 #include "acl/FilledChecklist.h"
+#include "base64.h"
 #include "cache_cf.h"
 #include "client_side.h"
 #include "comm/Connection.h"
@@ -19,6 +20,7 @@
 #include "ExternalACLEntry.h"
 #include "fde.h"
 #include "format/ByteCode.h"
+#include "format/Format.h"
 #include "helper.h"
 #include "helper/Reply.h"
 #include "HttpHeaderTools.h"
@@ -419,6 +421,8 @@ parse_externalAclHelper(external_acl ** list)
             format->type = Format::LFT_EXT_ACL_NAME;
         else if (strcmp(token, "%DATA") == 0)
             format->type = Format::LFT_EXT_ACL_DATA;
+        else if (strcmp(token, "%>handshake") == 0)
+            format->type = Format::LFT_CLIENT_HANDSHAKE;
         else if (strcmp(token, "%%") == 0)
             format->type = Format::LFT_PERCENT;
         else {
@@ -552,6 +556,7 @@ dump_externalAclHelper(StoreEntry * sentry, const char *name, const external_acl
                 DUMP_EXT_ACL_TYPE_FMT(TAG," %%et");
                 DUMP_EXT_ACL_TYPE_FMT(EXT_ACL_NAME," %%ACL");
                 DUMP_EXT_ACL_TYPE_FMT(EXT_ACL_DATA," %%DATA");
+                DUMP_EXT_ACL_TYPE_FMT(CLIENT_HANDSHAKE," %%>handshake");
                 DUMP_EXT_ACL_TYPE_FMT(PERCENT, " %%%%");
             default:
                 fatal("unknown external_acl format error");
@@ -1183,6 +1188,12 @@ makeExternalAclKey(ACLFilledChecklist * ch, external_acl_data * acl_data)
                 }
 
                 first = 0;
+            }
+            break;
+        case Format::LFT_CLIENT_HANDSHAKE:
+            if (request->clientConnectionManager.valid()) {
+                const auto &handshake = request->clientConnectionManager->preservedClientData;
+                str = Format::Format::Base64Encode(handshake);
             }
             break;
         case Format::LFT_PERCENT:
