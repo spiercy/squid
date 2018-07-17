@@ -2029,14 +2029,28 @@ StoreEntry::detachFromDisk()
 void
 StoreEntry::checkDisk() const
 {
-    const bool ok = (swap_dirn < 0) == (swap_filen < 0) &&
-                    (swap_dirn < 0) == (swap_status == SWAPOUT_NONE) &&
-                    (swap_dirn < 0 || swap_dirn < Config.cacheSwap.n_configured);
+    const bool numbersOk = (swap_dirn < 0) == (swap_filen < 0);
+    const bool swapDirnOk = (swap_dirn < 0) || (swap_dirn < Config.cacheSwap.n_configured);
 
-    if (!ok) {
-        debugs(88, DBG_IMPORTANT, "ERROR: inconsistent disk entry state " << *this);
-        throw std::runtime_error("inconsistent disk entry state ");
+    bool swapStatusOk = false;
+    if (swap_dirn < 0)
+        swapStatusOk = swap_status == SWAPOUT_NONE;
+    else if (swap_status == SWAPOUT_NONE) {
+        // This situation may occur after swapout failures (e.g., max_size/max_object_size overflows).
+        // The entry is still attached to the disk (both swap_dirn and swap_dirn >= 0), but the
+        // corresponding disk entry is not available already. Such StoreEntry must be released by this
+        // time.
+        swapStatusOk = EBIT_TEST(flags, RELEASE_REQUEST);
+    } else {
+        assert(swap_dirn >= 0 && (swap_status == SWAPOUT_WRITING || swap_status == SWAPOUT_DONE));
+        swapStatusOk = true;
     }
+
+    if (numbersOk && swapStatusOk && swapDirnOk)
+        return;
+
+    debugs(88, DBG_IMPORTANT, "ERROR: inconsistent disk entry state " << *this);
+    throw std::runtime_error("inconsistent disk entry state ");
 }
 
 /*
