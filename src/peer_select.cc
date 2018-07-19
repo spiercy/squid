@@ -596,7 +596,7 @@ PeerSelector::selectMore()
     debugs(44, 3, request->method << ' ' << request->url.host());
 
     while (!currentServer && selectionState != DoFinished) {
-        switch(selectionState) {
+        switch (selectionState) {
         case DoCheckDirect:
             checkDirect();
             if (selectionState == DoCheckDirect)

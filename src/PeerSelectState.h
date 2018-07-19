@@ -150,7 +150,7 @@ public:
     ping_data ping;
 
 protected:
-        /// Removes all servers with the same grouId exist after the given server
+    /// Removes all servers with the same grouId exist after the given server
     /// in candidate peers list
     void groupSelect(FwdServer *);
 
