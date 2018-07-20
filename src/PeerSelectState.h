@@ -32,7 +32,8 @@ class PeerSelector;
 
 void peerSelectInit(void);
 
-/// Interface for those who need a list of peers to forward a request to.
+/// Interface for those who need a list of destination paths to forward a
+/// request to.
 class PeerSelectionInitiator: public Dns::IpReceiver
 {
 
@@ -53,26 +54,38 @@ public:
     virtual void noteIps(const Dns::CachedIps *, const Dns::LookupDetails &) override;
     virtual void noteLookup(const Dns::LookupDetails &) override;
 
-    void notePeer(CachePeer *peer, hier_code code);
-
-    /// \returns whether the initiator may use more destinations
-    bool wantsMoreDestinations() const;
-
-    /// whether noteDestination() and noteDestinationsEnd() calls are allowed
-    bool subscribed = false;
-    PeerSelector *selector = nullptr;
-    hier_code _peerType = HIER_NONE;
-    CbcPointer<CachePeer> _peer;
-    HttpRequestPointer request;
-    size_t foundPaths = 0; ///< number of unique destinations identified so far
-    ErrorState *lastError = nullptr;
-
     /* protected: */
     /// Initiates asynchronous peer selection that eventually
     /// results in zero or more noteDestination() calls and
     /// exactly one noteDestinationsEnd() call.
     void startSelectingDestinations(const AccessLogEntry::Pointer &ale, StoreEntry *entry);
-    void requestNewPeer();
+    
+    HttpRequestPointer request;
+
+protected:
+    /// Request for more destinations. The caller will be informed for any
+    /// new destination via noteDestination and noteDestinationsEnd methods
+    void requestMoreDestinations();
+
+    /// whether noteDestination() and noteDestinationsEnd() calls are allowed
+    bool subscribed = false;
+
+private:
+    
+    void notePeer(CachePeer *peer, hier_code code);
+
+    /// \returns whether the initiator may use more destinations
+    bool wantsMoreDestinations() const;
+
+    /// Used PeerSelector object to retrieve candidate peers
+    PeerSelector *selector = nullptr;
+
+    hier_code _peerType = HIER_NONE; ///< current candidate peers type
+    CbcPointer<CachePeer> _peer; ///< current candidate peer
+    size_t foundPaths = 0; ///< number of unique destinations identified so far
+
+    ///< The last DNS error.
+    ErrorState *lastError = nullptr;
 };
 
 class FwdServer;
@@ -275,9 +288,6 @@ private:
     CachePeer *hit;
     peer_t hit_type;
     ACLChecklist *acl_checklist;
-
-    typedef CbcPointer<PeerSelectionInitiator> Initiator;
-    Initiator initiator_; ///< recipient of the destinations we select; use interestedInitiator() to access
 
     const InstanceId<PeerSelector> id; ///< unique identification in worker log
 };

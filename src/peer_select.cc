@@ -198,6 +198,8 @@ PeerSelectionInitiator::notePeer(CachePeer *peer, hier_code code)
         }
         // May kill our self:
         noteDestinationsEnd(lastError);
+        delete selector; // it is not needed any more
+        selector = nullptr;
         return;
     }
 
@@ -210,7 +212,7 @@ PeerSelectionInitiator::notePeer(CachePeer *peer, hier_code code)
             noteIp(originalDst);
             return;
         }
-        requestNewPeer();//nothing to send continue to the next Peer
+        requestMoreDestinations();//nothing to send continue to the next Peer
         return;
     }
 
@@ -276,7 +278,7 @@ PeerSelectionInitiator::noteIps(const Dns::CachedIps *ips, const Dns::LookupDeta
             delete lastError;
             lastError = new ErrorState(ERR_DNS_FAIL, Http::scServiceUnavailable, request.getRaw());
             lastError->dnsError = details.error;
-            requestNewPeer();//nothing to send continue to the next Peer
+            requestMoreDestinations();//nothing to send continue to the next Peer
         }
     }
 }
@@ -305,12 +307,12 @@ PeerSelectionInitiator::startSelectingDestinations(const AccessLogEntry::Pointer
     request->hier.peer_select_start = current_time;
 #endif
 
-    requestNewPeer();
+    requestMoreDestinations();
     // and wait for noteDestination() and/or noteDestinationsEnd() calls
 }
 
 void
-PeerSelectionInitiator::requestNewPeer()
+PeerSelectionInitiator::requestMoreDestinations()
 {
     if (subscribed && wantsMoreDestinations() && selector) {
         typedef PeerSelector::CbDialer Dialer;

@@ -1026,7 +1026,7 @@ TunnelStateData::noteConnectFailure(const Comm::ConnectionPointer &conn)
     if (!PeerSelectionInitiator::subscribed)
         return sendError(savedError, "tried all destinations");
 
-    requestNewPeer();
+    requestMoreDestinations();
     debugs(26, 4, "wait for more destinations to try");
     // expect a noteDestination*() call
 }

@@ -439,7 +439,7 @@ FwdState::startConnectionOrFail()
     } else {
         if (PeerSelectionInitiator::subscribed) {
             debugs(17, 4, "wait for more destinations to try");
-            requestNewPeer();
+            requestMoreDestinations();
             return; // expect a noteDestination*() call
         }
 
