@@ -68,7 +68,7 @@ public:
     bool markedForDeletionAndAbandoned(const StoreEntry &) const;
 
     /// whether there is a disk entry with e.key
-    bool hasReadableDiskEntry(const StoreEntry &) const;
+    bool hasReadableDiskEntry(const StoreEntry &, bool *isEmpty = nullptr) const;
 
     /// Additional unknown-size entry bytes required by Store in order to
     /// reduce the risk of selecting the wrong disk cache for the growing entry.

@@ -119,6 +119,7 @@ public:
         /// Decision states for StoreEntry::swapoutPossible() and related code.
         typedef enum { swNeedsCheck = 0, swImpossible = -1, swPossible = +1, swStarted } Decision;
         Decision decision = swNeedsCheck; ///< current decision state
+        bool ioPending = false; ///< prevents reentrant swapout operations
     };
 
     SwapOut swapout;
