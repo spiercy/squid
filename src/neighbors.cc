@@ -1407,10 +1407,7 @@ peerCountMcastPeersStart(void *data)
     HttpRequest *req = HttpRequest::FromUrl(url, mx);
     assert(req != nullptr);
     StoreEntry *fake = storeCreateEntry(url, url, RequestFlags(), Http::METHOD_GET);
-    const auto psstate = new PeerSelector();
-    psstate->request = req;
-    HTTPMSGLOCK(psstate->request);
-    psstate->entry = fake;
+    const auto psstate = new PeerSelector(req, fake);
     psstate->peerCountMcastPeerXXX = cbdataReference(p);
     psstate->ping.start = current_time;
     mem = fake->mem_obj;

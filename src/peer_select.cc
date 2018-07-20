@@ -144,8 +144,6 @@ PeerSelector::~PeerSelector()
         delete acl_checklist;
     }
 
-    HTTPMSGUNLOCK(request);
-
     if (entry) {
         entry->unlock("peerSelect");
         entry = NULL;
@@ -170,44 +168,11 @@ PeerSelector::findIcpNeighborsToPing()
         if (direct != DIRECT_NO)
             return false;
 
-    getNeighborsToPing(request, candidatePingPeers);
+    getNeighborsToPing(request.getRaw(), candidatePingPeers);
 
     debugs(44, 3, "counted " << candidatePingPeers.size() << "candidate neighbors");
 
     return (candidatePingPeers.size() > 0);
-}
-
-static void
-peerSelect(PeerSelectionInitiator *initiator,
-           HttpRequest * request,
-           AccessLogEntry::Pointer const &al,
-           StoreEntry * entry
-    )
-{
-    if (entry)
-        debugs(44, 3, *entry << ' ' << entry->url());
-    else
-        debugs(44, 3, request->method);
-
-    const auto selector = new PeerSelector();
-
-    selector->request = request;
-    HTTPMSGLOCK(selector->request);
-    selector->al = al;
-
-    selector->entry = entry;
-
-#if USE_CACHE_DIGESTS
-
-    request->hier.peer_select_start = current_time;
-
-#endif
-
-    if (selector->entry)
-        selector->entry->lock("peerSelect");
-
-    initiator->selector = selector;
-    initiator->requestNewPeer();
 }
 
 PeerSelectionInitiator::PeerSelectionInitiator(HttpRequest *req):
@@ -326,7 +291,21 @@ void
 PeerSelectionInitiator::startSelectingDestinations(const AccessLogEntry::Pointer &ale, StoreEntry *entry)
 {
     subscribed = true;
-    peerSelect(this, request.getRaw(), ale, entry);
+
+    if (entry)
+        debugs(44, 3, *entry << ' ' << entry->url());
+    else
+        debugs(44, 3, request->method);
+
+    assert(!selector);
+    selector = new PeerSelector(request.getRaw(), entry);
+    selector->al = ale;
+
+#if USE_CACHE_DIGESTS
+    request->hier.peer_select_start = current_time;
+#endif
+
+    requestNewPeer();
     // and wait for noteDestination() and/or noteDestinationsEnd() calls
 }
 
@@ -466,7 +445,7 @@ PeerSelector::updateSelectedPeer(CachePeer *p, hier_code code)
 {
 #if USE_CACHE_DIGESTS
     if (code == CD_PARENT_HIT || code == CD_SIBLING_HIT) {
-        peerNoteDigestLookup(request, p, LOOKUP_HIT);
+        peerNoteDigestLookup(request.getRaw(), p, LOOKUP_HIT);
         // If none selected and digestLookup not updates the default values
         // in request->hier should be enough.
 
@@ -477,7 +456,7 @@ PeerSelector::updateSelectedPeer(CachePeer *p, hier_code code)
     if (code == CLOSEST_PARENT)
         disablePinging = true;
     else if (code == WEIGHTED_ROUNDROBIN_PARENT && p->options.weighted_roundrobin)
-        updateWeightedRoundRobinParent(p, request);
+        updateWeightedRoundRobinParent(p, request.getRaw());
     else if (code == ROUNDROBIN_PARENT && p->options.roundrobin)
         updateRoundRobinParent(p);
 }
@@ -506,10 +485,9 @@ PeerSelector::sendNextPeer()
     // Bypass of browser same-origin access control in intercepted communication
     // To resolve this we must use only the original client destination when going DIRECT
     // on intercepted traffic which failed Host verification
-    const HttpRequest *req = request;
-    const bool isIntercepted = !req->flags.redirected &&
-        (req->flags.intercepted || req->flags.interceptTproxy);
-    const bool useOriginalDst = Config.onoff.client_dst_passthru || !req->flags.hostVerified;
+    const bool isIntercepted = !request->flags.redirected &&
+        (request->flags.intercepted || request->flags.interceptTproxy);
+    const bool useOriginalDst = Config.onoff.client_dst_passthru || !request->flags.hostVerified;
     const bool choseDirect = currentServer && currentServer->code == HIER_DIRECT;
     if (isIntercepted && useOriginalDst && choseDirect) {
         callback(nullptr, ORIGINAL_DST);
@@ -529,7 +507,7 @@ PeerSelector::sendNextPeer()
         if (accessCheckCached(currentServer->_peer.get(), cached))
             checkLastPeerAccess(cached);
         else {
-            ACLFilledChecklist *checklist = new ACLFilledChecklist(currentServer->_peer->access, request, NULL);
+            ACLFilledChecklist *checklist = new ACLFilledChecklist(currentServer->_peer->access, request.getRaw(), NULL);
             checklist->nonBlockingCheck(checkLastPeerAccessWrapper, this);
         }
     } else
@@ -657,7 +635,7 @@ PeerSelector::checkDirect()
     if (always_direct == ACCESS_DUNNO) {
         debugs(44, 3, "direct = " << DirectStr[direct] << " (always_direct to be checked)");
         /** check always_direct; */
-        ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.AlwaysDirect, request, NULL);
+        ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.AlwaysDirect, request.getRaw(), NULL);
         ch->al = al;
         acl_checklist = ch;
         acl_checklist->nonBlockingCheck(CheckAlwaysDirectDone, this);
@@ -665,7 +643,7 @@ PeerSelector::checkDirect()
     } else if (never_direct == ACCESS_DUNNO) {
         debugs(44, 3, "direct = " << DirectStr[direct] << " (never_direct to be checked)");
         /** check never_direct; */
-        ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.NeverDirect, request, NULL);
+        ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.NeverDirect, request.getRaw(), NULL);
         ch->al = al;
         acl_checklist = ch;
         acl_checklist->nonBlockingCheck(CheckNeverDirectDone, this);
@@ -730,8 +708,8 @@ PeerSelector::selectPinned()
 {
     if (request->pinnedConnection()) {
         CachePeer *pear = request->pinnedConnection()->pinnedPeer();
-        if (Comm::IsConnOpen(request->pinnedConnection()->validatePinnedConnection(request, pear))) {
-            const bool usePinned = pear ? peerAllowedToUse(pear, request) : (direct != DIRECT_NO);
+        if (Comm::IsConnOpen(request->pinnedConnection()->validatePinnedConnection(request.getRaw(), pear))) {
+            const bool usePinned = pear ? peerAllowedToUse(pear, request.getRaw()) : (direct != DIRECT_NO);
             if (usePinned) {
                 addSelection(pear, PINNED);
                 planNextStep(DoFinal, "pinned connection");
@@ -768,7 +746,7 @@ PeerSelector::selectSomeNeighbor()
 #if USE_CACHE_DIGESTS
     neighborsDigestSelect(this);
 #endif
-    netdbClosestParent(this, request);
+    netdbClosestParent(this, request.getRaw());
 
     planNextStep(DoStartPing, "consider pinging");
 }
@@ -815,7 +793,7 @@ PeerSelector::moreNeighborsToPing()
         if (accessCheckCached(p, cached))
             checkNeighborToPingAccess(cached);
         else {
-            ACLFilledChecklist *checklist = new ACLFilledChecklist(p->access, request, NULL);
+            ACLFilledChecklist *checklist = new ACLFilledChecklist(p->access, request.getRaw(), NULL);
             // TODO: Avoid deep recursion when finding the first allowed peer
             // using fast/cached ACLs.
             checklist->nonBlockingCheck(checkNeighborToPingAccessWrapper, this);
@@ -873,7 +851,7 @@ PeerSelector::doIcpPing()
         ping.start = current_time;
         ping.n_sent = neighborsUdpPing(
             peersToPing,
-            request,
+            request.getRaw(),
             entry,
             HandlePingReply,
             this,
@@ -1073,7 +1051,6 @@ PeerSelector::handleIcpReply(CachePeer *p, const peer_t type, icp_common_t *head
     if (p && request)
         peerNoteDigestLookup(request, p,
                              peerDigestLookup(p, this));
-
 #endif
 
     ++ping.n_recv;
@@ -1214,9 +1191,9 @@ PeerSelector::groupSelect(FwdServer *fs)
     }
 }
 
-PeerSelector::PeerSelector():
-    request(nullptr),
-    entry (NULL),
+PeerSelector::PeerSelector(HttpRequest *req, StoreEntry *anEntry):
+    request(req),
+    entry (anEntry),
     always_direct(Config.accessList.AlwaysDirect?ACCESS_DUNNO:ACCESS_DENIED),
     never_direct(Config.accessList.NeverDirect?ACCESS_DUNNO:ACCESS_DENIED),
     direct(DIRECT_UNKNOWN),
@@ -1227,7 +1204,8 @@ PeerSelector::PeerSelector():
     hit_type(PEER_NONE),
     acl_checklist (NULL)
 {
-    ; // no local defaults.
+    if (entry)
+        entry->lock("PeerSelector");
 }
 
 const SBuf

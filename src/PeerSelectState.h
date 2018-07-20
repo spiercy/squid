@@ -115,7 +115,7 @@ public:
         DoFinished ///< all steps finished
     } selectionState = DoCheckDirect;
 
-    explicit PeerSelector();
+    explicit PeerSelector(HttpRequest *, StoreEntry *entry);
     ~PeerSelector();
 
     // Produce a URL for display identifying the transaction we are
@@ -141,7 +141,7 @@ public:
     /// list and call continueIcpPing to find the next candidate neightbor.
     void checkNeighborToPingAccess(allow_t answer);
 
-    HttpRequest *request;
+    HttpRequestPointer request;
     AccessLogEntry::Pointer al; ///< info for the future access.log entry
     StoreEntry *entry;
 
