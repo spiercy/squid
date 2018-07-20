@@ -241,17 +241,17 @@ PeerSelectionInitiator::notePeer(CachePeer *peer, hier_code code)
     if (code == ORIGINAL_DST) {
         assert(_peer == nullptr);
         if (request->clientConnectionManager.valid()) {
-            // construct a "result" adding the ORIGINAL_DST to the set instead of DIRECT
-            Comm::ConnectionPointer p = new Comm::Connection();
-            p->remote = request->clientConnectionManager->clientConnection->local;
-            p->peerType = ORIGINAL_DST;
-            // check for a configured outgoing address for this destination...
-            getOutgoingAddress(request.getRaw(), p);
-            ++foundPaths;
-            noteDestination(p);
+            const Ip::Address originalDst = request->clientConnectionManager->clientConnection->local;
+            noteIp(originalDst);
             return;
         }
         requestNewPeer();//nothing to send continue to the next Peer
+        return;
+    }
+
+    if (code == PINNED) {
+        const Ip::Address tmpnoaddr;
+        noteIp(tmpnoaddr);
         return;
     }
 
@@ -283,15 +283,19 @@ PeerSelectionInitiator::noteIp(const Ip::Address &ip)
 
     Comm::ConnectionPointer path = new Comm::Connection();
     path->remote = ip;
-    if (_peer.valid()) {
-        path->remote.port(_peer.valid() ? _peer->http_port : request->url.port());
-        path->peerType = _peerType;
-        path->setPeer(_peer.get());
-    } else
-        path->remote.port(request->url.port());
+    path->peerType = _peerType;
+    if (_peerType != PINNED && _peerType != ORIGINAL_DST) {
+        if (_peer.valid()) {
+            path->remote.port(_peer.valid() ? _peer->http_port : request->url.port());
+            path->setPeer(_peer.get());
+        } else
+            path->remote.port(request->url.port());
+    }
 
-    // check for a configured outgoing address for this destination...
-    getOutgoingAddress(request.getRaw(), path);
+    // if not pinned check for a configured outgoing address
+    if (_peerType != PINNED)
+        getOutgoingAddress(request.getRaw(), path);
+
     ++foundPaths;
     noteDestination(path);
 }
