@@ -129,6 +129,8 @@ public:
     /// disassociates the entry from the memory cache, preserving cached data
     void memoryDisconnect(StoreEntry &);
 
+    bool memoryCacheEnabled() const { return sharedMemStore || localMemStore; }
+
     /// \returns an iterator for all Store entries
     StoreSearch *search();
 

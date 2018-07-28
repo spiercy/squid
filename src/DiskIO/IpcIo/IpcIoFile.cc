@@ -40,7 +40,7 @@ static const char *const ShmLabel = "io_file";
 /// to 2*QueueCapacity I/O requests queued between a single worker and
 /// a single disker
 // TODO: make configurable or compute from squid.conf settings if possible
-static const int QueueCapacity = 1024;
+static const int QueueCapacity = 1024 * 2;
 
 const double IpcIoFile::Timeout = 7; // seconds;  XXX: ALL,9 may require more
 IpcIoFile::IpcIoFileList IpcIoFile::WaitingForOpen;

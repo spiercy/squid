@@ -108,7 +108,7 @@ Rock::SwapDir::updateAnchoredWith(StoreEntry &entry, const Ipc::StoreMapAnchor &
     if (anchor.complete()) {
         entry.store_status = STORE_OK;
         entry.swap_status = SWAPOUT_DONE;
-        entry.mem_obj->object_sz = entry.swap_file_sz;
+        entry.mem_obj->object_sz = entry.swap_file_sz - entry.mem_obj->swap_hdr_sz;
     }
     return true;
 }

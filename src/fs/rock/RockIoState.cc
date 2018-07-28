@@ -111,7 +111,7 @@ Rock::IoState::hasMoreData(const off_t coreOff) const
     SlotId readableSlot = sidCurrent;
     int64_t slotOffset = objOffset;
     advanceSid(coreOff, readableSlot, slotOffset);
-    return (readableSlot > 0 && (dir->map->readableSlice(swap_filen, readableSlot).size));
+    return (readableSlot >= 0 && (dir->map->readableSlice(swap_filen, readableSlot).size));
 }
 
 void
@@ -225,10 +225,12 @@ Rock::IoState::tryWrite(char const *buf, size_t size, off_t coreOff)
         } else if (Store::Root().transientReaders(*e)) {
             // write partial buffer for all remote hit readers to see
             writeBufToDisk(-1, false, false);
-            // TODO: clear theBuf to avoid useless overwrites with same data 
+            // TODO: should clear theBuf to avoid useless overwrites,
+            // but we need to reconcile with Rock::IoState::close(),
+            // expecting non-empty theBuf
+            // theBuf.clear();
         }
     }
-
 }
 
 /// Buffers incoming data for the current slot.
@@ -284,7 +286,6 @@ Rock::IoState::writeBufToDisk(const SlotId sidNext, const bool eof, const bool l
 {
     // no slots after the last/eof slot (but partial slots may have a nil next)
     assert(!eof || sidNext < 0);
-
     // finalize db cell header
     DbCellHeader header;
     memcpy(header.key, e->key, sizeof(header.key));

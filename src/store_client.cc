@@ -537,17 +537,18 @@ store_client::readBody(const char *, ssize_t len)
         }
     }
 
-    const HttpReply *rep = entry->getReply();
-    if (len > 0 && rep && entry->mem_obj->inmem_lo == 0 && entry->objectLen() <= (int64_t)Config.Store.maxInMemObjSize && Config.onoff.memory_cache_disk) {
-        storeGetMemSpace(len);
-        // The above may start to free our object so we need to check again
-        if (entry->mem_obj->inmem_lo == 0) {
-            /* Copy read data back into memory.
-             * copyInto.offset includes headers, which is what mem cache needs
-             */
-            int64_t mem_offset = entry->mem_obj->endOffset();
-            if ((copyInto.offset == mem_offset) || (parsed_header && mem_offset == rep->hdr_sz)) {
-                entry->mem_obj->write(StoreIOBuffer(len, copyInto.offset, copyInto.data));
+    if (Store::Root().memoryCacheEnabled()) {
+        const HttpReply *rep = entry->getReply();
+        if (len > 0 && rep && entry->mem_obj->inmem_lo == 0 && entry->objectLen() <= (int64_t)Config.Store.maxInMemObjSize && Config.onoff.memory_cache_disk) {
+            storeGetMemSpace(len);
+            // The above may start to free our object so we need to check again
+            if (entry->mem_obj->inmem_lo == 0) {
+                /* Copy read data back into memory.
+                 * copyInto.offset includes headers, which is what mem cache needs
+                 */
+                int64_t mem_offset = entry->mem_obj->endOffset();
+                if ((copyInto.offset == mem_offset) || (parsed_header && mem_offset == rep->hdr_sz))
+                    entry->mem_obj->write(StoreIOBuffer(len, copyInto.offset, copyInto.data));
             }
         }
     }
