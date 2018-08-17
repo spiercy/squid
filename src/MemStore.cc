@@ -666,10 +666,12 @@ MemStore::startCaching(StoreEntry &e)
     e.mem_obj->memCache.index = index;
     e.mem_obj->memCache.io = MemObject::ioWriting;
     slot->set(e);
+#if SQUID_ALLOW_SHM_READ_WHILE_WRITING
     // Do not allow others to feed off an unknown-size entry because we will
     // stop swapping it out if it grows too large.
     if (e.mem_obj->expectedReplySize() >= 0)
         map->startAppending(index);
+#endif
     e.memOutDecision(true);
     return true;
 }
