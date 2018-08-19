@@ -4709,6 +4709,7 @@ DOC_START
 
 		Ss	Squid request status (TCP_MISS etc)
 		Sh	Squid hierarchy status (DEFAULT_PARENT etc)
+		Srn	The number of performed request sending attempts
 
 	SSL-related format codes:
 

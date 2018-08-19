@@ -133,6 +133,11 @@ private:
     void syncWithServerConn(const char *host);
     void syncHierNote(const Comm::ConnectionPointer &server, const char *host);
 
+    /// increments ALE::requestAttempts counter, if ALE is available
+    void addRequestAttempt() { if (al) al->requestAttempts++; }
+    /// whether we have not yet run out of possible forward attempts
+    bool forwardTriesAllowed() const;
+
 public:
     StoreEntry *entry;
     HttpRequest *request;
@@ -145,7 +150,7 @@ private:
     ErrorState *err;
     Comm::ConnectionPointer clientConn;        ///< a possibly open connection to the client.
     time_t start_t;
-    int n_tries;  ///< the number of different forward paths tried so far
+    int n_tries; ///< the number of different forward paths tried so far
 
     // AsyncCalls which we set and may need cancelling.
     struct {

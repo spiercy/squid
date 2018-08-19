@@ -1166,6 +1166,11 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             dooff = 1;
             break;
 
+        case LFT_SQUID_REQUEST_ATTEMPTS:
+            outint = al->requestAttempts;
+            doint = 1;
+            break;
+
 #if USE_OPENSSL
         case LFT_SSL_BUMP_MODE: {
             const Ssl::BumpMode mode = static_cast<Ssl::BumpMode>(al->ssl.bumpMode);

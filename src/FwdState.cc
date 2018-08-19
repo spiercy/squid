@@ -626,7 +626,7 @@ FwdState::checkRetry()
     if (!entry->isEmpty())
         return false;
 
-    if (n_tries >= Config.forward_max_tries)
+    if (!forwardTriesAllowed())
         return false;
 
     if (!EnoughTimeToReForward(start_t))
@@ -722,7 +722,8 @@ FwdState::handleUnregisteredServerEnd()
 void
 FwdState::connectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, int xerrno)
 {
-    n_tries++;
+    ++n_tries;
+    addRequestAttempt();
     if (status != Comm::OK) {
         ErrorState *const anErr = makeConnectingError(ERR_CONNECT_FAIL);
         anErr->xerrno = xerrno;
@@ -732,7 +733,6 @@ FwdState::connectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, in
         if (conn != NULL) {
             if (conn->getPeer())
                 peerConnectFailed(conn->getPeer());
-
             conn->close();
         }
         retryOrBail();
@@ -865,7 +865,6 @@ void
 FwdState::connectStart()
 {
     assert(serverDestinations.size() > 0);
-
     debugs(17, 3, "fwdConnectStart: " << entry->url());
 
     request->hier.startPeerClock();
@@ -890,6 +889,7 @@ FwdState::connectStart()
         serverConn = pinned_connection ? pinned_connection->borrowPinnedConnection(request, serverDestinations[0]->getPeer()) : nullptr;
         if (Comm::IsConnOpen(serverConn)) {
             flags.connected_okay = true;
+            addRequestAttempt();
             request->flags.pinned = true;
 
             if (pinned_connection->pinnedAuth())
@@ -933,6 +933,7 @@ FwdState::connectStart()
         serverConn = temp;
         flags.connected_okay = true;
         debugs(17, 3, HERE << "reusing pconn " << serverConnection());
+        addRequestAttempt();
 
         closeHandler = comm_add_close_handler(serverConnection()->fd,  fwdServerClosedWrapper, this);
 
@@ -1110,7 +1111,7 @@ FwdState::reforward()
         return 0;
     }
 
-    if (n_tries >= Config.forward_max_tries)
+    if (!forwardTriesAllowed())
         return 0;
 
     if (request->bodyNibbled())
@@ -1258,6 +1259,12 @@ FwdState::logReplyStatus(int tries, const Http::StatusCode status)
         tries = MAX_FWD_STATS_IDX;
 
     ++ FwdReplyCodes[tries][status];
+}
+
+bool
+FwdState::forwardTriesAllowed() const
+{
+    return n_tries < Config.forward_max_tries;
 }
 
 /**** PRIVATE NON-MEMBER FUNCTIONS ********************************************/

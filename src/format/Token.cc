@@ -146,6 +146,7 @@ static TokenTableEntry TokenTableMisc[] = {
     TokenTableEntry("err_detail", LFT_SQUID_ERROR_DETAIL ),
     TokenTableEntry("note", LFT_NOTE ),
     TokenTableEntry("credentials", LFT_CREDENTIALS),
+    TokenTableEntry("Srn", LFT_SQUID_REQUEST_ATTEMPTS),
     /*
      * Legacy external_acl_type format tokens
      */

@@ -184,6 +184,11 @@ public:
     /// key=value pairs returned from URL rewrite/redirect helper
     NotePairs::Pointer notes;
 
+    /// The number of primary request attempts, done so far.
+    /// HTCP, ICP, missing certificate fetching, and similar
+    /// secondary requests sent by Squid do not count.
+    int requestAttempts = 0;
+
 #if ICAP_CLIENT
     /** \brief This subclass holds log info for ICAP part of request
      *  \todo Inner class declarations should be moved outside

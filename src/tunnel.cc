@@ -1033,6 +1033,8 @@ static void
 tunnelConnectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, int xerrno, void *data)
 {
     TunnelStateData *tunnelState = (TunnelStateData *)data;
+    if (tunnelState->al)
+        tunnelState->al->requestAttempts++;
 
     if (status != Comm::OK) {
         ErrorState *err = new ErrorState(ERR_CONNECT_FAIL, Http::scServiceUnavailable, tunnelState->request.getRaw());
