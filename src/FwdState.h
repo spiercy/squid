@@ -135,8 +135,10 @@ private:
 
     /// increments ALE::requestAttempts counter, if ALE is available
     void addRequestAttempt() { if (al) al->requestAttempts++; }
-    /// whether we have not yet run out of possible forward attempts
+    /// whether we have not yet run out of permitted request sending attempts
     bool forwardTriesAllowed() const;
+    /// The number of primary request sending attempts. See %request_attempts.
+    int forwardTries() const { return al ? al->requestAttempts : 0; }
 
 public:
     StoreEntry *entry;
@@ -150,7 +152,6 @@ private:
     ErrorState *err;
     Comm::ConnectionPointer clientConn;        ///< a possibly open connection to the client.
     time_t start_t;
-    int n_tries; ///< the number of different forward paths tried so far
 
     // AsyncCalls which we set and may need cancelling.
     struct {

@@ -184,9 +184,7 @@ public:
     /// key=value pairs returned from URL rewrite/redirect helper
     NotePairs::Pointer notes;
 
-    /// The number of primary request attempts, done so far.
-    /// HTCP, ICP, missing certificate fetching, and similar
-    /// secondary requests sent by Squid do not count.
+    /// The number of request sending attempts. See %request_attempts.
     int requestAttempts = 0;
 
 #if ICAP_CLIENT
@@ -208,6 +206,7 @@ public:
         Adaptation::Icap::ICAP::Method reqMethod = Adaptation::methodNone; ///< ICAP request method
         int64_t bytesSent = 0;       ///< number of bytes sent to ICAP server so far
         int64_t bytesRead = 0;       ///< number of bytes read from ICAP server so far
+        int requestAttempts = 0; ///< The number of ICAP request sending attempts.
         /**
          * number of ICAP body bytes read from ICAP server or -1 for no encapsulated
          * message data in ICAP reply (eg 204 responses)

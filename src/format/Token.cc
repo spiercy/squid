@@ -146,7 +146,7 @@ static TokenTableEntry TokenTableMisc[] = {
     TokenTableEntry("err_detail", LFT_SQUID_ERROR_DETAIL ),
     TokenTableEntry("note", LFT_NOTE ),
     TokenTableEntry("credentials", LFT_CREDENTIALS),
-    TokenTableEntry("Srn", LFT_SQUID_REQUEST_ATTEMPTS),
+    TokenTableEntry("request_attempts", LFT_SQUID_REQUEST_ATTEMPTS),
     /*
      * Legacy external_acl_type format tokens
      */
@@ -207,6 +207,7 @@ static TokenTableEntry TokenTableIcap[] = {
     TokenTableEntry("tio", LFT_ICAP_IO_TIME),
     TokenTableEntry("to",  LFT_ICAP_OUTCOME),
     TokenTableEntry("Hs",  LFT_ICAP_STATUS_CODE),
+    TokenTableEntry("request_attempts",  LFT_ICAP_REQUEST_ATTEMPTS),
 
     TokenTableEntry(NULL, LFT_NONE)           /* this must be last */
 };

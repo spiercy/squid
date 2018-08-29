@@ -135,7 +135,6 @@ FwdState::FwdState(const Comm::ConnectionPointer &client, StoreEntry * e, HttpRe
     err(NULL),
     clientConn(client),
     start_t(squid_curtime),
-    n_tries(0),
     pconnRace(raceImpossible)
 {
     debugs(17, 2, "Forwarding client request " << client << ", url=" << e->url());
@@ -519,7 +518,7 @@ FwdState::complete()
     entry->mem_obj->checkUrlChecksum();
 #endif
 
-    logReplyStatus(n_tries, entry->getReply()->sline.status());
+    logReplyStatus(forwardTries(), entry->getReply()->sline.status());
 
     if (reforward()) {
         debugs(17, 3, HERE << "re-forwarding " << entry->getReply()->sline.status() << " " << entry->url());
@@ -677,7 +676,7 @@ void
 FwdState::retryOrBail()
 {
     if (checkRetry()) {
-        debugs(17, 3, HERE << "re-forwarding (" << n_tries << " tries, " << (squid_curtime - start_t) << " secs)");
+        debugs(17, 3, "re-forwarding (" << forwardTries() << " tries, " << (squid_curtime - start_t) << " secs)");
         // we should retry the same destination if it failed due to pconn race
         if (pconnRace == raceHappened)
             debugs(17, 4, HERE << "retrying the same destination");
@@ -722,8 +721,6 @@ FwdState::handleUnregisteredServerEnd()
 void
 FwdState::connectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, int xerrno)
 {
-    ++n_tries;
-    addRequestAttempt();
     if (status != Comm::OK) {
         ErrorState *const anErr = makeConnectingError(ERR_CONNECT_FAIL);
         anErr->xerrno = xerrno;
@@ -888,8 +885,8 @@ FwdState::connectStart()
         // pinned_connection may become nil after a pconn race
         serverConn = pinned_connection ? pinned_connection->borrowPinnedConnection(request, serverDestinations[0]->getPeer()) : nullptr;
         if (Comm::IsConnOpen(serverConn)) {
-            flags.connected_okay = true;
             addRequestAttempt();
+            flags.connected_okay = true;
             request->flags.pinned = true;
 
             if (pinned_connection->pinnedAuth())
@@ -960,6 +957,7 @@ FwdState::connectStart()
     Comm::ConnOpener *cs = new Comm::ConnOpener(serverDestinations[0], calls.connector, connTimeout);
     if (host)
         cs->setHost(host);
+    addRequestAttempt();
     AsyncJob::Start(cs);
 }
 
@@ -1264,7 +1262,7 @@ FwdState::logReplyStatus(int tries, const Http::StatusCode status)
 bool
 FwdState::forwardTriesAllowed() const
 {
-    return n_tries < Config.forward_max_tries;
+    return forwardTries() < Config.forward_max_tries;
 }
 
 /**** PRIVATE NON-MEMBER FUNCTIONS ********************************************/

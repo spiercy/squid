@@ -3924,10 +3924,10 @@ DEFAULT: 25
 TYPE: int
 LOC: Config.forward_max_tries
 DOC_START
-	Controls how many different forward paths Squid will try
-	before giving up. See also forward_timeout.
+	Limits the number of request attempts. See also request_attempts
+	and forward_timeout.
 	
-	NOTE: connect_retries (default: none) can make each of these
+	NOTE: connect_retries (default: none) can make each of
 	possible forwarding paths be tried multiple times.
 DOC_END
 
@@ -4709,7 +4709,19 @@ DOC_START
 
 		Ss	Squid request status (TCP_MISS etc)
 		Sh	Squid hierarchy status (DEFAULT_PARENT etc)
-		Srn	The number of performed request sending attempts
+
+		request_attempts	The number of request sending attempts
+
+		An attempt is counted when Squid either opens a new to-server
+		connection or writes the first request byte to a reused
+		to-server connection. Failed connection open and write attempts
+		are counted. Pure cache hits should have a zero count, but HTTP
+		cache revalidation requests are counted. DNS, ICMP, ICP, HTCP,
+		ESI, ICAP, eCAP, certificate fetching, helper and other
+		secondary requests sent by Squid as a part of a master
+		transaction are not counted.
+
+		See also: forward_max_tries.
 
 	SSL-related format codes:
 
@@ -5037,6 +5049,9 @@ DOC_START
 		icap::>h	ICAP request header(s). Similar to >h.
 
 		icap::<h	ICAP response header(s). Similar to <h.
+
+		icap::request_attempts	The number of ICAP request sending
+					attempts. Similar to request_attempts.
 
 	The default ICAP log format, which can be used without an explicit
 	definition, is called icap_squid:
@@ -10099,7 +10114,7 @@ DOC_START
 	value and the configured value will be over-ridden.
 
 	Note: These re-tries are in addition to forward_max_tries
-	which limit how many different addresses may be tried to find
+	which limits the number of request attempts to find
 	a useful server.
 DOC_END
 
