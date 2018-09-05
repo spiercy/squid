@@ -1920,7 +1920,10 @@ bool
 ConnStateData::parseProxy2p0()
 {
     static const SBuf::size_type prefixLen = Proxy2p0magic.length();
-    if (inBuf.length() < prefixLen + 4)
+    static const SBuf::size_type mandatoryHeaderLen = prefixLen + 4;
+    static const SBuf::size_type mandatoryTlvLen = 3;
+
+    if (inBuf.length() < mandatoryHeaderLen)
         return false; // need more bytes
 
     if ((inBuf[prefixLen] & 0xF0) != 0x20) // version == 2 is mandatory
@@ -1943,11 +1946,10 @@ ConnStateData::parseProxy2p0()
     memcpy(&len, clen, sizeof(len));
     len = ntohs(len);
 
-    if (inBuf.length() < prefixLen + 4 + len)
+    if (inBuf.length() < mandatoryHeaderLen + len)
         return false; // need more bytes
 
-    inBuf.consume(prefixLen + 4); // 4 being the extra bytes
-    const SBuf extra = inBuf.consume(len);
+    inBuf.consume(mandatoryHeaderLen);
     needProxyProtocolHeader_ = false; // found successfully
 
     // LOCAL connections do nothing with the extras
@@ -1967,21 +1969,22 @@ ConnStateData::parseProxy2p0()
             uint16_t src_port;
             uint16_t dst_port;
         } ipv6_addr;
-#if NOT_SUPPORTED
         struct {        /* for AF_UNIX sockets, len = 216 */
             uint8_t src_addr[108];
             uint8_t dst_addr[108];
         } unix_addr;
-#endif
     };
-
-    pax ipu;
-    memcpy(&ipu, extra.rawContent(), sizeof(pax));
 
     // replace the client connection values
     debugs(33, 5, "PROXY/2.0 protocol on connection " << clientConnection);
+    unsigned int addrSize = 0;
     switch (family) {
-    case 0x1: // IPv4
+
+    case 0x1:  { // IPv4
+        pax ipu;
+        addrSize = sizeof(pax::ipv4_addr);
+        memcpy(&ipu, inBuf.rawContent(), addrSize);
+
         clientConnection->local = ipu.ipv4_addr.dst_addr;
         clientConnection->local.port(ntohs(ipu.ipv4_addr.dst_port));
         clientConnection->remote = ipu.ipv4_addr.src_addr;
@@ -1989,7 +1992,12 @@ ConnStateData::parseProxy2p0()
         if ((clientConnection->flags & COMM_TRANSPARENT))
             clientConnection->flags ^= COMM_TRANSPARENT; // prevent TPROXY spoofing of this new IP.
         break;
-    case 0x2: // IPv6
+    }
+
+    case 0x2:  { // IPv6
+        pax ipu;
+        addrSize = sizeof(pax::ipv6_addr);
+        memcpy(&ipu, inBuf.rawContent(), addrSize);
         clientConnection->local = ipu.ipv6_addr.dst_addr;
         clientConnection->local.port(ntohs(ipu.ipv6_addr.dst_port));
         clientConnection->remote = ipu.ipv6_addr.src_addr;
@@ -1997,9 +2005,42 @@ ConnStateData::parseProxy2p0()
         if ((clientConnection->flags & COMM_TRANSPARENT))
             clientConnection->flags ^= COMM_TRANSPARENT; // prevent TPROXY spoofing of this new IP.
         break;
-    default: // do nothing
+    }
+
+    case 0x3:  { // TODO: add support for AF_UNIX sockets.
+        addrSize = sizeof(pax::unix_addr);
         break;
     }
+
+    default: {
+        // the invalid family, we have checked already
+        assert(0);
+        break;
+    }
+    }
+    inBuf.consume(addrSize);
+
+    if (len > addrSize) {
+        theProxyProtocolTwoMessage = new ProxyProtocolTwoMessage;
+        unsigned int tlvBytes = len;
+        while (tlvBytes) {
+            ProxyProtocolTwoTlv tlv;
+            tlv.type = ProxyProtocolTwoTypes(inBuf[0]);
+            if (!ProxyProtocolTwoTlv::CheckType(tlv.type))
+                return proxyProtocolError("PROXY/2.0 error: invalid pp2_tlv type");
+            uint16_t valueLen = 0;
+            memcpy(&valueLen, inBuf.rawContent() + 1, sizeof(valueLen));
+            tlvBytes -= mandatoryTlvLen;
+            if (valueLen > tlvBytes)
+                return proxyProtocolError("PROXY/2.0 error: invalid pp2_tlv length");
+            inBuf.consume(mandatoryTlvLen);
+            if (valueLen)
+                tlv.value = inBuf.consume(valueLen);
+            tlvBytes -= valueLen;
+            theProxyProtocolTwoMessage->tlvs.emplace_back(tlv);
+        }
+    }
+
     debugs(33, 5, "PROXY/2.0 upgrade: " << clientConnection);
     return true;
 }
@@ -2763,6 +2804,7 @@ ConnStateData::postHttpsAccept()
         acl_checklist->al->tcpClient = clientConnection;
         acl_checklist->al->cache.port = port;
         acl_checklist->al->cache.caddr = log_addr;
+        acl_checklist->al->proxyProtocolTwoMessage = theProxyProtocolTwoMessage;
         HTTPMSGUNLOCK(acl_checklist->al->request);
         acl_checklist->al->request = request;
         HTTPMSGLOCK(acl_checklist->al->request);

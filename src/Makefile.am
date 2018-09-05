@@ -407,6 +407,7 @@ squid_SOURCES = \
 	Pipeline.cc \
 	Pipeline.h \
 	protos.h \
+	ProxyProtocol.h \
 	redirect.h \
 	redirect.cc \
 	refresh.h \

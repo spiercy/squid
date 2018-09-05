@@ -32,6 +32,7 @@
 #endif
 
 #include <iosfwd>
+#include "ProxyProtocol.h"
 
 class ClientHttpRequest;
 class HttpHdrRangeSpec;
@@ -319,6 +320,8 @@ public:
     NotePairs::Pointer notes();
     bool hasNotes() const { return bool(theNotes) && !theNotes->empty(); }
 
+    ProxyProtocolTwoMessage::Pointer proxyProtocolTwoMessage() { return theProxyProtocolTwoMessage; }
+
 protected:
     void startDechunkingRequest();
     void finishDechunkingRequest(bool withSuccess);
@@ -370,6 +373,8 @@ private:
     bool parseProxy1p0();
     bool parseProxy2p0();
     bool proxyProtocolError(const char *reason);
+
+    ProxyProtocolTwoMessage::Pointer theProxyProtocolTwoMessage;
 
 #if USE_OPENSSL
     /// \returns a pointer to the matching cached TLS context or nil

@@ -21,6 +21,7 @@
 #include "LogTags.h"
 #include "MessageSizes.h"
 #include "Notes.h"
+#include "ProxyProtocol.h"
 #include "sbuf/SBuf.h"
 #if ICAP_CLIENT
 #include "adaptation/icap/Elements.h"
@@ -183,6 +184,8 @@ public:
     /// key:value pairs set by squid.conf note directive and
     /// key=value pairs returned from URL rewrite/redirect helper
     NotePairs::Pointer notes;
+
+    ProxyProtocolTwoMessage::Pointer proxyProtocolTwoMessage;
 
 #if ICAP_CLIENT
     /** \brief This subclass holds log info for ICAP part of request
