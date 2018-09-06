@@ -10,7 +10,12 @@
 #define SQUID_PROXYPROTOCOL_H
 
 #include "base/RefCount.h"
+#include "ip/Address.h"
 #include "sbuf/SBuf.h"
+
+// https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt
+namespace ProxyProtocol {
+namespace Two {
 
 typedef enum {
     PP2_TYPE_UNKNOWN = 0,
@@ -25,47 +30,47 @@ typedef enum {
     PP2_SUBTYPE_SSL_SIG_ALG = 0x24,
     PP2_SUBTYPE_SSL_KEY_ALG = 0x25,
     PP2_TYPE_NETNS = 0x30
-} ProxyProtocolTwoTypes;
+} HeaderType;
 
-class ProxyProtocolTwoTlv
+class Tlv
 {
     public:
-        typedef RefCount<AccessLogEntry> Pointer;
+        Tlv(const uint8_t t);
 
-        ProxyProtocolTwoTlv() : type(PP2_TYPE_UNKNOWN) {}
-
-        static bool CheckType(const ProxyProtocolTwoTypes t) {
-            switch(t) {
-                case PP2_TYPE_ALPN:
-                case PP2_TYPE_AUTHORITY:
-                case PP2_TYPE_CRC32C:
-                case PP2_TYPE_NOOP:
-                case PP2_TYPE_SSL:
-                case PP2_SUBTYPE_SSL_VERSION:
-                case PP2_SUBTYPE_SSL_CN:
-                case PP2_SUBTYPE_SSL_CIPHER:
-                case PP2_SUBTYPE_SSL_SIG_ALG:
-                case PP2_SUBTYPE_SSL_KEY_ALG:
-                case PP2_TYPE_NETNS:
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
-        ProxyProtocolTwoTypes type;
+        HeaderType type;
         SBuf value;
 };
 
-class ProxyProtocolTwoMessage : public RefCountable
+class Message : public RefCountable
 {
     public:
-        typedef RefCount<ProxyProtocolTwoMessage> Pointer;
-        typedef std::vector<ProxyProtocolTwoTlv> Tlvs;
+        typedef RefCount<Message> Pointer;
+        typedef std::vector<Tlv> Tlvs;
 
         Tlvs tlvs;
 };
 
+} // namespace Two
+
+class Parser
+{
+    public:
+        bool parse(const SBuf &aBuf);
+
+        Ip::Address srcIpAddr;
+        Ip::Address dstIpAddr;
+        Two::Message::Pointer v2Message;
+        const char *version = nullptr;
+
+    private:
+        bool parseV1();
+        bool parseV2();
+
+        /// bytes remaining to be parsed
+        SBuf buf_;
+};
+
+} // namespace ProxyProtocol
 
 #endif
 

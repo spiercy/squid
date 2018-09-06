@@ -185,7 +185,7 @@ public:
     /// key=value pairs returned from URL rewrite/redirect helper
     NotePairs::Pointer notes;
 
-    ProxyProtocolTwoMessage::Pointer proxyProtocolTwoMessage;
+    ProxyProtocol::Two::Message::Pointer proxyProtocolV2Message;
 
 #if ICAP_CLIENT
     /** \brief This subclass holds log info for ICAP part of request

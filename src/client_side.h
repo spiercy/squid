@@ -320,7 +320,7 @@ public:
     NotePairs::Pointer notes();
     bool hasNotes() const { return bool(theNotes) && !theNotes->empty(); }
 
-    ProxyProtocolTwoMessage::Pointer proxyProtocolTwoMessage() { return theProxyProtocolTwoMessage; }
+    ProxyProtocol::Two::Message::Pointer proxyProtocolV2Message() { return theProxyProtocolV2Message; }
 
 protected:
     void startDechunkingRequest();
@@ -370,11 +370,9 @@ private:
     /* PROXY protocol functionality */
     bool proxyProtocolValidateClient();
     bool parseProxyProtocolHeader();
-    bool parseProxy1p0();
-    bool parseProxy2p0();
     bool proxyProtocolError(const char *reason);
 
-    ProxyProtocolTwoMessage::Pointer theProxyProtocolTwoMessage;
+    ProxyProtocol::Two::Message::Pointer theProxyProtocolV2Message;
 
 #if USE_OPENSSL
     /// \returns a pointer to the matching cached TLS context or nil
