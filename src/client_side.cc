@@ -1807,6 +1807,7 @@ ConnStateData::parseProxyProtocolHeader()
         ProxyProtocol::Parser parser;
         if (!parser.parse(inBuf))
             return false;
+        inBuf = parser.remaining();
         needProxyProtocolHeader_ = false;
         clientConnection->local = parser.dstIpAddr;
         clientConnection->remote = parser.srcIpAddr;

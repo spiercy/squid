@@ -57,6 +57,8 @@ class Parser
     public:
         bool parse(const SBuf &aBuf);
 
+        const SBuf &remaining() const { return buf_; }
+
         Ip::Address srcIpAddr;
         Ip::Address dstIpAddr;
         Two::Message::Pointer v2Message;

@@ -259,6 +259,7 @@ ProxyProtocol::Parser::parseV2()
         tlv.value = tok.area(valueLen, "pp2_tlv::value");
         v2Message->tlvs.emplace_back(tlv);
     }
+    buf_.consume(headerLen);
     return true;
 }
 
