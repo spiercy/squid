@@ -27,6 +27,45 @@ static const SBuf Proxy1p0magic("PROXY ", 6);
 /// magic octet prefix for PROXY protocol version 2
 static const SBuf Proxy2p0magic("\x0D\x0A\x0D\x0A\x00\x0D\x0A\x51\x55\x49\x54\x0A", 12);
 
+SBuf
+ProxyProtocol::Two::Message::getAll(const char sep)
+{
+    return getType(PP2_TYPE_UNKNOWN, sep);
+}
+
+SBuf
+ProxyProtocol::Two::Message::getType(const HeaderType t, const char sep)
+{
+    SBuf all;
+    for (auto m: tlvs) {
+        if (m.type == PP2_TYPE_UNKNOWN || m.type == t) {
+            if (!all.isEmpty())
+                all.append(sep);
+            all.append(m.value);
+        }
+    }
+    return all;
+}
+
+SBuf
+ProxyProtocol::Two::Message::getElem(const HeaderType t, const char sep, const char elemSep)
+{
+    SBuf all;
+    for (auto m: tlvs) {
+        if (m.type == PP2_TYPE_UNKNOWN || m.type == t) {
+            ::Parser::Tokenizer tok(m.value);
+            CharacterSet delimiters(__FILE__, elemSep, elemSep);
+            SBuf v;
+            while (tok.token(v, delimiters)) {
+                if (!all.isEmpty())
+                    all.append(sep);
+                all.append(v);
+            }
+            all.append(tok.remaining());
+        }
+    }
+}
+
 bool
 ProxyProtocol::Parser::parse(const SBuf &aBuf)
 {

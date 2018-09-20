@@ -47,6 +47,9 @@ class Message : public RefCountable
         typedef RefCount<Message> Pointer;
         typedef std::vector<Tlv> Tlvs;
 
+        SBuf getAll(const char sep);
+        SBuf getType(const HeaderType t, const char sep);
+        SBuf getElem(const HeaderType t, const char sep, const char elemSep);
         Tlvs tlvs;
 };
 

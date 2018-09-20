@@ -11,6 +11,7 @@
 #include "format/Token.h"
 #include "format/TokenTableEntry.h"
 #include "globals.h"
+#include "parser/Tokenizer.h"
 #include "SquidConfig.h"
 #include "Store.h"
 
@@ -176,6 +177,10 @@ static TokenTableEntry TokenTableMisc[] = {
     TokenTableEntry(NULL, LFT_NONE)        /* this must be last */
 };
 
+static TokenTableEntry TokenTableProxyProtocol[] = {
+    TokenTableEntry(">h", LFT_REQUEST_PROXY_TLV),
+};
+
 #if USE_ADAPTATION
 static TokenTableEntry TokenTableAdapt[] = {
     TokenTableEntry("all_trs", LFT_ADAPTATION_ALL_XACT_TIMES),
@@ -250,6 +255,7 @@ Format::Token::Init()
     TheConfig.registerTokens(SBuf("tls"),::Format::TokenTableSsl);
     TheConfig.registerTokens(SBuf("ssl"),::Format::TokenTableSsl);
 #endif
+    TheConfig.registerTokens(SBuf("proxy_protocol"),::Format::TokenTableProxyProtocol);
 }
 
 /// Scans a token table to see if the next token exists there
@@ -479,6 +485,8 @@ Format::Token::parse(const char *def, Quoting *quoting)
 
     case LFT_NOTE:
 
+    case LFT_REQUEST_PROXY_TLV:
+
         if (data.string) {
             char *header = data.string;
             char *cp = strchr(header, ':');
@@ -521,6 +529,12 @@ Format::Token::parse(const char *def, Quoting *quoting)
                     type = LFT_ICAP_REP_HEADER_ELEM;
                     break;
 #endif
+                case LFT_REQUEST_PROXY_TLV:
+                    type = LFT_REQUEST_PROXY_TLV_ELEM;
+                    ::Parser::Tokenizer ptok(SBuf(header));
+                    if (!ptok.int64(data.proxyProtocolType, 10, false, 3))
+                        fatalf("Can't parse configuration token: '%s'\n", header);
+                    break;
                 default:
                     break;
                 }
@@ -553,6 +567,11 @@ Format::Token::parse(const char *def, Quoting *quoting)
                 type = LFT_ICAP_REP_ALL_HEADERS;
                 break;
 #endif
+            case LFT_REQUEST_PROXY_TLV:
+                Parser::Tokenizer tok(data.string);
+                if (!tok.int64(data.proxyProtocolType, 10, false, 3))
+                    fatalf("Can't parse configuration token: '%s'\n", header);
+                break;
             default:
                 break;
             }

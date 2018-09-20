@@ -50,6 +50,7 @@ public:
     const char *label;
     struct {
         char *string;
+        unsigned int proxyProtocolType = 0;
 
         struct {
             char *header;
