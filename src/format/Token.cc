@@ -531,13 +531,20 @@ Format::Token::parse(const char *def, Quoting *quoting)
 #endif
                 case LFT_REQUEST_PROXY_TLV:
                     type = LFT_REQUEST_PROXY_TLV_ELEM;
-                    ::Parser::Tokenizer ptok(SBuf(header));
-                    if (!ptok.int64(data.proxyProtocolType, 10, false, 3))
-                        fatalf("Can't parse configuration token: '%s'\n", header);
                     break;
                 default:
                     break;
                 }
+            }
+
+            if (type == LFT_REQUEST_PROXY_TLV || type == LFT_REQUEST_PROXY_TLV_ELEM) {
+                Parser::Tokenizer ptok = Parser::Tokenizer(SBuf(header));
+                int64_t protocolType = 0;
+                if (!ptok.int64(protocolType, 10, false, 3))
+                    fatalf("Can't parse configuration token: '%s'\n", header);
+                if (protocolType > UINT8_MAX)
+                    fatalf("Wrong PROXY protocol type: %ld\n", protocolType);
+                data.proxyProtocolType = static_cast<uint8_t>(protocolType);
             }
 
             data.header.header = header;
@@ -568,9 +575,7 @@ Format::Token::parse(const char *def, Quoting *quoting)
                 break;
 #endif
             case LFT_REQUEST_PROXY_TLV:
-                Parser::Tokenizer tok(data.string);
-                if (!tok.int64(data.proxyProtocolType, 10, false, 3))
-                    fatalf("Can't parse configuration token: '%s'\n", header);
+                type = LFT_REQUEST_ALL_PROXY_TLVS;
                 break;
             default:
                 break;

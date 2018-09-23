@@ -4827,6 +4827,15 @@ DOC_START
 	service name in curly braces to record response time(s) specific
 	to that service. For example: %{my_service}adapt::sum_trs
 
+	PROXY protocol related format codes:
+
+		proxy_protocol::>h  A string representation of the received
+				PROXY protocol v2 TLV array. Similar to %http::>h.
+				Accepts optional type/value filtering using
+				type[:[separator]element] format.
+
+				See also: %http::>h
+
 	The default formats available (which do not need re-defining) are:
 
 logformat squid      %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %[un %Sh/%<a %mt

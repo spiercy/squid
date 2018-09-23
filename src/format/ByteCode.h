@@ -245,7 +245,8 @@ typedef enum {
     LFT_EXT_ACL_NAME,
     LFT_EXT_ACL_DATA,
     LFT_REQUEST_PROXY_TLV,
-    LFT_REQUEST_PROXY_TLV_ELEM
+    LFT_REQUEST_PROXY_TLV_ELEM,
+    LFT_REQUEST_ALL_PROXY_TLVS
 } ByteCode_t;
 
 /// Quoting style for a format output.

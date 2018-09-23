@@ -7,9 +7,13 @@
  */
 
 #include "squid.h"
+#include <algorithm>
 #include "parser/BinaryTokenizer.h"
 #include "parser/Tokenizer.h"
 #include "ProxyProtocol.h"
+#include "sbuf/StringConvert.h"
+#include "SquidString.h"
+#include "StrList.h"
 
 #if HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
@@ -28,17 +32,27 @@ static const SBuf Proxy1p0magic("PROXY ", 6);
 static const SBuf Proxy2p0magic("\x0D\x0A\x0D\x0A\x00\x0D\x0A\x51\x55\x49\x54\x0A", 12);
 
 SBuf
-ProxyProtocol::Two::Message::getAll(const char sep)
+ProxyProtocol::Two::Message::getAll(const char sep) const
 {
-    return getType(PP2_TYPE_UNKNOWN, sep);
+    std::vector<uint8_t> processed;
+    SBuf all;
+    for (const auto &m: tlvs) {
+        if (std::find(processed.begin(), processed.end(), m.type) != processed.end())
+            continue;
+        all.appendf("%d: ", m.type);
+        all.append(getValue(m.type, sep));
+        all.append("\r\n");
+        processed.push_back(m.type);
+    }
+    return all;
 }
 
 SBuf
-ProxyProtocol::Two::Message::getType(const HeaderType t, const char sep)
+ProxyProtocol::Two::Message::getValue(const uint8_t type, const char sep) const
 {
     SBuf all;
-    for (auto m: tlvs) {
-        if (m.type == PP2_TYPE_UNKNOWN || m.type == t) {
+    for (const auto &m: tlvs) {
+        if (m.type == type) {
             if (!all.isEmpty())
                 all.append(sep);
             all.append(m.value);
@@ -48,22 +62,10 @@ ProxyProtocol::Two::Message::getType(const HeaderType t, const char sep)
 }
 
 SBuf
-ProxyProtocol::Two::Message::getElem(const HeaderType t, const char sep, const char elemSep)
+ProxyProtocol::Two::Message::getElem(const uint8_t t, const char *member, const char sep) const
 {
-    SBuf all;
-    for (auto m: tlvs) {
-        if (m.type == PP2_TYPE_UNKNOWN || m.type == t) {
-            ::Parser::Tokenizer tok(m.value);
-            CharacterSet delimiters(__FILE__, elemSep, elemSep);
-            SBuf v;
-            while (tok.token(v, delimiters)) {
-                if (!all.isEmpty())
-                    all.append(sep);
-                all.append(v);
-            }
-            all.append(tok.remaining());
-        }
-    }
+    String all = SBufToString(getValue(t, sep));
+    return getListMember(all, member, sep);
 }
 
 bool
@@ -171,7 +173,7 @@ ProxyProtocol::Parser::parseV1()
     return false;
 }
 
-ProxyProtocol::Two::Tlv::Tlv(const uint8_t t) : type(ProxyProtocol::Two::HeaderType(t))
+ProxyProtocol::Two::Tlv::Tlv(const uint8_t t) : type(t)
 {
     switch(type) {
         case PP2_TYPE_ALPN:
@@ -187,7 +189,7 @@ ProxyProtocol::Two::Tlv::Tlv(const uint8_t t) : type(ProxyProtocol::Two::HeaderT
         case PP2_TYPE_NETNS:
             break;
         default:
-            throw TexcHere("PROXY/2.0 error: invalid pp2_tlv type");
+            debugs(88, 3, "PROXY/2.0: unknown pp2_tlv type " << type);
     }
 }
 
