@@ -240,10 +240,14 @@ Security::PeerConnector::sslFinalized()
             if (err != X509_V_OK) {
                 debugs(83, 5, "Wrong OCSP response or OCSP verify failed");
                 ErrorState *anErr = new ErrorState(ERR_SECURE_CONNECT_FAIL, Http::scServiceUnavailable, request.getRaw());
+                Ssl::ErrorDetail *errFromFailure = static_cast<Ssl::ErrorDetail *>(SSL_get_ex_data(session.get(), ssl_ex_index_ssl_error_detail));
+                if (errFromFailure != NULL)
+                    anErr->detail = new Ssl::ErrorDetail(*errFromFailure);
+                else
+                    anErr->detail = new Ssl::ErrorDetail(err, peerCert.get(), NULL);
                 noteNegotiationDone(anErr);
                 bail(anErr);
-                serverConn->close();
-                return true;
+                return false;
             } //else verified!
         }
 
