@@ -278,8 +278,7 @@ Security::PeerConnector::sslFinalized()
 
                 noteNegotiationDone(anErr);
                 bail(anErr);
-                serverConn->close();
-                return true;
+                return false;
             }
         }
     }
@@ -334,7 +333,6 @@ Security::PeerConnector::sslCrtvdHandleReply(Ssl::CertValidationResponse::Pointe
 
     noteNegotiationDone(anErr);
     bail(anErr);
-    serverConn->close();
     return;
 }
 #endif
