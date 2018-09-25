@@ -28,7 +28,6 @@
 #if HAVE_OPENSSL_ENGINE_H
 #include <openssl/engine.h>
 #endif
-#include <openssl/ocsp.h>
 #include <queue>
 #include <map>
 
@@ -331,12 +330,20 @@ BIO *BIO_new_SBuf(SBuf *buf);
 
 /**
    \ingroup ServerProtocolSSLAPI
-   Does OCSP must staple related checks. The errors attached to session error reporting
-   mechanism ( ssl_ex_index_ssl_errors, ssl_ex_index_ssl_error_detail)
-   \return  X509_V_OK if no error found, SQUID_X509_V_ERR_OCSP_STAPLE_NOT_SUPPORTED if the
-   OCSP must-staple  is not supported or the error.
+   Does OCSP must staple related checks. The errors attached to session error
+   reporting mechanism ( ssl_ex_index_ssl_errors, ssl_ex_index_ssl_error_detail)
+   \param session the TLS session
+   \param mustStaple if true account an error if OCSP stapling is not supported
+   \return  X509_V_OK if no error found, SQUID_X509_V_ERR_OCSP_STAPLE_NOT_SUPPORTED
+   if the OCSP staple is not supported or the verify error.
  */
-int OcspMustStapleVerify(Security::SessionPointer &session);
+int OcspStapleVerify(Security::SessionPointer &session, bool mustStaple);
+
+/**
+   \ingroup ServerProtocolSSLAPI
+   Checks if the Must-staple is set for the given certificate
+*/
+bool CertMustStapleIsSet(Security::CertPointer &);
 } //namespace Ssl
 
 #if _SQUID_WINDOWS_

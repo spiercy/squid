@@ -33,10 +33,14 @@
 #include "ssl/support.h"
 #include "URL.h"
 
+#include <openssl/ocsp.h>
+#include <openssl/obj_mac.h>
 #include <cerrno>
 
 // TODO: Move ssl_ex_index_* global variables from global.cc here.
 int ssl_ex_index_ssl_untrusted_chain = -1;
+
+int SQUID_NID_tlsfeature = -1;
 
 static Ssl::CertsIndexedList SquidUntrustedCerts;
 
@@ -509,6 +513,15 @@ Ssl::Initialize(void)
     ssl_ex_index_ssl_cert_chain = SSL_get_ex_new_index(0, (void *) "ssl_cert_chain", NULL, NULL, &ssl_free_CertChain);
     ssl_ex_index_ssl_validation_counter = SSL_get_ex_new_index(0, (void *) "ssl_validation_counter", NULL, NULL, &ssl_free_int);
     ssl_ex_index_ssl_untrusted_chain = SSL_get_ex_new_index(0, (void *) "ssl_untrusted_chain", NULL, NULL, &ssl_free_CertChain);
+
+#if !defined(NID_tlsfeature)
+    SQUID_NID_tlsfeature =  OBJ_create("1.3.6.1.5.5.7.1.24",
+                                       "TLS Feature, aka must-staple feature ",
+                                       "tlsfeature");
+#else
+    SQUID_NID_tlsfeature = NID_tlsfeature;
+#endif
+
 }
 
 bool
@@ -1412,25 +1425,23 @@ doOcspResponseVerify(OCSP_RESPONSE *ocspResponse, Security::SessionPointer &sess
 }
 
 int
-Ssl::OcspMustStapleVerify(Security::SessionPointer &session)
+Ssl::OcspStapleVerify(Security::SessionPointer &session, bool mustStaple)
 {
-    const unsigned char *p;
-    int len = SSL_get_tlsext_status_ocsp_resp(session.get(), &p);
-    if (!p) {
-        // Should this error must checked with acl checks and reported to
-        // the client and logs? In this case should passed to
-        // checkAndAccountSessionError()
-        return SQUID_X509_V_ERR_OCSP_STAPLE_NOT_SUPPORTED;
-    }
-
     int err = X509_V_OK;
-    if (OCSP_RESPONSE *ocspResponse = d2i_OCSP_RESPONSE(NULL, &p, len)) {
-        err =  doOcspResponseVerify(ocspResponse, session);
-        OCSP_RESPONSE_free(ocspResponse);
+    const unsigned char *p = nullptr;
+    int len = SSL_get_tlsext_status_ocsp_resp(session.get(), &p);
+    if (p) {
+        if (OCSP_RESPONSE *ocspResponse = d2i_OCSP_RESPONSE(NULL, &p, len)) {
+            err =  doOcspResponseVerify(ocspResponse, session);
+            OCSP_RESPONSE_free(ocspResponse);
+        } else
+            err = SQUID_X509_V_ERR_OCSP_INVALID;
     } else
-        err = SQUID_X509_V_ERR_OCSP_INVALID;
+        err = SQUID_X509_V_ERR_OCSP_STAPLE_NOT_SUPPORTED;
 
-    if (err != X509_V_OK) {
+    bool ok = (err == X509_V_OK) ||
+        (err == SQUID_X509_V_ERR_OCSP_STAPLE_NOT_SUPPORTED && !mustStaple);
+    if (!ok) {
         Security::CertPointer peerCert;
         Security::CertPointer nil;
         peerCert.resetAndLock(SSL_get_peer_certificate(session.get()));
@@ -1439,6 +1450,72 @@ Ssl::OcspMustStapleVerify(Security::SessionPointer &session)
     }
 
     return err;
+}
+
+bool
+Ssl::CertMustStapleIsSet(Security::CertPointer &cert)
+{
+#if !defined(NID_tlsfeature)
+    int pos = X509_get_ext_by_NID(cert.get(), SQUID_NID_tlsfeature, -1);
+    // Missing TLS_FEATURE definitions.
+#if 0
+    // Currently (2018-09) features extension is used only by status-request
+    // (aka must-staple), so this extension existence should be enough check
+    // for the must-staple feature.
+    return (pos >= 0);
+#else
+    // Alternatively check the tlsfeature extension entries.
+    // XXX: is it dangerous?
+    if (pos < 0)
+        return false;
+
+    X509_EXTENSION *ext = X509_get_ext(cert.get(), pos);
+    ASN1_OCTET_STRING *extvalue = X509_EXTENSION_get_data(ext);
+#if HAVE_LIBCRYPTO_ASN1_STRING_GET0_DATA
+    const char *p = ASN1_STRING_get0_data(extvalue);
+#else
+    const char *p = (const char *)ASN1_STRING_data(extvalue);
+#endif
+    int extlen = ASN1_STRING_length(extvalue);
+    SBuf extValues(p, extlen);
+    bool found = false;
+
+    try {
+        Parser::BinaryTokenizer tk(extValues, true);
+        tk.uint16("values length");
+        while(!tk.atEnd() && !found) {
+            const uint16_t type = tk.uint8("item type");
+            Must(type == 2);
+            const uint16_t len = tk.uint8("item len");
+            uint16_t value = 0;
+            if (len == 1)
+                value = tk.uint8("item value");
+            else if (len == 2)
+                value = tk.uint16("item value");
+            if (value == 5 || value == 17)
+                found = true;
+        }
+    } catch (...) {
+        debugs(83, 3, "Unable to parse TLS_FEATURE extension for certificate: " << certificateSubject(cert));
+    }
+    return found;
+#endif
+
+#else
+    bool found = false;
+    // Check if the request-status exists in features list
+    if (TLS_FEATURE *feature = (TLS_FEATURE *)X509_get_ext_d2i(cert.get(), SQUID_NID_tlsfeature, NULL, NULL)) {
+        for (int i = 0; !found && i < sk_ASN1_INTEGER_num(feature); ++i) {
+            const ASN1_INTEGER *v = (const ASN1_INTEGER *)sk_ASN1_INTEGER_value(feature, i);
+            long lv = ASN1_INTEGER_get(v);
+            if (lv == 5 || lv == 17)  // status_request || status_request_v2
+                found = true;
+        }
+        TLS_FEATURE_free(feature);
+    }
+
+    return found;
+#endif
 }
 
 #endif /* USE_OPENSSL */
