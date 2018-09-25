@@ -191,6 +191,14 @@ private:
     Security::CertErrors *sslCrtvdCheckForErrors(Ssl::CertValidationResponse const &, Ssl::ErrorDetail *&);
 #endif
 
+    /// Build an ErrorState object with the given parameters and attach to it
+    /// any available details.
+    ErrorState *buildError(err_type, Http::StatusCode, Security::ErrorCode);
+
+    /// Does the required steps to propagate the given error to the caller class and
+    /// kid classes.
+    void handleError(ErrorState *anErr);
+
     /// A wrapper function for negotiateSsl for use with Comm::SetSelect
     static void NegotiateSsl(int fd, void *data);
 

@@ -113,10 +113,9 @@ Security::PeerConnector::initialize(Security::SessionPointer &serverSession)
         if (!ctx) {
             debugs(83, DBG_IMPORTANT, "Error initializing TLS connection: No security context.");
         } // else CreateClientSession() did the appropriate debugs() already
-        ErrorState *anErr = new ErrorState(ERR_SOCKET_FAILURE, Http::scInternalServerError, request.getRaw());
+        ErrorState *anErr = buildError(ERR_SOCKET_FAILURE, Http::scInternalServerError, 0);
         anErr->xerrno = xerrno;
-        noteNegotiationDone(anErr);
-        bail(anErr);
+        handleError(anErr);
         return false;
     }
 
@@ -239,14 +238,8 @@ Security::PeerConnector::sslFinalized()
             int err = Ssl::OcspStapleVerify(session, true);
             if (err != X509_V_OK) {
                 debugs(83, 5, "Wrong OCSP response or OCSP verify failed");
-                ErrorState *anErr = new ErrorState(ERR_SECURE_CONNECT_FAIL, Http::scServiceUnavailable, request.getRaw());
-                Ssl::ErrorDetail *errFromFailure = static_cast<Ssl::ErrorDetail *>(SSL_get_ex_data(session.get(), ssl_ex_index_ssl_error_detail));
-                if (errFromFailure != NULL)
-                    anErr->detail = new Ssl::ErrorDetail(*errFromFailure);
-                else
-                    anErr->detail = new Ssl::ErrorDetail(err, peerCert.get(), NULL);
-                noteNegotiationDone(anErr);
-                bail(anErr);
+                ErrorState *anErr = buildError(ERR_SECURE_CONNECT_FAIL,Http::scServiceUnavailable, err);
+                handleError(anErr);
                 return false;
             } //else verified!
         }
@@ -274,10 +267,8 @@ Security::PeerConnector::sslFinalized()
                        " certificate: " << e.what() << "; will now block to " <<
                        "validate that certificate.");
                 // fall through to do blocking in-process generation.
-                ErrorState *anErr = new ErrorState(ERR_GATEWAY_FAILURE, Http::scInternalServerError, request.getRaw());
-
-                noteNegotiationDone(anErr);
-                bail(anErr);
+                ErrorState *anErr = buildError(ERR_GATEWAY_FAILURE, Http::scInternalServerError, 0);
+                handleError(anErr);
                 return false;
             }
         }
@@ -312,6 +303,10 @@ Security::PeerConnector::sslCrtvdHandleReply(Ssl::CertValidationResponse::Pointe
             Security::CertErrors *oldErrs = static_cast<Security::CertErrors*>(SSL_get_ex_data(session.get(), ssl_ex_index_ssl_errors));
             SSL_set_ex_data(session.get(), ssl_ex_index_ssl_errors,  (void *)errs);
             delete oldErrs;
+
+            Ssl::ErrorDetail *oldDetails = static_cast<Ssl::ErrorDetail *>(SSL_get_ex_data(session.get(), ssl_ex_index_ssl_error_detail));
+            SSL_set_ex_data(session.get(), ssl_ex_index_ssl_error_detail, errDetails);
+            delete oldDetails;
         }
     } else if (validationResponse->resultCode != ::Helper::Okay)
         validatorFailed = true;
@@ -323,16 +318,13 @@ Security::PeerConnector::sslCrtvdHandleReply(Ssl::CertValidationResponse::Pointe
     }
 
     ErrorState *anErr = NULL;
-    if (validatorFailed) {
-        anErr = new ErrorState(ERR_GATEWAY_FAILURE, Http::scInternalServerError, request.getRaw());
-    }  else {
-        anErr =  new ErrorState(ERR_SECURE_CONNECT_FAIL, Http::scServiceUnavailable, request.getRaw());
-        anErr->detail = errDetails;
+    if (validatorFailed)
+        anErr = buildError(ERR_GATEWAY_FAILURE, Http::scInternalServerError, 0);
+    else
+        anErr =  buildError(ERR_SECURE_CONNECT_FAIL, Http::scServiceUnavailable, 0);
         /*anErr->xerrno= Should preserved*/
-    }
 
-    noteNegotiationDone(anErr);
-    bail(anErr);
+    handleError(anErr);
     return;
 }
 #endif
@@ -508,6 +500,41 @@ Security::PeerConnector::noteWantWrite()
     return;
 }
 
+ErrorState *
+Security::PeerConnector::buildError(err_type type, Http::StatusCode status, Security::ErrorCode errorCode)
+{
+    ErrorState *anErr = new ErrorState(type, status, request.getRaw());
+
+#if USE_OPENSSL
+    if (type == ERR_SECURE_CONNECT_FAIL) { // retrieve error details
+         const int fd = serverConnection()->fd;
+         Security::SessionPointer session(fd_table[fd].ssl);
+         Ssl::ErrorDetail *errFromFailure = static_cast<Ssl::ErrorDetail *>(SSL_get_ex_data(session.get(), ssl_ex_index_ssl_error_detail));
+         if (errFromFailure != NULL) {
+             // The errFromFailure is attached to the ssl object
+             // and will be released when ssl object destroyed.
+             // Copy errFromFailure to a new Ssl::ErrorDetail object
+             anErr->detail = new Ssl::ErrorDetail(*errFromFailure);
+         } else {
+             // Use the given (and normally more general) Security::ErrorCode
+             // to build error details.
+             X509 *server_cert = SSL_get_peer_certificate(session.get());
+             anErr->detail = new Ssl::ErrorDetail(errorCode, server_cert, NULL);
+             X509_free(server_cert);
+         }
+    }
+#endif
+
+    return anErr;
+}
+
+void
+Security::PeerConnector::handleError(ErrorState *anErr)
+{
+    noteNegotiationDone(anErr);
+    bail(anErr);
+}
+
 void
 Security::PeerConnector::noteNegotiationError(const int ret, const int ssl_error, const int ssl_lib_error)
 {
@@ -529,30 +556,12 @@ Security::PeerConnector::noteNegotiationError(const int ret, const int ssl_error
            ": " << Security::ErrorString(ssl_lib_error) << " (" <<
            ssl_error << "/" << ret << "/" << xerr << ")");
 
-    ErrorState *anErr = ErrorState::NewForwarding(ERR_SECURE_CONNECT_FAIL, request);
+    ErrorState *anErr = buildError(ERR_SECURE_CONNECT_FAIL, Http::scServiceUnavailable, SQUID_ERR_SSL_HANDSHAKE);
     anErr->xerrno = sysErrNo;
-
-#if USE_OPENSSL
-    Security::SessionPointer session(fd_table[fd].ssl);
-    Ssl::ErrorDetail *errFromFailure = static_cast<Ssl::ErrorDetail *>(SSL_get_ex_data(session.get(), ssl_ex_index_ssl_error_detail));
-    if (errFromFailure != NULL) {
-        // The errFromFailure is attached to the ssl object
-        // and will be released when ssl object destroyed.
-        // Copy errFromFailure to a new Ssl::ErrorDetail object
-        anErr->detail = new Ssl::ErrorDetail(*errFromFailure);
-    } else {
-        // server_cert can be NULL here
-        X509 *server_cert = SSL_get_peer_certificate(session.get());
-        anErr->detail = new Ssl::ErrorDetail(SQUID_ERR_SSL_HANDSHAKE, server_cert, NULL);
-        X509_free(server_cert);
-    }
-
-    if (ssl_lib_error != SSL_ERROR_NONE)
+    if (ssl_lib_error != SSL_ERROR_NONE && anErr->detail)
         anErr->detail->setLibError(ssl_lib_error);
-#endif
-
-    noteNegotiationDone(anErr);
-    bail(anErr);
+    handleError(anErr);
+    return;
 }
 
 void
