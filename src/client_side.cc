@@ -1796,25 +1796,22 @@ static const SBuf Proxy1p0magic("PROXY ", 6);
 /// magic octet prefix for PROXY protocol version 2
 static const SBuf Proxy2p0magic("\x0D\x0A\x0D\x0A\x00\x0D\x0A\x51\x55\x49\x54\x0A", 12);
 
-/**
- * Test the connection read buffer for PROXY protocol header.
- * Version 1 and 2 header currently supported.
- */
 bool
-ConnStateData::parseProxyProtocolHeader()
+ConnStateData::parseProxyProtocolMessage()
 {
     try {
-        ProxyProtocol::Parser parser;
-        if (!parser.parse(inBuf))
-            return false;
-        inBuf = parser.remaining();
+        theProxyProtocolMessage = ProxyProtocol::Parse(inBuf);
+        if (!theProxyProtocolMessage)
+            return false; // needs more data
+        inBuf.consume(theProxyProtocolMessage->length());
         needProxyProtocolHeader_ = false;
-        clientConnection->local = parser.dstIpAddr;
-        clientConnection->remote = parser.srcIpAddr;
-        if ((clientConnection->flags & COMM_TRANSPARENT))
-            clientConnection->flags ^= COMM_TRANSPARENT; // prevent TPROXY spoofing of this new IP.
-        theProxyProtocolV2Message = parser.v2Message;
-        debugs(33, 5, "PROXY/" << parser.version << " upgrade: " << clientConnection);
+        if (!theProxyProtocolMessage->healthCheck()) {
+            clientConnection->local = theProxyProtocolMessage->dstIpAddr;
+            clientConnection->remote = theProxyProtocolMessage->srcIpAddr;
+            if ((clientConnection->flags & COMM_TRANSPARENT))
+                clientConnection->flags ^= COMM_TRANSPARENT; // prevent TPROXY spoofing of this new IP.
+            debugs(33, 5, "PROXY/" << theProxyProtocolMessage->version() << " upgrade: " << clientConnection);
+        }
     } catch (const std::exception &e) {
         return proxyProtocolError(e.what());
     }
@@ -1864,7 +1861,7 @@ ConnStateData::clientParseRequests()
 
         // try to parse the PROXY protocol header magic bytes
         if (needProxyProtocolHeader_) {
-            if (!parseProxyProtocolHeader())
+            if (!parseProxyProtocolMessage())
                 break;
 
             // we have been waiting for PROXY to provide client-IP
@@ -2580,7 +2577,7 @@ ConnStateData::postHttpsAccept()
         acl_checklist->al->tcpClient = clientConnection;
         acl_checklist->al->cache.port = port;
         acl_checklist->al->cache.caddr = log_addr;
-        acl_checklist->al->proxyProtocolV2Message = theProxyProtocolV2Message;
+        acl_checklist->al->proxyProtocolMessage = theProxyProtocolMessage;
         HTTPMSGUNLOCK(acl_checklist->al->request);
         acl_checklist->al->request = request;
         HTTPMSGLOCK(acl_checklist->al->request);

@@ -825,24 +825,24 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
             break;
 
         case LFT_REQUEST_PROXY_TLV:
-            if (al->proxyProtocolV2Message) {
-                sb = al->proxyProtocolV2Message->getValue(fmt->data.proxyProtocolType, fmt->data.header.separator);
+            if (al->proxyProtocolMessage) {
+                sb = al->proxyProtocolMessage->getValues(fmt->data.header.header, fmt->data.header.separator);
                 out = sb.c_str();
                 quote = 1;
             }
             break;
 
         case LFT_REQUEST_ALL_PROXY_TLVS:
-            if (al->proxyProtocolV2Message) {
-                sb = al->proxyProtocolV2Message->getAll(fmt->data.header.separator);
+            if (al->proxyProtocolMessage) {
+                sb = al->proxyProtocolMessage->getAll(fmt->data.header.separator);
                 out = sb.c_str();
                 quote = 1;
             }
             break;
 
         case LFT_REQUEST_PROXY_TLV_ELEM:
-            if (al->proxyProtocolV2Message) {
-                sb = al->proxyProtocolV2Message->getElem(fmt->data.proxyProtocolType, fmt->data.header.element, fmt->data.header.separator);
+            if (al->proxyProtocolMessage) {
+                sb = al->proxyProtocolMessage->getElem(fmt->data.header.header, fmt->data.header.element, fmt->data.header.separator);
                 out = sb.c_str();
                 quote = 1;
             }

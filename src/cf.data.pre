@@ -4827,12 +4827,13 @@ DOC_START
 	service name in curly braces to record response time(s) specific
 	to that service. For example: %{my_service}adapt::sum_trs
 
-	PROXY protocol related format codes:
+	Format codes related to PROXY protocol:
 
-		proxy_protocol::>h  A string representation of the received
-				PROXY protocol v2 TLV array. Similar to %http::>h.
-				Accepts optional type/value filtering using
-				type[:[separator]element] format.
+		proxy_protocol::>h  TLVs are interpreted as an HTTP header.
+				Each TLV is a single HTTP header field: the field name
+				is the decimal TLV type, and the field value is the TLV
+				value. Supports the same field and element extraction
+				logic as %http::>h.
 
 				See also: %http::>h
 

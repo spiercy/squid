@@ -9,6 +9,7 @@
 #ifndef SQUID_SRC_PARSER_BINARYTOKENIZER_H
 #define SQUID_SRC_PARSER_BINARYTOKENIZER_H
 
+#include "ip/Address.h"
 #include "sbuf/SBuf.h"
 
 namespace Parser
@@ -82,6 +83,12 @@ public:
     /// parse size consecutive bytes as an opaque blob
     SBuf area(uint64_t size, const char *description);
 
+    /// parse an IP v4 address structure
+    Ip::Address addrV4(const char *description);
+
+    /// parse an IP v6 address structure
+    Ip::Address addrV6(const char *description);
+
     /*
      * Variable-length arrays (a.k.a. Pascal or prefix strings).
      * pstringN() extracts and returns N-bit length followed by length bytes
@@ -109,6 +116,7 @@ protected:
     void want(uint64_t size, const char *description) const;
     void got(uint32_t value, uint64_t size, const char *description) const;
     void got(const SBuf &value, uint64_t size, const char *description) const;
+    void got(const Ip::Address &value, uint64_t size, const char *description) const;
     void skipped(uint64_t size, const char *description) const;
 
 private:

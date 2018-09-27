@@ -172,7 +172,7 @@ ClientHttpRequest::ClientHttpRequest(ConnStateData * aConn) :
         al->tcpClient = clientConnection = aConn->clientConnection;
         al->cache.port = aConn->port;
         al->cache.caddr = aConn->log_addr;
-        al->proxyProtocolV2Message = aConn->proxyProtocolV2Message();
+        al->proxyProtocolMessage = aConn->proxyProtocolMessage();
 
 #if USE_OPENSSL
         if (aConn->clientConnection != NULL && aConn->clientConnection->isOpen()) {
@@ -1658,6 +1658,10 @@ ClientHttpRequest::initRequest(HttpRequest *aRequest)
         al->request = request;
         HTTPMSGLOCK(al->request);
         al->syncNotes(request);
+        MemBuf mb;
+        mb.init();
+        al->request->header.packInto(&mb);
+        al->headers.request = xstrdup(mb.buf);
     }
 }
 

@@ -75,6 +75,15 @@ Parser::BinaryTokenizer::got(const SBuf &value, uint64_t size, const char *descr
 
 }
 
+/// debugging helper for parsed areas/blobs
+void
+Parser::BinaryTokenizer::got(const Ip::Address &value, uint64_t size, const char *description) const
+{
+    debugs(24, 7, context << description << '=' << value <<
+           BinaryTokenizer_tail(size, parsed_ - size));
+
+}
+
 /// debugging helper for skipped fields
 void
 Parser::BinaryTokenizer::skipped(uint64_t size, const char *description) const
@@ -162,6 +171,32 @@ Parser::BinaryTokenizer::area(uint64_t size, const char *description)
     parsed_ += size;
     got(result, size, description);
     return result;
+}
+
+Ip::Address
+Parser::BinaryTokenizer::addrV4(const char *description)
+{
+	const auto size = sizeof(struct in_addr);
+	want(size, description);
+	struct in_addr addr;
+	memcpy(&addr, data_.rawContent(), size);
+	parsed_ += size;
+	Ip::Address result(addr);
+	got(result, size, description);
+	return result;
+}
+
+Ip::Address
+Parser::BinaryTokenizer::addrV6(const char *description)
+{
+	const auto size = sizeof(struct in6_addr);
+	want(size, description);
+	struct in6_addr addr;
+	memcpy(&addr, data_.rawContent(), size);
+	parsed_ += size;
+	Ip::Address result(addr);
+	got(result, size, description);
+	return result;
 }
 
 void

@@ -12,6 +12,7 @@
 #include "format/TokenTableEntry.h"
 #include "globals.h"
 #include "parser/Tokenizer.h"
+#include "ProxyProtocol.h"
 #include "SquidConfig.h"
 #include "Store.h"
 
@@ -537,15 +538,8 @@ Format::Token::parse(const char *def, Quoting *quoting)
                 }
             }
 
-            if (type == LFT_REQUEST_PROXY_TLV || type == LFT_REQUEST_PROXY_TLV_ELEM) {
-                Parser::Tokenizer ptok = Parser::Tokenizer(SBuf(header));
-                int64_t protocolType = 0;
-                if (!ptok.int64(protocolType, 10, false, 3))
-                    fatalf("Can't parse configuration token: '%s'\n", header);
-                if (protocolType > UINT8_MAX)
-                    fatalf("Wrong PROXY protocol type: %ld\n", protocolType);
-                data.proxyProtocolType = static_cast<uint8_t>(protocolType);
-            }
+            if (type == LFT_REQUEST_PROXY_TLV || type == LFT_REQUEST_PROXY_TLV_ELEM)
+                ProxyProtocol::parseProxyProtocolHeaderType(header); // throws on error
 
             data.header.header = header;
         } else {

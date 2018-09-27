@@ -10,6 +10,7 @@
 #include "AccessLogEntry.h"
 #include "HttpReply.h"
 #include "HttpRequest.h"
+#include "ProxyProtocol.h"
 #include "SquidConfig.h"
 #include "ssl/support.h"
 
@@ -93,6 +94,8 @@ AccessLogEntry::getExtUser() const
 
     return nullptr;
 }
+
+AccessLogEntry::AccessLogEntry() {}
 
 AccessLogEntry::~AccessLogEntry()
 {

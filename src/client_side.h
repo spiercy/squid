@@ -320,7 +320,7 @@ public:
     NotePairs::Pointer notes();
     bool hasNotes() const { return bool(theNotes) && !theNotes->empty(); }
 
-    ProxyProtocol::Two::Message::Pointer proxyProtocolV2Message() { return theProxyProtocolV2Message; }
+    ProxyProtocol::Message::Pointer proxyProtocolMessage() { return theProxyProtocolMessage; }
 
 protected:
     void startDechunkingRequest();
@@ -369,10 +369,11 @@ private:
 
     /* PROXY protocol functionality */
     bool proxyProtocolValidateClient();
-    bool parseProxyProtocolHeader();
+    /// Attempts to parse a PROXY protocol message from the buffer,
+    /// supports both 1 and 2 versions of the protocol.
+    /// \returns true if the header was found and parsed, false otherwise
+    bool parseProxyProtocolMessage();
     bool proxyProtocolError(const char *reason);
-
-    ProxyProtocol::Two::Message::Pointer theProxyProtocolV2Message;
 
 #if USE_OPENSSL
     /// \returns a pointer to the matching cached TLS context or nil
@@ -385,6 +386,10 @@ private:
 
     /// whether PROXY protocol header is still expected
     bool needProxyProtocolHeader_;
+
+    /// the parsed PROXY protocol message or nil if there is
+    /// no PROXY protocol configuration for the HTTP port
+    ProxyProtocol::Message::Pointer theProxyProtocolMessage;
 
 #if USE_AUTH
     /// some user details that can be used to perform authentication on this connection

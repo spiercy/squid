@@ -21,7 +21,6 @@
 #include "LogTags.h"
 #include "MessageSizes.h"
 #include "Notes.h"
-#include "ProxyProtocol.h"
 #include "sbuf/SBuf.h"
 #if ICAP_CLIENT
 #include "adaptation/icap/Elements.h"
@@ -36,13 +35,18 @@ class HttpReply;
 class HttpRequest;
 class CustomLog;
 
+namespace ProxyProtocol {
+    class Message;
+    typedef RefCount<ProxyProtocol::Message> MessagePointer;
+}
+
 class AccessLogEntry: public RefCountable
 {
 
 public:
     typedef RefCount<AccessLogEntry> Pointer;
 
-    AccessLogEntry() {}
+    AccessLogEntry();
     ~AccessLogEntry();
 
     /// Fetch the client IP log string into the given buffer.
@@ -185,7 +189,7 @@ public:
     /// key=value pairs returned from URL rewrite/redirect helper
     NotePairs::Pointer notes;
 
-    ProxyProtocol::Two::Message::Pointer proxyProtocolV2Message;
+    ProxyProtocol::MessagePointer proxyProtocolMessage;
 
 #if ICAP_CLIENT
     /** \brief This subclass holds log info for ICAP part of request
