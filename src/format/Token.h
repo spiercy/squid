@@ -50,7 +50,10 @@ public:
     const char *label;
     struct {
         char *string;
-        uint8_t proxyProtocolType;
+        // TODO: initialized for PROXY protocol only, add support for
+        // other protocols as well.
+        /// the cached ID of the parsed header, if availabe
+        uint32_t headerId;
 
         struct {
             char *header;

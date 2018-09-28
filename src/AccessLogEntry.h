@@ -189,6 +189,7 @@ public:
     /// key=value pairs returned from URL rewrite/redirect helper
     NotePairs::Pointer notes;
 
+    /// see ConnStateData::theProxyProtocolMessage
     ProxyProtocol::MessagePointer proxyProtocolMessage;
 
 #if ICAP_CLIENT

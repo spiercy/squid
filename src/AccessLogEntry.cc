@@ -40,8 +40,7 @@ AccessLogEntry::getLogClientIp(char *buf, size_t bufsz) const
     // - IPv4 clients masked with client_netmask
     // - IPv6 clients use 'privacy addressing' instead.
 
-    if (!log_ip.isLocalhost() && log_ip.isIPv4())
-        log_ip.applyMask(Config.Addrs.client_netmask);
+    (void)log_ip.applyClientMask(Config.Addrs.client_netmask);
 
     log_ip.toStr(buf, bufsz);
 }

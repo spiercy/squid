@@ -826,7 +826,7 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
 
         case LFT_REQUEST_PROXY_TLV:
             if (al->proxyProtocolMessage) {
-                sb = al->proxyProtocolMessage->getValues(fmt->data.header.header, fmt->data.header.separator);
+                sb = al->proxyProtocolMessage->getValues(fmt->data.headerId, fmt->data.header.separator);
                 out = sb.c_str();
                 quote = 1;
             }
@@ -842,7 +842,7 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
 
         case LFT_REQUEST_PROXY_TLV_ELEM:
             if (al->proxyProtocolMessage) {
-                sb = al->proxyProtocolMessage->getElem(fmt->data.header.header, fmt->data.header.element, fmt->data.header.separator);
+                sb = al->proxyProtocolMessage->getElem(fmt->data.headerId, fmt->data.header.element, fmt->data.header.separator);
                 out = sb.c_str();
                 quote = 1;
             }

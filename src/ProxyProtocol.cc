@@ -13,6 +13,7 @@
 #include "ProxyProtocol.h"
 #include "sbuf/StringConvert.h"
 #include "sbuf/Stream.h"
+#include "SquidConfig.h"
 #include "SquidString.h"
 #include "StrList.h"
 
@@ -32,34 +33,22 @@ static const SBuf Proxy1p0magic("PROXY ", 6);
 /// magic octet prefix for PROXY protocol version 2
 static const SBuf Proxy2p0magic("\x0D\x0A\x0D\x0A\x00\x0D\x0A\x51\x55\x49\x54\x0A", 12);
 
-void
-parseProxyProtocolHeaderType(char const *str, uint8_t *headerType, uint8_t *extraHeaderType)
-{
-    if (strncmp(str, ":version", 8) == 0) {
-        if (extraHeaderType)
-            *extraHeaderType = ProxyProtocol::Version;
-    } else if (strncmp(str, ":command", 8) == 0) {
-        if (extraHeaderType)
-            *extraHeaderType = ProxyProtocol::Command;
-    } else {
-        Parser::Tokenizer ptok = Parser::Tokenizer(SBuf(str));
-        int64_t tlvType = 0;
-        if (!ptok.int64(tlvType, 10, false, 3))
-            throw TexcHere(ToSBuf("Cannot parse PROXY protocol TLV type. Expecting a decimal integer but got ", str));
-        if (tlvType > UINT8_MAX)
-            throw TexcHere(ToSBuf("Cannot parse PROXY protocol TLV type. Expecting a positive integer less than ",
-                        UINT8_MAX, " but got ", tlvType));
-        if (headerType)
-            *headerType = static_cast<uint8_t>(tlvType);
-    }
-}
+ProxyProtocol::Message::Message(const char *ver, const uint16_t len, const uint8_t cmd)
+    : version_(ver), length_(len), command_(Two::CommandType(cmd)) {}
 
 SBuf
 ProxyProtocol::Message::getAll(const char sep) const
 {
     SBuf result;
-    result.appendf(":version: %s\r\n", version);
-    result.appendf(":command: %d\r\n", command);
+    char ipBuf[MAX_IPSTRLEN];
+    result.appendf(":version: %s\r\n", version_);
+    result.appendf(":command: %d\r\n", command_);
+    auto srcAddr = srcIpAddr;
+    srcAddr.applyClientMask(Config.Addrs.client_netmask);
+    result.appendf(":src_addr: %s\r\n", srcAddr.toStr(ipBuf, MAX_IPSTRLEN));
+    result.appendf(":src_port: %d\r\n", srcIpAddr.port());
+    result.appendf(":dst_addr: %s\r\n", dstIpAddr.toStr(ipBuf, MAX_IPSTRLEN));
+    result.appendf(":dst_port: %d\r\n", dstIpAddr.port());
     for (const auto &tlv: tlvs) {
         result.appendf("%d: ", tlv.type);
         result.append(tlv.value);
@@ -69,19 +58,26 @@ ProxyProtocol::Message::getAll(const char sep) const
 }
 
 SBuf
-ProxyProtocol::Message::getValues(const char *typeStr, const char sep) const
+ProxyProtocol::Message::getValues(const uint32_t headerType, const char sep) const
 {
     SBuf result;
-    uint8_t headerType = 0;
-    uint8_t extraHeaderType = 0;
+    char ipBuf[MAX_IPSTRLEN];
 
-    parseProxyProtocolHeaderType(typeStr, &headerType, &extraHeaderType);
-
-    if (extraHeaderType == Version)
+    if (headerType == Two::PP2_EXTRA_TYPE_VERSION)
         result.append(version_);
-    else if (extraHeaderType == Command)
-        result.appendf("%d", command);
-    else {
+    else if (headerType == Two::PP2_EXTRA_TYPE_COMMAND)
+        result.appendf("%d", command_);
+    else if (headerType == Two::PP2_EXTRA_TYPE_SRC_ADDR) {
+        auto logAddr = srcIpAddr;
+        (void)logAddr.applyClientMask(Config.Addrs.client_netmask);
+        result.appendf("%s", logAddr.toStr(ipBuf, MAX_IPSTRLEN));
+    } else if (headerType == Two::PP2_EXTRA_TYPE_DST_ADDR) {
+        result.appendf("%s", dstIpAddr.toStr(ipBuf, MAX_IPSTRLEN));
+    } else if (headerType == Two::PP2_EXTRA_TYPE_SRC_PORT) {
+        result.appendf("%d", srcIpAddr.port());
+    } else if (headerType == Two::PP2_EXTRA_TYPE_DST_PORT) {
+        result.appendf("%d", dstIpAddr.port());
+    } else {
         for (const auto &m: tlvs) {
             if (m.type == headerType) {
                 if (!result.isEmpty())
@@ -94,9 +90,9 @@ ProxyProtocol::Message::getValues(const char *typeStr, const char sep) const
 }
 
 SBuf
-ProxyProtocol::Message::getElem(const char *typeStr, const char *member, const char sep) const
+ProxyProtocol::Message::getElem(const uint32_t headerType, const char *member, const char sep) const
 {
-    String result = SBufToString(getValues(typeStr, sep));
+    String result = SBufToString(getValues(headerType, sep));
     return getListMember(result, member, sep);
 }
 
@@ -110,11 +106,11 @@ ParseV1(const SBuf &buf)
     // skip to first LF (assumes it is part of CRLF)
     static const CharacterSet lineContent = CharacterSet::LF.complement("non-LF");
     SBuf line;
-    Message::Pointer message;
+    ProxyProtocol::Message::Pointer message;
     if (tok.prefix(line, lineContent, 107-Proxy1p0magic.length())) {
         if (tok.skip('\n')) {
             // found valid header
-            message = new Message("1.0", tok.parsedSize());
+            message = new ProxyProtocol::Message("1.0", tok.parsedSize());
             // reset the tokenizer to work on found line only.
             tok.reset(line);
         } else
@@ -174,12 +170,12 @@ ParseV1(const SBuf &buf)
 }
 
 static ProxyProtocol::Message::Pointer
-ParseV2()
+ParseV2(const SBuf &buf)
 {
     static const SBuf::size_type prefixLen = Proxy2p0magic.length();
     static const SBuf::size_type mandatoryHeaderLen = prefixLen + 4;
 
-    Message::Pointer message;
+    ProxyProtocol::Message::Pointer message;
 
     if (buf.length() < mandatoryHeaderLen)
         return message; // need more bytes
@@ -191,11 +187,11 @@ ParseV2()
     if ((rawVersion & 0xF0) != 0x20) // version == 2 is mandatory
         throw TexcHere("PROXY/2.0 error: invalid version");
 
-    command = (rawVersion & 0x0F);
+    const uint8_t command = (rawVersion & 0x0F);
     if ((command & 0xFE) != 0x00) // values other than 0x0-0x1 are invalid
         throw TexcHere("PROXY/2.0 error: invalid command");
 
-    debugs(88, 3, "parsed pp2_tlv command " << type);
+    debugs(88, 3, "parsed pp2_tlv command " << command);
 
     const uint8_t rawFamily = tok.uint8("family");
 
@@ -209,7 +205,7 @@ ParseV2()
 
     uint16_t headerLen = tok.uint16("length");
     if (headerLen > UINT16_MAX - mandatoryHeaderLen)
-        throw TexcHere(ToSBuf("PROXY/2.0 error: an invalid header length: expecting an integer less than "
+        throw TexcHere(ToSBuf("PROXY/2.0 error: an invalid header length: expecting an integer less than ",
                 UINT16_MAX - mandatoryHeaderLen, " but got ", headerLen));
 
     headerLen += mandatoryHeaderLen;
@@ -217,30 +213,12 @@ ParseV2()
     if (buf.length() < headerLen)
         return message; // need more bytes
 
-    message = new Message("2.0", headerLen);
+    message = new ProxyProtocol::Message("2.0", headerLen, command);
 
     // LOCAL connections do nothing with the extras
-    if (command == Two::LOCAL)
+    // TODO: parse TLVs for local connections
+    if (message->localConnection())
         return message;
-
-    union pax {
-        struct {        /* for TCP/UDP over IPv4, len = 12 */
-            struct in_addr src_addr;
-            struct in_addr dst_addr;
-            uint16_t src_port;
-            uint16_t dst_port;
-        } ipv4_addr;
-        struct {        /* for TCP/UDP over IPv6, len = 36 */
-            struct in6_addr src_addr;
-            struct in6_addr dst_addr;
-            uint16_t src_port;
-            uint16_t dst_port;
-        } ipv6_addr;
-        struct {        /* for AF_UNIX sockets, len = 216 */
-            uint8_t src_addr[108];
-            uint8_t dst_addr[108];
-        } unix_addr;
-    };
 
     switch (family) {
 
@@ -261,7 +239,8 @@ ParseV2()
     }
 
     case 0x3:  { // TODO: add support for AF_UNIX sockets.
-        tok.skip(sizeof(pax::unix_addr), "unix_addr");
+        // for AF_UNIX sockets the address block length is 216
+        tok.skip(216, "unix_addr");
         break;
     }
 
@@ -283,8 +262,35 @@ ParseV2()
     return message;
 }
 
+void
+ProxyProtocol::ParseProxyProtocolHeaderType(char const *str, uint32_t &headerType)
+{
+    if (strncmp(str, ":version", 8) == 0) {
+        headerType = ProxyProtocol::Two::PP2_EXTRA_TYPE_VERSION;
+    } else if (strncmp(str, ":command", 8) == 0) {
+        headerType = ProxyProtocol::Two::PP2_EXTRA_TYPE_COMMAND;
+    } else if (strncmp(str, ":src_addr", 9) == 0) {
+        headerType = ProxyProtocol::Two::PP2_EXTRA_TYPE_SRC_ADDR;
+    } else if (strncmp(str, ":dst_addr", 9) == 0) {
+        headerType = ProxyProtocol::Two::PP2_EXTRA_TYPE_DST_ADDR;
+    } else if (strncmp(str, ":src_port", 9) == 0) {
+        headerType = ProxyProtocol::Two::PP2_EXTRA_TYPE_SRC_PORT;
+    } else if (strncmp(str, ":dst_port", 9) == 0) {
+        headerType = ProxyProtocol::Two::PP2_EXTRA_TYPE_DST_PORT;
+    } else {
+        Parser::Tokenizer ptok = Parser::Tokenizer(SBuf(str));
+        int64_t tlvType = 0;
+        if (!ptok.int64(tlvType, 10, false))
+            throw TexcHere(ToSBuf("Cannot parse PROXY protocol TLV type. Expecting a decimal integer but got ", str));
+        if (tlvType > UINT8_MAX)
+            throw TexcHere(ToSBuf("Cannot parse PROXY protocol TLV type. Expecting a positive integer less than ",
+                        UINT8_MAX, " but got ", tlvType));
+        headerType = static_cast<uint32_t>(tlvType);
+    }
+}
+
 ProxyProtocol::Message::Pointer
-ProxyProtocol::Parse(const SBuf buf)
+ProxyProtocol::Parse(const SBuf &buf)
 {
     // detect and parse PROXY/2.0 protocol header
     if (buf.startsWith(Proxy2p0magic)) {

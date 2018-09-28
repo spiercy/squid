@@ -4829,7 +4829,11 @@ DOC_START
 
 	Format codes related to PROXY protocol:
 
-		proxy_protocol::>h  TLVs are interpreted as an HTTP header.
+		proxy_protocol::>h  PROXY protocol headers, including protocol
+				block headers and TLV block headers.
+				Some important PROXY protocol block headers are mapped
+				into pre-defined pseudo header names, starting with a colon:
+				:command, :version, :src_addr, :dst_addr, :src_port, :dst_port.
 				Each TLV is a single HTTP header field: the field name
 				is the decimal TLV type, and the field value is the TLV
 				value. Supports the same field and element extraction

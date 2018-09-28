@@ -1805,7 +1805,7 @@ ConnStateData::parseProxyProtocolMessage()
             return false; // needs more data
         inBuf.consume(theProxyProtocolMessage->length());
         needProxyProtocolHeader_ = false;
-        if (!theProxyProtocolMessage->healthCheck()) {
+        if (!theProxyProtocolMessage->localConnection()) {
             clientConnection->local = theProxyProtocolMessage->dstIpAddr;
             clientConnection->remote = theProxyProtocolMessage->srcIpAddr;
             if ((clientConnection->flags & COMM_TRANSPARENT))
@@ -2148,7 +2148,7 @@ ConnStateData::ConnStateData(const MasterXaction::Pointer &xact) :
 
     // store the details required for creating more MasterXaction objects as new requests come in
     log_addr = xact->tcpClient->remote;
-    log_addr.applyMask(Config.Addrs.client_netmask);
+    (void)log_addr.applyClientMask(Config.Addrs.client_netmask);
 
     // register to receive notice of Squid signal events
     // which may affect long persisting client connections

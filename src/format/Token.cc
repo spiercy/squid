@@ -256,7 +256,7 @@ Format::Token::Init()
     TheConfig.registerTokens(SBuf("tls"),::Format::TokenTableSsl);
     TheConfig.registerTokens(SBuf("ssl"),::Format::TokenTableSsl);
 #endif
-    TheConfig.registerTokens(SBuf("proxy_protocol"),::Format::TokenTableProxyProtocol);
+    TheConfig.registerTokens(SBuf("proxy_protocol"), ::Format::TokenTableProxyProtocol);
 }
 
 /// Scans a token table to see if the next token exists there
@@ -490,7 +490,10 @@ Format::Token::parse(const char *def, Quoting *quoting)
 
         if (data.string) {
             char *header = data.string;
-            char *cp = strchr(header, ':');
+            // Http header field names cannot have ':' while
+            // some PROXY protocol related pseudo headers may start with it.
+            const bool colonStarted = type == LFT_REQUEST_PROXY_TLV && strlen(header) > 1 && header[0] == ':';
+            char *cp = strchr(colonStarted ? header + 1 : header, ':');
 
             if (cp) {
                 *cp = '\0';
@@ -539,7 +542,7 @@ Format::Token::parse(const char *def, Quoting *quoting)
             }
 
             if (type == LFT_REQUEST_PROXY_TLV || type == LFT_REQUEST_PROXY_TLV_ELEM)
-                ProxyProtocol::parseProxyProtocolHeaderType(header); // throws on error
+                ProxyProtocol::ParseProxyProtocolHeaderType(header, data.headerId); // throws on error
 
             data.header.header = header;
         } else {
