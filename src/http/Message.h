@@ -16,6 +16,7 @@
 #include "http/ProtocolVersion.h"
 #include "http/StatusCode.h"
 #include "HttpHeader.h"
+#include <type_traits>
 
 namespace Http
 {
@@ -112,9 +113,6 @@ public:
 
     virtual int httpMsgParseError();
 
-    // Parser-NG transitional parsing of mime headers
-    bool parseHeader(Http1::Parser &); // TODO move this function to the parser
-
     virtual bool expectingBody(const HttpRequestMethod&, int64_t&) const = 0;
 
     void firstLineBuf(MemBuf&);
@@ -136,13 +134,21 @@ protected:
     virtual bool parseFirstLine(const char *blk_start, const char *blk_end) = 0;
 
     virtual void hdrCacheInit();
+
+    /// configures the interpreter as needed
+    virtual void configureContentLengthInterpreter(Http::ContentLengthInterpreter &) = 0;
+
+    // Parser-NG transitional parsing of mime headers
+    bool parseHeader(Http1::Parser &, Http::ContentLengthInterpreter &); // TODO move this function to the parser
 };
 
 } // namespace Http
 
+template <class M>
 inline void
-HTTPMSGUNLOCK(Http::Message *a)
+HTTPMSGUNLOCK(M *&a)
 {
+    static_assert(std::is_base_of<Http::Message, M>::value, "M must inherit from Http::Message");
     if (a) {
         if (a->unlock() == 0)
             delete a;

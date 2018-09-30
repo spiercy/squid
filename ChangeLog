@@ -1,3 +1,29 @@
+Changes to squid-4.3 (01 Oct 2018):
+
+	- Bug 4885: Excessive memory usage when running out of descriptors
+	- Bug 4877: Add missing text about external_acl_type %DATA changes
+	- Bug 4875 pt1: GCC-8 compile errors with -O3 optimization
+	- Bug 4716: Blank lines in cachemgr.conf are not skipped
+	- Bug 4691: balance_on_multiple_ip config option docs
+	- basic_pop3_auth: fix startup errors
+	- langpack: Add missing dialect aliases
+	- Fix range_offset_limit debugging
+	- Fix icc build errors
+	- Update systemd dependencies in squid.service
+
+Changes to squid-4.2 (04 Aug 2018):
+
+	- Regression fix: support for https_port clientca= option
+	- Regression Bug 4870: milliseconds logformats prepend 0s instead of spaces
+	- Bug 4861: HTTPMSGLOCK missing pointer safety
+	- Bug 4843 pt3: GCC-8 fixes and refactoring
+	- HTTP: Do not update stored headers on 304 responses
+	- Fix segmentation fault on -k parse
+	- Fix %>ru logging of huge URLs
+	- ... and several performance optimizations
+	- ... and some documentation updates
+	- ... and all fixes from 3.5.28
+
 Changes to squid-4.1 (02 Jul 2018):
 
 	- Bug 4223: fixed retries of failed re-forwardable transactions

@@ -13,6 +13,7 @@
 #include "acl/FilledChecklist.h"
 #include "base/EnumIterator.h"
 #include "globals.h"
+#include "http/ContentLengthInterpreter.h"
 #include "HttpBody.h"
 #include "HttpHdrCc.h"
 #include "HttpHdrContRange.h"
@@ -82,18 +83,27 @@ HttpReply::clean()
 }
 
 void
-HttpReply::packHeadersInto(Packable * p) const
+HttpReply::packHeadersUsingFastPacker(Packable &p) const
 {
-    sline.packInto(p);
-    header.packInto(p);
-    p->append("\r\n", 2);
+    sline.packInto(&p);
+    header.packInto(&p);
+    p.append("\r\n", 2);
 }
 
 void
-HttpReply::packInto(Packable * p) const
+HttpReply::packHeadersUsingSlowPacker(Packable &p) const
 {
-    packHeadersInto(p);
-    body.packInto(p);
+    MemBuf buf;
+    buf.init();
+    packHeadersUsingFastPacker(buf);
+    p.append(buf.content(), buf.contentSize());
+}
+
+void
+HttpReply::packInto(MemBuf &buf) const
+{
+    packHeadersUsingFastPacker(buf);
+    body.packInto(&buf);
 }
 
 /* create memBuf, create mem-based packer, pack, destroy packer, return MemBuf */
@@ -102,7 +112,7 @@ HttpReply::pack() const
 {
     MemBuf *mb = new MemBuf;
     mb->init();
-    packInto(mb);
+    packInto(*mb);
     return mb;
 }
 
@@ -443,6 +453,19 @@ HttpReply::parseFirstLine(const char *blk_start, const char *blk_end)
     return sline.parse(protoPrefix, blk_start, blk_end);
 }
 
+void
+HttpReply::configureContentLengthInterpreter(Http::ContentLengthInterpreter &interpreter)
+{
+    interpreter.applyStatusCodeRules(sline.status());
+}
+
+bool
+HttpReply::parseHeader(Http1::Parser &hp)
+{
+    Http::ContentLengthInterpreter clen;
+    return Message::parseHeader(hp, clen);
+}
+
 /* handy: resets and returns -1 */
 int
 HttpReply::httpMsgParseError()
@@ -638,5 +661,12 @@ HttpReply::olderThan(const HttpReply *them) const
     if (!them || !them->date || !date)
         return false;
     return date < them->date;
+}
+
+void
+HttpReply::removeIrrelevantContentLength() {
+    if (Http::ProhibitsContentLength(sline.status()))
+        if (header.delById(Http::HdrType::CONTENT_LENGTH))
+            debugs(58, 3, "Removing unexpected Content-Length header");
 }
 

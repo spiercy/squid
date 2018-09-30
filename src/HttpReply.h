@@ -100,7 +100,11 @@ public:
 
     int validatorsMatch (HttpReply const *other) const;
 
-    void packHeadersInto(Packable * p) const;
+    /// adds status line and header to the given Packable
+    /// assumes that `p` can quickly process small additions
+    void packHeadersUsingFastPacker(Packable &p) const;
+    /// same as packHeadersUsingFastPacker() but assumes that `p` cannot quickly process small additions
+    void packHeadersUsingSlowPacker(Packable &p) const;
 
     /** Clone this reply.
      *  Could be done as a copy-contructor but we do not want to accidently copy a HttpReply..
@@ -116,6 +120,13 @@ public:
     /// \returns false if any information is missing
     bool olderThan(const HttpReply *them) const;
 
+    /// Some response status codes prohibit sending Content-Length (RFC 7230 section 3.3.2).
+    void removeIrrelevantContentLength();
+
+    virtual void configureContentLengthInterpreter(Http::ContentLengthInterpreter &);
+    /// parses reply header using Parser
+    bool parseHeader(Http1::Parser &hp);
+
 private:
     /** initialize */
     void init();
@@ -124,7 +135,7 @@ private:
 
     void hdrCacheClean();
 
-    void packInto(Packable * p) const;
+    void packInto(MemBuf &) const;
 
     /* ez-routines */
     /** \return construct 304 reply and pack it into a MemBuf */
