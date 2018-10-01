@@ -251,19 +251,12 @@ ParseV2(const SBuf &buf)
     }
     }
 
-    SBuf tlvData = tok.leftovers();
-    if (tlvData.length()) {
-        // avoid TLV buffer overruns
-        tlvData.chop(0, headerLen - tok.parsed());
-        ::Parser::BinaryTokenizer tlvTok(tlvData);
-        while (!tlvTok.atEnd()) {
-            const auto type = tlvTok.uint8("pp2_tlv::type");
-            debugs(88, 3, "parsed pp2_tlv type " << type);
-            const uint16_t valueLen = tlvTok.uint16("pp2_tlv::length");
-            if (tlvTok.parsed() + valueLen > tlvData.length())
-                throw TexcHere("PROXY/2.0 error: an invalid pp2_tlv length and (or) the header length");
-            message->tlvs.emplace_back(type, tlvTok.area(valueLen, "pp2_tlv::value"));
-        }
+    ::Parser::BinaryTokenizer tlvTok(tok.area(headerLen - tok.parsed(), "TLV list"));
+    while (!tlvTok.atEnd()) {
+        const auto type = tlvTok.uint8("pp2_tlv::type");
+        const uint16_t valueLen = tlvTok.uint16("pp2_tlv::length");
+        debugs(88, 3, "parsed pp2_tlv type: " << type << ", value length: " << valueLen);
+        message->tlvs.emplace_back(type, tlvTok.area(valueLen, "pp2_tlv::value"));
     }
     return message;
 }
