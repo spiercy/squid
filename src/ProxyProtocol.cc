@@ -251,13 +251,19 @@ ParseV2(const SBuf &buf)
     }
     }
 
-    while (tok.parsed() < headerLen) {
-        const auto type = tok.uint8("pp2_tlv::type");
-        debugs(88, 3, "parsed pp2_tlv type " << type);
-        const uint16_t valueLen = tok.uint16("pp2_tlv::length");
-        if (tok.parsed() + valueLen > headerLen)
-            throw TexcHere("PROXY/2.0 error: an invalid pp2_tlv length and (or) the header length");
-        message->tlvs.emplace_back(type, tok.area(valueLen, "pp2_tlv::value"));
+    SBuf tlvData = tok.leftovers();
+    if (tlvData.length()) {
+        // avoid TLV buffer overruns
+        tlvData.chop(0, headerLen - tok.parsed());
+        ::Parser::BinaryTokenizer tlvTok(tlvData);
+        while (!tlvTok.atEnd()) {
+            const auto type = tlvTok.uint8("pp2_tlv::type");
+            debugs(88, 3, "parsed pp2_tlv type " << type);
+            const uint16_t valueLen = tlvTok.uint16("pp2_tlv::length");
+            if (tlvTok.parsed() + valueLen > tlvData.length())
+                throw TexcHere("PROXY/2.0 error: an invalid pp2_tlv length and (or) the header length");
+            message->tlvs.emplace_back(type, tlvTok.area(valueLen, "pp2_tlv::value"));
+        }
     }
     return message;
 }
