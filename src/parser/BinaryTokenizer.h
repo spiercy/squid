@@ -9,8 +9,11 @@
 #ifndef SQUID_SRC_PARSER_BINARYTOKENIZER_H
 #define SQUID_SRC_PARSER_BINARYTOKENIZER_H
 
-#include "ip/Address.h"
 #include "sbuf/SBuf.h"
+
+namespace Ip {
+    class Address;
+}
 
 namespace Parser
 {

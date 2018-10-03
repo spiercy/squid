@@ -270,9 +270,8 @@ ParseV2(SBuf &buf)
     ::Parser::BinaryTokenizer tlvTok(tok.area(headerLen - tok.parsed(), "TLV list"));
     while (!tlvTok.atEnd()) {
         const auto type = tlvTok.uint8("pp2_tlv::type");
-        const auto valueLen = tlvTok.uint16("pp2_tlv::length");
-        debugs(88, 3, "parsed pp2_tlv type: " << type << ", value length: " << valueLen);
-        message->tlvs.emplace_back(type, tlvTok.area(valueLen, "pp2_tlv::value"));
+        debugs(88, 3, "parsed pp2_tlv type: " << type);
+        message->tlvs.emplace_back(type, tlvTok.pstring16("pp2_tlv length and value"));
     }
 
     buf.consume(tok.parsed());
