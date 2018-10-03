@@ -1658,10 +1658,6 @@ ClientHttpRequest::initRequest(HttpRequest *aRequest)
         al->request = request;
         HTTPMSGLOCK(al->request);
         al->syncNotes(request);
-        MemBuf mb;
-        mb.init();
-        al->request->header.packInto(&mb);
-        al->headers.request = xstrdup(mb.buf);
     }
 }
 

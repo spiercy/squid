@@ -174,30 +174,30 @@ Parser::BinaryTokenizer::area(uint64_t size, const char *description)
 }
 
 Ip::Address
-Parser::BinaryTokenizer::addrV4(const char *description)
+Parser::BinaryTokenizer::inV4(const char *description)
 {
-    const auto size = sizeof(struct in_addr);
-    want(size, description);
     struct in_addr addr;
-    const SBuf rawData = data_.substr(parsed_, size);
+    const auto size = sizeof(addr);
+    want(size, description);
+    const auto rawData = data_.substr(parsed_, size);
     memcpy(&addr, rawData.rawContent(), size);
     parsed_ += size;
-    Ip::Address result(addr);
+    const Ip::Address result(addr);
     got(result, size, description);
     return result;
 }
 
-// TODO: avoid code duplication with BinaryTokenizer::addrV4()
+// TODO: avoid code duplication with BinaryTokenizer::inV4()
 Ip::Address
-Parser::BinaryTokenizer::addrV6(const char *description)
+Parser::BinaryTokenizer::inV6(const char *description)
 {
-    const auto size = sizeof(struct in6_addr);
-    want(size, description);
     struct in6_addr addr;
-    const SBuf rawData = data_.substr(parsed_, size);
+    const auto size = sizeof(addr);
+    want(size, description);
+    const auto rawData = data_.substr(parsed_, size);
     memcpy(&addr, rawData.rawContent(), size);
     parsed_ += size;
-    Ip::Address result(addr);
+    const Ip::Address result(addr);
     got(result, size, description);
     return result;
 }

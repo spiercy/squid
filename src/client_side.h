@@ -320,7 +320,7 @@ public:
     NotePairs::Pointer notes();
     bool hasNotes() const { return bool(theNotes) && !theNotes->empty(); }
 
-    ProxyProtocol::Message::Pointer proxyProtocolMessage() { return theProxyProtocolMessage; }
+    ProxyProtocol::Message::Pointer proxyProtocolMessage() { return proxyProtocolMessage_; }
 
 protected:
     void startDechunkingRequest();
@@ -387,9 +387,8 @@ private:
     /// whether PROXY protocol header is still expected
     bool needProxyProtocolHeader_;
 
-    /// the parsed PROXY protocol message or nil if there is
-    /// no PROXY protocol configuration for the HTTP port
-    ProxyProtocol::Message::Pointer theProxyProtocolMessage;
+    /// the parsed PROXY protocol message
+    ProxyProtocol::Message::Pointer proxyProtocolMessage_;
 
 #if USE_AUTH
     /// some user details that can be used to perform authentication on this connection

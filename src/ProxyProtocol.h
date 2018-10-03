@@ -17,9 +17,8 @@
 namespace ProxyProtocol {
 namespace Two {
 
-// unused yet
 typedef enum {
-    // protocol registered types
+    // TLV types defined by the PROXY protocol specs
     PP2_TYPE_UNKNOWN = 0,
     PP2_TYPE_ALPN = 0x01,
     PP2_TYPE_AUTHORITY = 0x02,
@@ -33,13 +32,14 @@ typedef enum {
     PP2_SUBTYPE_SSL_KEY_ALG = 0x25,
     PP2_TYPE_NETNS = 0x30,
 
-    // extra (protocol-unrelated) types used for logging
-    PP2_EXTRA_TYPE_VERSION = 0x101,
-    PP2_EXTRA_TYPE_COMMAND = 0x102,
-    PP2_EXTRA_TYPE_SRC_ADDR = 0x103,
-    PP2_EXTRA_TYPE_DST_ADDR = 0x104,
-    PP2_EXTRA_TYPE_SRC_PORT = 0x105,
-    PP2_EXTRA_TYPE_DST_PORT = 0x106
+    // IDs for PROXY message pseudo-headers.
+    // Larger than 255 to avoid clashes with possible TLV type IDs.
+    PP2_PSEUDO_VERSION = 0x101,
+    PP2_PSEUDO_COMMAND = 0x102,
+    PP2_PSEUDO_SRC_ADDR = 0x103,
+    PP2_PSEUDO_DST_ADDR = 0x104,
+    PP2_PSEUDO_SRC_PORT = 0x105,
+    PP2_PSEUDO_DST_PORT = 0x106
 } HeaderType;
 
 /// PROXY protocol 'command' field value
@@ -65,13 +65,15 @@ class Message : public RefCountable
     public:
         typedef RefCount<Message> Pointer;
         typedef std::vector<Two::Tlv> Tlvs;
+        typedef std::map<SBuf, Two::HeaderType> FieldMap;
 
-        Message(const char *ver, const uint16_t len, const uint8_t cmd = Two::PROXY);
+        Message(const char *ver, const uint8_t cmd = Two::PROXY);
 
         /// Whether the connection over PROXY protocol is 'LOCAL'.
         /// Such connections are established without being relayed.
         /// Received addresses and TLVs are discarded in this mode.
         bool localConnection() const { return command_ == Two::LOCAL; }
+
 
         /// HTTP header-like string representation of the parsed message.
         /// The returned string has several mandatory lines for the protocol
@@ -88,7 +90,7 @@ class Message : public RefCountable
 
         /// \returns the value for the provided TLV type.
         /// All values for different TLVs having the same type are concatenated with ','.
-        SBuf getValues(const uint32_t headerType, const char sep) const;
+        SBuf getValues(const uint32_t headerType, const char sep = ',') const;
 
         /// Searches for the first key-value pair occurrence within the
         /// value for the provided TLV type. Assumes that the TLV value
@@ -97,11 +99,11 @@ class Message : public RefCountable
         /// \returns the value of the found pair or an empty string.
         SBuf getElem(const uint32_t headerType, const char *member, const char sep) const;
 
-        /// the length in bytes of the whole parsed message
-        uint8_t length() const { return length_; }
-
         /// the version of the parsed message
         const char *version() const { return version_; }
+
+        /// a mapping bettween pseudo header names and ids
+        static FieldMap PseudoHeaderFields;
 
         /// Parsed IPv4 or IPv6 source address
         Ip::Address srcIpAddr;
@@ -110,24 +112,26 @@ class Message : public RefCountable
         /// parsed PROXY v2 TLVs array
         Tlvs tlvs;
 
+        /// Whether the message INET protocol is supported by the PROXY protocol.
+        /// A valid message with unsupported INET protocol should be discarded.
+        bool protoSupported;
+
     private:
         /// PROXY protocol version of the message, either "1.0" or "2.0".
         const char *version_;
 
-        /// total length of the parsed message
-        uint16_t length_;
         /// parsed PROXY v2 command
         Two::CommandType command_;
 };
 
 /// Parses PROXY protocol header type from the buffer.
-void ParseProxyProtocolHeaderType(char const *str, uint32_t &headerType);
+void ParseProxyProtocolHeaderType(const SBuf &headerStr, uint32_t &headerType);
 
 /// Parses a PROXY protocol message from the buffer, determining
 /// the protocol version (v1 or v2) by the signature.
 /// Throws on error.
 /// \returns the parsed message or nil pointer if more data is needed
-Message::Pointer Parse(const SBuf &);
+Message::Pointer Parse(SBuf &);
 
 } // namespace ProxyProtocol
 

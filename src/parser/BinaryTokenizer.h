@@ -83,11 +83,11 @@ public:
     /// parse size consecutive bytes as an opaque blob
     SBuf area(uint64_t size, const char *description);
 
-    /// parse an IP v4 address structure
-    Ip::Address addrV4(const char *description);
+    /// interpret the next 4 bytes as a raw in_addr structure
+    Ip::Address inV4(const char *description);
 
-    /// parse an IP v6 address structure
-    Ip::Address addrV6(const char *description);
+    /// interpret the next 16 bytes as a raw in6_addr structure
+    Ip::Address inV6(const char *description);
 
     /*
      * Variable-length arrays (a.k.a. Pascal or prefix strings).

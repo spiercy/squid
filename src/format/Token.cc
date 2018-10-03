@@ -542,7 +542,7 @@ Format::Token::parse(const char *def, Quoting *quoting)
             }
 
             if (type == LFT_REQUEST_PROXY_TLV || type == LFT_REQUEST_PROXY_TLV_ELEM)
-                ProxyProtocol::ParseProxyProtocolHeaderType(header, data.headerId); // throws on error
+                ProxyProtocol::ParseProxyProtocolHeaderType(SBuf(header), data.headerId);
 
             data.header.header = header;
         } else {

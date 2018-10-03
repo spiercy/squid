@@ -1800,18 +1800,19 @@ bool
 ConnStateData::parseProxyProtocolMessage()
 {
     try {
-        theProxyProtocolMessage = ProxyProtocol::Parse(inBuf);
-        if (!theProxyProtocolMessage)
-            return false; // needs more data
-        inBuf.consume(theProxyProtocolMessage->length());
+        proxyProtocolMessage_ = ProxyProtocol::Parse(inBuf);
+        assert(bool(proxyProtocolMessage_));
         needProxyProtocolHeader_ = false;
-        if (!theProxyProtocolMessage->localConnection()) {
-            clientConnection->local = theProxyProtocolMessage->dstIpAddr;
-            clientConnection->remote = theProxyProtocolMessage->srcIpAddr;
+        if (proxyProtocolMessage_->protoSupported && !proxyProtocolMessage_->localConnection()) {
+            clientConnection->local = proxyProtocolMessage_->dstIpAddr;
+            clientConnection->remote = proxyProtocolMessage_->srcIpAddr;
             if ((clientConnection->flags & COMM_TRANSPARENT))
                 clientConnection->flags ^= COMM_TRANSPARENT; // prevent TPROXY spoofing of this new IP.
-            debugs(33, 5, "PROXY/" << theProxyProtocolMessage->version() << " upgrade: " << clientConnection);
+            debugs(33, 5, "PROXY/" << proxyProtocolMessage_->version() << " upgrade: " << clientConnection);
         }
+    } catch (const Parser::BinaryTokenizer::InsufficientInput &) {
+        debugs(33, 3, "PROXY protocol: waiting for more");
+        return false;
     } catch (const std::exception &e) {
         return proxyProtocolError(e.what());
     }
@@ -2577,7 +2578,7 @@ ConnStateData::postHttpsAccept()
         acl_checklist->al->tcpClient = clientConnection;
         acl_checklist->al->cache.port = port;
         acl_checklist->al->cache.caddr = log_addr;
-        acl_checklist->al->proxyProtocolMessage = theProxyProtocolMessage;
+        acl_checklist->al->proxyProtocolMessage = proxyProtocolMessage_;
         HTTPMSGUNLOCK(acl_checklist->al->request);
         acl_checklist->al->request = request;
         HTTPMSGLOCK(acl_checklist->al->request);
