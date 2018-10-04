@@ -43,7 +43,7 @@ ProxyProtocol::Message::FieldMap ProxyProtocol::Message::PseudoHeaderFields = {
 static const SBuf Proxy2p0magic("\x0D\x0A\x0D\x0A\x00\x0D\x0A\x51\x55\x49\x54\x0A", 12);
 
 ProxyProtocol::Message::Message(const char *ver, const uint8_t cmd)
-    : protoSupported(true), version_(ver), command_(Two::CommandType(cmd)) {}
+    : version_(ver), command_(Two::CommandType(cmd)), supported_(true) {}
 
 SBuf
 ProxyProtocol::Message::getAll(const char sep) const
@@ -150,8 +150,8 @@ ParseV1(SBuf &buf)
         // parse:  src-IP SP dst-IP SP src-port SP dst-port
         const bool correct = contentTok.prefix(ipa, ipChars) && contentTok.skip(' ') &&
                              contentTok.prefix(ipb, ipChars) && contentTok.skip(' ') &&
-                             contentTok.int64(porta) && contentTok.skip(' ') &&
-                             contentTok.int64(portb);
+                             contentTok.int64(porta, 10, false) && contentTok.skip(' ') &&
+                             contentTok.int64(portb, 10, false);
         if (!correct || !contentTok.atEnd())
             throw TexcHere("PROXY/1.0 error: invalid syntax");
 
@@ -161,20 +161,20 @@ ParseV1(SBuf &buf)
         if (!message->dstIpAddr.GetHostByName(ipb.c_str()))
             throw TexcHere("PROXY/1.0 error: invalid dst-IP address");
 
-        if (porta > 0 && porta <= 0xFFFF) // max uint16_t
-            message->srcIpAddr.port(static_cast<uint16_t>(porta));
-        else
+        if (porta > std::numeric_limits<uint16_t>::max())
             throw TexcHere("PROXY/1.0 error: invalid src port");
 
-        if (portb > 0 && portb <= 0xFFFF) // max uint16_t
-            message->dstIpAddr.port(static_cast<uint16_t>(portb));
-        else
+        message->srcIpAddr.port(static_cast<uint16_t>(porta));
+
+        if (portb > std::numeric_limits<uint16_t>::max())
             throw TexcHere("PROXY/1.0 error: invalid dst port");
+
+        message->dstIpAddr.port(static_cast<uint16_t>(portb));
 
     } else if (contentTok.skip(unknown)) {
         // found valid but unusable header
         // discard the rest of the line
-        message->protoSupported = false;
+        message->unsupported();
     } else
         throw TexcHere("PROXY/1.0 error: invalid INET protocol or family");
 
@@ -190,73 +190,75 @@ ParseV2(SBuf &buf)
 
     ProxyProtocol::Message::Pointer message;
 
-    ::Parser::BinaryTokenizer tok(buf, true);
-    tok.skip(magicLength, "magic");
+    ::Parser::BinaryTokenizer tokMessage(buf, true);
+    tokMessage.skip(magicLength, "magic");
 
-    const auto versionAndCommand = tok.uint8("version and command");
+    const auto versionAndCommand = tokMessage.uint8("version and command");
 
     const auto version = (versionAndCommand & 0xF0) >> 4;
     if (version != 2) // version == 2 is mandatory
         throw TexcHere(ToSBuf("PROXY/2.0 error: invalid version ", version));
 
     const auto command = (versionAndCommand & 0x0F);
-    if ((command & 0xFE) != 0x00) // values other than 0x0-0x1 are invalid
+    if (command > ProxyProtocol::Two::PROXY)
         throw TexcHere(ToSBuf("PROXY/2.0 error: invalid command ", command));
 
     debugs(88, 3, "parsed pp2_tlv command " << command);
 
-    const auto familyAndProto = tok.uint8("family and proto");
+    const auto familyAndProto = tokMessage.uint8("family and proto");
 
     const auto family = (familyAndProto & 0xF0) >> 4;
-    if (family > 0x3) // values other than 0x0-0x3 are invalid
+    if (family > ProxyProtocol::Two::PP2_AF_UNIX)
         throw TexcHere(ToSBuf("PROXY/2.0 error: invalid address family ", family));
 
     const auto proto = (familyAndProto & 0x0F);
-    if (proto > 0x2) // values other than 0x0-0x2 are invalid
+    if (proto > ProxyProtocol::Two::PP2_DGRAM)
         throw TexcHere(ToSBuf("PROXY/2.0 error: invalid transport protocol ", proto));
 
     // the header length field contains the number following bytes beyond this field
-    auto headerLen = tok.uint16("header length");
+    auto headerLen = tokMessage.uint16("header length");
 
     if (headerLen > std::numeric_limits<uint16_t>::max() - minMessageLength)
         throw TexcHere(ToSBuf("PROXY/2.0 error: an invalid header length: expecting an integer less than ",
                     std::numeric_limits<uint16_t>::max() - minMessageLength, " but got ", headerLen));
 
-    // the total message length, including the magic bytes
-    headerLen += minMessageLength;
+    const auto header = tokMessage.area(headerLen, "header");
 
     message = new ProxyProtocol::Message("2.0", command);
 
-    message->protoSupported = (proto != 0);
+    if (proto == ProxyProtocol::Two::PP2_UNSPEC || family == ProxyProtocol::Two::PP2_AF_UNSPEC)
+        message->unsupported();
 
-    if (message->localConnection()) {
+    if (!message->usable()) {
         // discard the protocol block
-        // TODO: parse TLVs
-        buf.consume(headerLen);
+        // TODO: parse TLVs for local connections
+        buf.consume(tokMessage.parsed());
         return message;
     }
 
+    ::Parser::BinaryTokenizer tokHeader(header, "TLV list");
+
     switch (family) {
 
-    case 0x1:  { // IPv4
-        message->srcIpAddr = tok.inV4("src_addr IPv4");
-        message->dstIpAddr = tok.inV4("dst_addr IPv4");
-        message->srcIpAddr.port(tok.uint16("src_port"));
-        message->dstIpAddr.port(tok.uint16("dst_port"));
+    case ProxyProtocol::Two::PP2_AF_INET: {
+        message->srcIpAddr = tokHeader.inV4("src_addr IPv4");
+        message->dstIpAddr = tokHeader.inV4("dst_addr IPv4");
+        message->srcIpAddr.port(tokHeader.uint16("src_port"));
+        message->dstIpAddr.port(tokHeader.uint16("dst_port"));
         break;
     }
 
-    case 0x2:  { // IPv6
-        message->srcIpAddr = tok.inV6("src_addr IPv6");
-        message->dstIpAddr = tok.inV6("dst_addr IPv6");
-        message->srcIpAddr.port(tok.uint16("src_port"));
-        message->dstIpAddr.port(tok.uint16("dst_port"));
+    case ProxyProtocol::Two::PP2_AF_INET6: {
+        message->srcIpAddr = tokHeader.inV6("src_addr IPv6");
+        message->dstIpAddr = tokHeader.inV6("dst_addr IPv6");
+        message->srcIpAddr.port(tokHeader.uint16("src_port"));
+        message->dstIpAddr.port(tokHeader.uint16("dst_port"));
         break;
     }
 
-    case 0x3:  { // TODO: add support for AF_UNIX sockets.
-        // for AF_UNIX sockets the address block length is 216
-        tok.skip(216, "unix_addr");
+    case ProxyProtocol::Two::PP2_AF_UNIX: { // TODO: add support
+        // the address block length is 216 bytes
+        tokHeader.skip(216, "unix_addr");
         break;
     }
 
@@ -267,14 +269,13 @@ ParseV2(SBuf &buf)
     }
     }
 
-    ::Parser::BinaryTokenizer tlvTok(tok.area(headerLen - tok.parsed(), "TLV list"));
-    while (!tlvTok.atEnd()) {
-        const auto type = tlvTok.uint8("pp2_tlv::type");
+    while (!tokHeader.atEnd()) {
+        const auto type = tokHeader.uint8("pp2_tlv::type");
         debugs(88, 3, "parsed pp2_tlv type: " << type);
-        message->tlvs.emplace_back(type, tlvTok.pstring16("pp2_tlv length and value"));
+        message->tlvs.emplace_back(type, tokHeader.pstring16("pp2_tlv length and value"));
     }
 
-    buf.consume(tok.parsed());
+    buf.consume(tokMessage.parsed());
     return message;
 }
 

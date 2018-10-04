@@ -1803,7 +1803,7 @@ ConnStateData::parseProxyProtocolMessage()
         proxyProtocolMessage_ = ProxyProtocol::Parse(inBuf);
         assert(bool(proxyProtocolMessage_));
         needProxyProtocolHeader_ = false;
-        if (proxyProtocolMessage_->protoSupported && !proxyProtocolMessage_->localConnection()) {
+        if (proxyProtocolMessage_->usable()) {
             clientConnection->local = proxyProtocolMessage_->dstIpAddr;
             clientConnection->remote = proxyProtocolMessage_->srcIpAddr;
             if ((clientConnection->flags & COMM_TRANSPARENT))

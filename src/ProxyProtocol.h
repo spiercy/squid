@@ -48,6 +48,19 @@ typedef enum {
     PROXY = 0x01
 } CommandType;
 
+typedef enum {
+    PP2_AF_UNSPEC = 0,
+    PP2_AF_INET = 0x1,
+    PP2_AF_INET6 = 0x2,
+    PP2_AF_UNIX = 0x3
+} AddressFamily;
+
+typedef enum {
+    PP2_UNSPEC = 0,
+    PP2_STREAM = 0x1,
+    PP2_DGRAM = 0x2
+} TransportProtocol;
+
 class Tlv
 {
     public:
@@ -69,10 +82,6 @@ class Message : public RefCountable
 
         Message(const char *ver, const uint8_t cmd = Two::PROXY);
 
-        /// Whether the connection over PROXY protocol is 'LOCAL'.
-        /// Such connections are established without being relayed.
-        /// Received addresses and TLVs are discarded in this mode.
-        bool localConnection() const { return command_ == Two::LOCAL; }
 
 
         /// HTTP header-like string representation of the parsed message.
@@ -102,6 +111,12 @@ class Message : public RefCountable
         /// the version of the parsed message
         const char *version() const { return version_; }
 
+        /// unusable messages are valid but should be discarded
+        bool usable() const { return !localConnection() && supported_; }
+
+        /// mark the (valid) message as unsupported by the PROXY protocol
+        void unsupported() { supported_ = false; }
+
         /// a mapping bettween pseudo header names and ids
         static FieldMap PseudoHeaderFields;
 
@@ -112,16 +127,21 @@ class Message : public RefCountable
         /// parsed PROXY v2 TLVs array
         Tlvs tlvs;
 
-        /// Whether the message INET protocol is supported by the PROXY protocol.
-        /// A valid message with unsupported INET protocol should be discarded.
-        bool protoSupported;
-
     private:
+        /// Whether the connection over PROXY protocol is 'LOCAL'.
+        /// Such connections are established without being relayed.
+        /// Received addresses and TLVs are discarded in this mode.
+        bool localConnection() const { return command_ == Two::LOCAL; }
+
         /// PROXY protocol version of the message, either "1.0" or "2.0".
         const char *version_;
 
         /// parsed PROXY v2 command
         Two::CommandType command_;
+
+        /// Whether the message INET protocol and adress family are
+        /// supported by the PROXY protocol.
+        bool supported_;
 };
 
 /// Parses PROXY protocol header type from the buffer.
