@@ -653,7 +653,8 @@ FwdState::noteDestination(Comm::ConnectionPointer path)
         return;
     }
 
-    debugs(17, 3, "new destination " << path);
+    debugs(17, 3, path);
+
     // Do not fowrward bumped connections to parent proxy unless it is an
     // origin server
     if (path->getPeer() && !path->getPeer()->options.originserver && request->flags.sslBumped) {
@@ -669,6 +670,7 @@ FwdState::noteDestination(Comm::ConnectionPointer path)
         stopAndDestroy("SslBump misconfiguration");
         return;
     }
+
     if (!destinations_)
         destinations_ = new CandidatePaths();
     destinations_->newPath(path);
@@ -686,9 +688,10 @@ FwdState::noteDestination(Comm::ConnectionPointer path)
         typedef NullaryMemFunT<HappyConnOpener> CbDialer;
         AsyncCall::Pointer call = JobCallback(50, 5, CbDialer, connOpener, HappyConnOpener::noteCandidatesChange);
         ScheduleCallHere(call);
-    } else {
-        useDestinations();
+        return;
     }
+
+    useDestinations();
 }
 
 void
