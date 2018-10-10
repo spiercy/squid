@@ -655,8 +655,9 @@ FwdState::noteDestination(Comm::ConnectionPointer path)
 
     debugs(17, 3, path);
 
-    // Do not fowrward bumped connections to parent proxy unless it is an
-    // origin server
+    // Do not forward bumped connections to a parent unless it is an origin server
+    // XXX: This check is too early: Some deployed Squids may have but never actually use this path.
+    // We will break them completely by discovering this misconfiguration now.
     if (path->getPeer() && !path->getPeer()->options.originserver && request->flags.sslBumped) {
         // Better handling should be probably:
         //   a) a warning/error in cache.log for misconfiguration
