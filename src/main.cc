@@ -782,6 +782,7 @@ master_restart(int sig)
 void
 master_shutdown(int sig)
 {
+    do_shutdown = 1;
     ShutdownSignal = sig;
 
 #if !_SQUID_WINDOWS_
@@ -1796,14 +1797,14 @@ masterShutdownStart()
     shutting_down = 1;
 }
 
-/// Initiates restarting and reviving all kids.
+/// Reacts to the kid restarting signal.
 static void
 masterRestartKids()
 {
     if (AvoidSignalAction("restarting kids", do_restart))
         return;
     debugs(1, 2, "received restart command");
-    restarting_kids = 1;
+    TheKids.forgetHopelessFailures();
 }
 
 /// Initiates reconfiguration sequence. See also: masterReconfigureFinish().
@@ -2070,10 +2071,6 @@ watch_child(const CommandLine &masterCommand)
             syslog(LOG_NOTICE, "Squid Parent: unknown child process %d exited", pid);
 
         masterCheckAndBroadcastSignals();
-        if (restarting_kids) {
-            TheKids.forgetAllFailures();
-            restarting_kids = 0;
-        }
         masterMaintainKidRevivalSchedule();
 
         if (!TheKids.someRunning() && !TheKids.shouldRestartSome()) {

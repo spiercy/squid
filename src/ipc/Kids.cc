@@ -80,6 +80,15 @@ Kids::forgetAllFailures()
         kid.forgetFailures();
 }
 
+void
+Kids::forgetHopelessFailures()
+{
+    for (auto &kid: storage) {
+        if (kid.hopeless())
+            kid.forgetFailures();
+    }
+}
+
 time_t
 Kids::forgetOldFailures()
 {
