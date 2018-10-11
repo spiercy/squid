@@ -154,6 +154,7 @@ static int malloc_debug_level = 0;
 static volatile int do_reconfigure = 0;
 static volatile int do_rotate = 0;
 static volatile int do_shutdown = 0;
+static volatile int do_restart = 0;
 static volatile int do_revive_kids = 0;
 static volatile int shutdown_status = EXIT_SUCCESS;
 static volatile int do_handle_stopped_child = 0;
@@ -161,6 +162,7 @@ static volatile int do_handle_stopped_child = 0;
 static int RotateSignal = -1;
 static int ReconfigureSignal = -1;
 static int ShutdownSignal = -1;
+static int RestartSignal = -1;
 static int ReviveKidsSignal = -1;
 
 static void mainRotate(void);
@@ -763,11 +765,23 @@ master_revive_kids(int sig)
 #endif
 }
 
+void
+master_restart(int sig)
+{
+    RestartSignal = sig;
+    do_restart = 1;
+
+#if !_SQUID_WINDOWS_
+#if !HAVE_SIGACTION
+    signal(sig, master_revive_kids);
+#endif
+#endif
+}
+
 /// Shutdown signal handler for master process
 void
 master_shutdown(int sig)
 {
-    do_shutdown = 1;
     ShutdownSignal = sig;
 
 #if !_SQUID_WINDOWS_
@@ -1782,6 +1796,16 @@ masterShutdownStart()
     shutting_down = 1;
 }
 
+/// Initiates restarting and reviving all kids.
+static void
+masterRestartKids()
+{
+    if (AvoidSignalAction("restarting kids", do_restart))
+        return;
+    debugs(1, 2, "received restart command");
+    restarting_kids = 1;
+}
+
 /// Initiates reconfiguration sequence. See also: masterReconfigureFinish().
 static void
 masterReconfigureStart()
@@ -1822,6 +1846,8 @@ masterCheckAndBroadcastSignals()
         masterReconfigureStart();
     if (do_revive_kids)
         masterReviveKids();
+    if (do_restart)
+        masterRestartKids();
 
     // emulate multi-step reconfiguration assumed by AvoidSignalAction()
     if (reconfiguring)
@@ -1831,6 +1857,7 @@ masterCheckAndBroadcastSignals()
     BroadcastSignalIfAny(RotateSignal);
     BroadcastSignalIfAny(ReconfigureSignal);
     BroadcastSignalIfAny(ShutdownSignal);
+    BroadcastSignalIfAny(RestartSignal);
     ReviveKidsSignal = -1; // alarms are not broadcasted
 }
 
@@ -1850,7 +1877,7 @@ static inline bool
 masterSignaled()
 {
     return (DebugSignal > 0 || RotateSignal > 0 || ReconfigureSignal > 0 ||
-            ShutdownSignal > 0 || ReviveKidsSignal > 0);
+            ShutdownSignal > 0 || ReviveKidsSignal > 0 || RestartSignal > 0);
 }
 
 /// makes the caller a daemon process running in the background
@@ -1970,7 +1997,7 @@ watch_child(const CommandLine &masterCommand)
     squid_signal(SIGALRM, master_revive_kids, 0);
     squid_signal(SIGINT, master_shutdown, 0);
 #ifdef SIGTTIN
-    squid_signal(SIGTTIN, master_shutdown, 0);
+    squid_signal(SIGTTIN, master_restart, 0);
 #endif
 
     if (Config.workers > 128) {
@@ -2043,6 +2070,10 @@ watch_child(const CommandLine &masterCommand)
             syslog(LOG_NOTICE, "Squid Parent: unknown child process %d exited", pid);
 
         masterCheckAndBroadcastSignals();
+        if (restarting_kids) {
+            TheKids.forgetAllFailures();
+            restarting_kids = 0;
+        }
         masterMaintainKidRevivalSchedule();
 
         if (!TheKids.someRunning() && !TheKids.shouldRestartSome()) {
