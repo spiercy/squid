@@ -165,6 +165,12 @@ static int ShutdownSignal = -1;
 static int RestartSignal = -1;
 static int ReviveKidsSignal = -1;
 
+// TODO: make configurable
+/// When restarting, some of kids may not restart properly or hang,
+/// so we need to forcibly reset "restarting" mode after this period of time
+/// to allow other commands processing.
+static int RestartingMaxTime = 10;
+
 static void mainRotate(void);
 static void mainReconfigureStart(void);
 static void mainReconfigureFinish(void*);
@@ -275,6 +281,8 @@ AvoidSignalAction(const char *description, volatile int &signalVar)
         currentEvent = "startup";
     else if (reconfiguring)
         currentEvent = "reconfiguration";
+    else if (restarting)
+        currentEvent = "restarting";
     else {
         signalVar = 0;
         return false; // do not avoid (i.e., execute immediately)
@@ -753,14 +761,18 @@ reconfigure(int sig)
 }
 
 void
-master_revive_kids(int sig)
+master_alarm(int sig)
 {
-    ReviveKidsSignal = sig;
-    do_revive_kids = true;
+    if (restarting) {
+        restarting = 0; // RestartingMaxTime timeout
+    } else {
+        ReviveKidsSignal = sig;
+        do_revive_kids = true;
+    }
 
 #if !_SQUID_WINDOWS_
 #if !HAVE_SIGACTION
-    signal(sig, master_revive_kids);
+    signal(sig, master_alarm);
 #endif
 #endif
 }
@@ -773,7 +785,7 @@ master_restart(int sig)
 
 #if !_SQUID_WINDOWS_
 #if !HAVE_SIGACTION
-    signal(sig, master_revive_kids);
+    signal(sig, master_restart);
 #endif
 #endif
 }
@@ -1442,7 +1454,7 @@ ConfigureCurrentKid(const CommandLine &cmdLine)
         KidIdentifier = xatoi(kidId.c_str());
         tok.skipSuffix(SBuf("-"));
         TheKidName = tok.remaining();
-        if (TheKidName.cmp("squid-coord") == 0)
+        if (Kid::CoordinatorRole(TheKidName))
             TheProcessKind = pkCoordinator;
         else if (TheKidName.cmp("squid") == 0)
             TheProcessKind = pkWorker;
@@ -1804,7 +1816,14 @@ masterRestartKids()
     if (AvoidSignalAction("restarting kids", do_restart))
         return;
     debugs(1, 2, "received restart command");
-    TheKids.forgetHopelessFailures();
+    (void)alarm(RestartingMaxTime);
+
+    // TODO: restart coordinator process. This should be done carefully,
+    // since it may cause kids clashes while requesting shared listening
+    // ports from the coordinator.
+    // start coordinator it if it is hopeless
+    restarting = TheKids.coordinatorHopeless() ?  NumberOfKids() : NumberOfKids() - 1;
+    TheKids.forgetAllFailures();
 }
 
 /// Initiates reconfiguration sequence. See also: masterReconfigureFinish().
@@ -1858,7 +1877,7 @@ masterCheckAndBroadcastSignals()
     BroadcastSignalIfAny(RotateSignal);
     BroadcastSignalIfAny(ReconfigureSignal);
     BroadcastSignalIfAny(ShutdownSignal);
-    BroadcastSignalIfAny(RestartSignal);
+    BroadcastSignalIfAny(RestartSignal, false);
     ReviveKidsSignal = -1; // alarms are not broadcasted
 }
 
@@ -1867,6 +1886,7 @@ masterCheckAndBroadcastSignals()
 static void
 masterMaintainKidRevivalSchedule()
 {
+    assert(!restarting);
     const auto nextCheckDelay = TheKids.forgetOldFailures();
     assert(nextCheckDelay >= 0);
     (void)alarm(static_cast<unsigned int>(nextCheckDelay)); // resets or cancels
@@ -1995,7 +2015,7 @@ watch_child(const CommandLine &masterCommand)
     squid_signal(SIGHUP, reconfigure, 0);
 
     squid_signal(SIGTERM, master_shutdown, 0);
-    squid_signal(SIGALRM, master_revive_kids, 0);
+    squid_signal(SIGALRM, master_alarm, 0);
     squid_signal(SIGINT, master_shutdown, 0);
 #ifdef SIGTTIN
     squid_signal(SIGTTIN, master_restart, 0);
@@ -2044,6 +2064,8 @@ watch_child(const CommandLine &masterCommand)
             kid.start(pid);
             syslog(LOG_NOTICE, "Squid Parent: %s process %d started",
                    kid.processName().c_str(), pid);
+            if (restarting > 0)
+                restarting--;
         }
 
         /* parent */
@@ -2071,7 +2093,8 @@ watch_child(const CommandLine &masterCommand)
             syslog(LOG_NOTICE, "Squid Parent: unknown child process %d exited", pid);
 
         masterCheckAndBroadcastSignals();
-        masterMaintainKidRevivalSchedule();
+        if (!restarting)
+            masterMaintainKidRevivalSchedule();
 
         if (!TheKids.someRunning() && !TheKids.shouldRestartSome()) {
             leave_suid();

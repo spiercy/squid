@@ -24,6 +24,7 @@ private:
     Kids& operator= (const Kids&); ///< not implemented
 
 public:
+
     /// initialize all kid records based on Config
     void init();
 
@@ -36,11 +37,10 @@ public:
     /// whether all kids are hopeless
     bool allHopeless() const;
 
+    bool coordinatorHopeless() const;
+
     /// forgets all failures in all kids
     void forgetAllFailures();
-
-    /// forgets all failures in hopeless kids
-    void forgetHopelessFailures();
 
     /// forgets all failures in hopeless kids that were dead for a long time
     /// \returns seconds till the next check (zero if there are no hopeless kids left)
