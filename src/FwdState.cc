@@ -76,6 +76,8 @@ static void GetMarkings(HttpRequest * request, tos_t &tos, nfmark_t &nfmark);
 #define MAX_FWD_STATS_IDX 9
 static int FwdReplyCodes[MAX_FWD_STATS_IDX + 1][Http::scInvalidHeader + 1];
 
+PconnPool *fwdPconnPool = new PconnPool("server-peers", nullptr);
+
 CBDATA_CLASS_INIT(FwdState);
 
 class FwdStatePeerAnswerDialer: public CallDialer, public Security::PeerConnector::CbDialer
@@ -122,7 +124,7 @@ FwdState::closeServerConnection(const char *reason)
     debugs(17, 3, "because " << reason << "; " << serverConn);
     comm_remove_close_handler(serverConn->fd, closeHandler);
     closeHandler = NULL;
-    HappyConnOpener::ConnectionClosed(serverConn);
+    fwdPconnPool->noteUses(fd_table[serverConn->fd].pconn.uses);
     serverConn->close();
 }
 
@@ -714,7 +716,7 @@ FwdState::serverClosed(int fd)
     debugs(17, 2, "FD " << fd << " " << entry->url() << " after " <<
            (fd >= 0 ? fd_table[fd].pconn.uses : -1) << " requests");
     if (fd >= 0 && serverConnection()->fd == fd)
-        HappyConnOpener::ConnectionClosed(serverConnection());
+        fwdPconnPool->noteUses(fd_table[fd].pconn.uses);
     retryOrBail();
 }
 
@@ -1218,12 +1220,6 @@ FwdState::reforwardableStatus(const Http::StatusCode s) const
     }
 
     /* NOTREACHED */
-}
-
-void
-FwdState::pconnPush(Comm::ConnectionPointer &conn, const char *domain)
-{
-    HappyConnOpener::PconnPush(conn, domain);
 }
 
 void
