@@ -539,31 +539,19 @@ FwdState::complete()
 void
 FwdState::noteDestination(Comm::ConnectionPointer path)
 {
+    // do not forward bumped connections to cache_peers (except origin servers)
+    if (request->flags.sslBumped && path->getPeer() && !path->getPeer()->options.originserver) {
+        debugs(50, 4, "ignoring cache_peer for an SslBump connection: " << path);
+        return;
+    }
+
     flags.destinationsFound = true;
+
     if (path == nullptr) {
         assert(!destinations->size()); // no other destinations allowed
         // we do not expect and do not need more paths
         PeerSelectionInitiator::subscribed = false;
         usePinned();
-        return;
-    }
-
-    debugs(17, 3, path);
-
-    // Do not forward bumped connections to a parent unless it is an origin server
-    // XXX: This check is too early: Some deployed Squids may have but never actually use this path.
-    // We will break them completely by discovering this misconfiguration now.
-    if (path->getPeer() && !path->getPeer()->options.originserver && request->flags.sslBumped) {
-        // Better handling should be probably:
-        //   a) a warning/error in cache.log for misconfiguration
-        //   b) Just do not add it to destinations and wait for next destination
-        //   c) or set PeerSelectionInitiator::subscribed=false to not receive more destinations and
-        //      allow startConnectionOrFail to fail.
-        //
-        debugs(50, 4, "fwdConnectStart: Ssl bumped connections through parent proxy are not allowed");
-        ErrorState *anErr = new ErrorState(ERR_CANNOT_FORWARD, Http::scServiceUnavailable, request);
-        fail(anErr);
-        stopAndDestroy("SslBump misconfiguration");
         return;
     }
 
