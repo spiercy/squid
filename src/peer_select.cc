@@ -62,7 +62,7 @@ public:
 
     CbcPointer<CachePeer> _peer;                /* NULL --> origin server */
     hier_code code;
-    int groupId;
+    int groupId; ///< selection groupId for peer
     FwdServer *next;
 };
 
@@ -186,7 +186,7 @@ PeerSelectionInitiator::~PeerSelectionInitiator()
 }
 
 void
-PeerSelectionInitiator::notePeer(CachePeer *peer, hier_code code)
+PeerSelectionInitiator::notePeer(CachePeer *peer, const hier_code code)
 {
     if (peer == nullptr && code == HIER_NONE) {
         PeerSelectionInitiator::subscribed = false;
@@ -203,10 +203,10 @@ PeerSelectionInitiator::notePeer(CachePeer *peer, hier_code code)
         return;
     }
 
-    _peer = peer;
-    _peerType = code;
+    peer_ = peer;
+    peerType_ = code;
     if (code == ORIGINAL_DST) {
-        assert(_peer == nullptr);
+        assert(peer_ == nullptr);
         if (request->clientConnectionManager.valid()) {
             const Ip::Address originalDst = request->clientConnectionManager->clientConnection->local;
             noteIp(originalDst);
@@ -222,7 +222,7 @@ PeerSelectionInitiator::notePeer(CachePeer *peer, hier_code code)
         return;
     }
 
-    const char *host = _peer.valid() ? _peer->host : request->url.host();
+    const char *host = peer_.valid() ? peer_->host : request->url.host();
     debugs(44, 2, "Find IP destination for: " << request->url << "' via " << host);
     Dns::nbgethostbyname(host, this);
 }
@@ -239,28 +239,28 @@ PeerSelectionInitiator::wantsMoreDestinations() const
 void
 PeerSelectionInitiator::noteIp(const Ip::Address &ip)
 {
-    if (_peer.raw() && !_peer.valid()) //Peer gone, abort?
+    if (peer_.raw() && !peer_.valid()) //Peer gone, abort?
         return;
 
     // for TPROXY spoofing, we must skip unusable addresses
-    if (request->flags.spoofClientIp && !(_peer.valid() && _peer->options.no_tproxy) ) {
+    if (request->flags.spoofClientIp && !(peer_.valid() && peer_->options.no_tproxy) ) {
         if (ip.isIPv4() != request->client_addr.isIPv4())
             return; // cannot spoof the client address on this link
     }
 
     Comm::ConnectionPointer path = new Comm::Connection();
     path->remote = ip;
-    path->peerType = _peerType;
-    if (_peerType != PINNED && _peerType != ORIGINAL_DST) {
-        if (_peer.valid()) {
-            path->remote.port(_peer.valid() ? _peer->http_port : request->url.port());
-            path->setPeer(_peer.get());
+    path->peerType = peerType_;
+    if (peerType_ != PINNED && peerType_ != ORIGINAL_DST) {
+        if (peer_.valid()) {
+            path->remote.port(peer_.valid() ? peer_->http_port : request->url.port());
+            path->setPeer(peer_.get());
         } else
             path->remote.port(request->url.port());
     }
 
     // if not pinned check for a configured outgoing address
-    if (_peerType != PINNED)
+    if (peerType_ != PINNED)
         getOutgoingAddress(request.getRaw(), path);
 
     ++foundPaths;
@@ -271,14 +271,14 @@ void
 PeerSelectionInitiator::noteIps(const Dns::CachedIps *ips, const Dns::LookupDetails &details)
 {
     if (!ips) {
-        debugs(17, 3, "Unknown host: " << (_peer.valid() ? _peer->host : request->url.host()));
-        // discard any previous error.
-        if (_peerType == HIER_DIRECT) {
-            assert(!_peer.raw());
+        debugs(17, 3, "Unknown host: " << (peer_.valid() ? peer_->host : request->url.host()));
+        if (peerType_ == HIER_DIRECT) {
+            assert(!peer_.raw());
+            // discard any previous error.
             delete lastError;
             lastError = new ErrorState(ERR_DNS_FAIL, Http::scServiceUnavailable, request.getRaw());
             lastError->dnsError = details.error;
-            requestMoreDestinations();//nothing to send continue to the next Peer
+            requestMoreDestinations(); //nothing to send continue to the next Peer
         }
     }
 }
@@ -344,7 +344,7 @@ PeerSelector::checkNeverDirectDone(const allow_t answer)
         debugs(44, DBG_IMPORTANT, "WARNING: never_direct resulted in " << answer << ". Username ACLs are not reliable here.");
         break;
     }
-    planNextStep(DoPinned, "check for pinned after NevertDirect");
+    planNextStep(DoPinned, "check for pinned after NeverDirect");
     selectMore();
 }
 
@@ -397,14 +397,14 @@ PeerSelector::selectionAborted()
 }
 
 bool
-PeerSelector::accessCheckCached(CachePeer *p, allow_t &answer)
+PeerSelector::accessCheckCached(const CachePeer *p, allow_t &answer)
 {
     if (!p)
         return false;
 
-    for (auto it = aclPeersCache.begin(); it != aclPeersCache.end(); ++it) {
-        if (p == it->first.valid()) {
-            answer = it->second;
+    for (auto it : aclPeersCache) {
+        if (p == it.first.valid()) {
+            answer = it.second;
             return true;
         }
     }
@@ -419,9 +419,14 @@ checkLastPeerAccessWrapper(allow_t answer, void *data)
 }
 
 void
-PeerSelector::checkLastPeerAccess(allow_t answer)
+PeerSelector::checkLastPeerAccess(const allow_t answer)
 {
+    acl_checklist = nullptr;
 
+    if (selectionAborted())
+        return;
+
+    assert(currentServer);
     if (currentServer->_peer.valid())
         aclPeersCache.push_back(std::pair<CbcPointer<CachePeer>, allow_t>(currentServer->_peer, answer));
 
@@ -436,10 +441,8 @@ PeerSelector::checkLastPeerAccess(allow_t answer)
 
     updateSelectedPeer(currentServer->_peer.get(), currentServer->code);
 
-    if (callback_ != nullptr) {
-        callback(currentServer->_peer.get(), currentServer->code);
-        currentServer = currentServer->next;
-    }
+    callback(currentServer->_peer.get(), currentServer->code);
+    currentServer = currentServer->next;
 }
 
 void
@@ -469,17 +472,11 @@ PeerSelector::sendNextPeer()
     if (selectionAborted())
         return;
 
-    if (callback_ == nullptr)
-        return; //a New peer is not requested
-
     if (currentServer == nullptr) {
         // Done with peers
         ping.stop = current_time;
         request->hier.ping = ping; // final result
-
-        if (callback_ != nullptr) {
-            callback(nullptr, HIER_NONE);
-        }
+        callback(nullptr, HIER_NONE);
         return;
     }
 
@@ -490,7 +487,7 @@ PeerSelector::sendNextPeer()
     const bool isIntercepted = !request->flags.redirected &&
         (request->flags.intercepted || request->flags.interceptTproxy);
     const bool useOriginalDst = Config.onoff.client_dst_passthru || !request->flags.hostVerified;
-    const bool choseDirect = currentServer && currentServer->code == HIER_DIRECT;
+    const bool choseDirect = currentServer->code == HIER_DIRECT;
     if (isIntercepted && useOriginalDst && choseDirect) {
         callback(nullptr, ORIGINAL_DST);
 
@@ -504,16 +501,26 @@ PeerSelector::sendNextPeer()
         return;
     }
 
-    if (currentServer->_peer->access) {
+    checkPeerAccess(currentServer->_peer.get(), checkLastPeerAccessWrapper);
+}
+
+void
+PeerSelector::checkPeerAccess(CachePeer *p, ACLCB *cb)
+{
+    if (p->access) {
         allow_t cached;
-        if (accessCheckCached(currentServer->_peer.get(), cached))
-            checkLastPeerAccess(cached);
+        if (accessCheckCached(p, cached))
+            cb(cached, this);
         else {
-            ACLFilledChecklist *checklist = new ACLFilledChecklist(currentServer->_peer->access, request.getRaw(), NULL);
-            checklist->nonBlockingCheck(checkLastPeerAccessWrapper, this);
+            ACLFilledChecklist *ch = new ACLFilledChecklist(p->access, request.getRaw(), NULL);
+            ch->al = al;
+            acl_checklist = ch;
+            // TODO: Avoid deep recursion when finding the first allowed peer
+            // using fast/cached ACLs.
+            acl_checklist->nonBlockingCheck(cb, this);
         }
     } else
-        checkLastPeerAccess(ACCESS_ALLOWED);
+        cb(ACCESS_ALLOWED, this);
 }
 
 int
@@ -563,12 +570,21 @@ void
 PeerSelector::planNextStep(SelectionState state, const char *comment)
 {
     selectionState = state;
-    debugs(44, 4, "New selection state: " << state <<" reason: " << comment);
+    debugs(44, 4, "New selection state: " << state << " reason: " << comment);
 
-    if (state == DoFinalizePing)
+    switch(state) {
+    case DoFinalizePing:
+        assert(entry);
         entry->ping_status = PING_WAITING;
-    if (state == DoFinal && entry)
-        entry->ping_status = PING_DONE;
+        break;
+    case DoFinal:
+        if (entry)
+            entry->ping_status = PING_DONE;
+        break;
+    default:
+        // nothing to do
+        break;
+    }
 }
 
 void
@@ -591,6 +607,7 @@ PeerSelector::selectMore()
             selectPinned();
             break;
         case DoSelectSomeNeighbors:
+            assert(entry);
             selectSomeNeighbor();
             break;
         case DoStartPing:
@@ -609,7 +626,6 @@ PeerSelector::selectMore()
             finalSelections();
             break;
         default:
-            // not reached
             assert(selectionState == DoFinished);
             break;
         }
@@ -732,7 +748,7 @@ PeerSelector::selectPinned()
 }
 
 /**
- * Selects a neighbor (parent or sibling) based on one of the
+ * Selects a group of neighbors (parent or sibling) based on one of the
  * following methods:
  *      Cache Digests
  *      CARP
@@ -742,7 +758,6 @@ PeerSelector::selectPinned()
 void
 PeerSelector::selectSomeNeighbor()
 {
-    assert(entry);
     assert(direct != DIRECT_YES);
 
 #if USE_CACHE_DIGESTS
@@ -761,18 +776,20 @@ checkNeighborToPingAccessWrapper(allow_t answer, void *data)
 }
 
 void
-PeerSelector::checkNeighborToPingAccess(allow_t answer)
+PeerSelector::checkNeighborToPingAccess(const allow_t answer)
 {
+    acl_checklist = nullptr;
     assert(!candidatePingPeers.empty());
     CbcPointer<CachePeer> p = candidatePingPeers.front();
     candidatePingPeers.erase(candidatePingPeers.begin());
 
-    if (p.valid())
-        aclPeersCache.push_back(std::pair<CbcPointer<CachePeer>, allow_t>(p, answer));
+    if (p.valid()) {
+        aclPeersCache.push_back(std::make_pair(p, answer));
 
-    if (answer.allowed() && p.valid()) { //check for the next peer
-        debugs(44, 5, "Will ping peer " << p->name);
-        peersToPing.push_back(p);
+        if (answer.allowed()) { // check for the next peer
+            debugs(44, 5, "Will ping peer " << p->name);
+            peersToPing.push_back(p);
+        }
     }
 
     continueIcpPing();
@@ -790,18 +807,8 @@ PeerSelector::moreNeighborsToPing()
         return false;
 
     CachePeer *p = candidatePingPeers.front().get();
-    if (p->access) {
-        allow_t cached;
-        if (accessCheckCached(p, cached))
-            checkNeighborToPingAccess(cached);
-        else {
-            ACLFilledChecklist *checklist = new ACLFilledChecklist(p->access, request.getRaw(), NULL);
-            // TODO: Avoid deep recursion when finding the first allowed peer
-            // using fast/cached ACLs.
-            checklist->nonBlockingCheck(checkNeighborToPingAccessWrapper, this);
-        }
-    } else
-        checkNeighborToPingAccess(ACCESS_ALLOWED);
+
+    checkPeerAccess(p, checkNeighborToPingAccessWrapper);
 
     return true;
 }
@@ -936,13 +943,13 @@ PeerSelector::selectSomeParent()
 #endif
     carpSelectParent(this);
 
-    getRoundRobinParent(this);
+    retrieveRoundRobinParentsGroup(this);
 
-    getWeightedRoundRobinParent(this);
+    retrieveWeightedRoundRobinParentsGroup(this);
 
-    getFirstUpParent(this);
+    retrieveFirstUpParentsGroup(this);
 
-    getDefaultParent(this);
+    retrieveDefaultParentsGroup(this);
 }
 
 /// Adds alive parents. Used as a last resort for never_direct.
@@ -1155,7 +1162,7 @@ PeerSelector::HandlePingReply(CachePeer * p, peer_t type, AnyP::ProtocolType pro
 }
 
 void
-PeerSelector::addSelection(CachePeer *peer, const hier_code code, int groupId)
+PeerSelector::addSelection(CachePeer *peer, const hier_code code, const int groupId)
 {
     // Find the end of the servers list. Bail on a duplicate destination.
     auto **serversTail = &servers;
@@ -1171,14 +1178,14 @@ PeerSelector::addSelection(CachePeer *peer, const hier_code code, int groupId)
     debugs(44, 3, "adding " << PeerSelectionDumper(this, peer, code, groupId));
     *serversTail = new FwdServer(peer, code, groupId);
 
-    if (currentServer == nullptr)
+    if (!currentServer)
         currentServer = *serversTail;
 }
 
 void
 PeerSelector::groupSelect(FwdServer *fs)
 {
-    int gid = fs->groupId;
+    const int gid = fs->groupId;
     CbcPointer<CachePeer> p = fs->_peer;
     fs->groupId = 0;
     FwdServer **srv = &fs->next;

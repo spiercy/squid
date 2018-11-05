@@ -15,6 +15,7 @@
 #include "base/RefCount.h"
 #include "comm/forward.h"
 #include "hier_code.h"
+#include "http/forward.h"
 #include "ip/Address.h"
 #include "ipcache.h"
 #include "mem/forward.h"
@@ -24,11 +25,9 @@
 
 class ErrorState;
 class HtcpReplyData;
-class HttpRequest;
-typedef RefCount<HttpRequest> HttpRequestPointer;
 class icp_common_t;
-class StoreEntry;
 class PeerSelector;
+class StoreEntry;
 
 void peerSelectInit(void);
 
@@ -59,7 +58,7 @@ public:
     /// results in zero or more noteDestination() calls and
     /// exactly one noteDestinationsEnd() call.
     void startSelectingDestinations(const AccessLogEntry::Pointer &ale, StoreEntry *entry);
-    
+
     HttpRequestPointer request;
 
 protected:
@@ -71,8 +70,10 @@ protected:
     bool subscribed = false;
 
 private:
-    
-    void notePeer(CachePeer *peer, hier_code code);
+
+    /// Initiates a DNS lookup for the given peer or finalizes the peer
+    // selection if peer is nil.
+    void notePeer(CachePeer *peer, const hier_code code);
 
     /// \returns whether the initiator may use more destinations
     bool wantsMoreDestinations() const;
@@ -80,8 +81,8 @@ private:
     /// Used PeerSelector object to retrieve candidate peers
     PeerSelector *selector = nullptr;
 
-    hier_code _peerType = HIER_NONE; ///< current candidate peers type
-    CbcPointer<CachePeer> _peer; ///< current candidate peer
+    hier_code peerType_ = HIER_NONE; ///< current candidate peers type
+    CbcPointer<CachePeer> peer_; ///< current candidate peer
     size_t foundPaths = 0; ///< number of unique destinations identified so far
 
     ///< The last DNS error.
@@ -126,7 +127,7 @@ public:
         DoFinalizePing, ///< finalize pinging
         DoFinal, ///< all of the remaining valid peers
         DoFinished ///< all steps finished
-    } selectionState = DoCheckDirect;
+    } selectionState = DoCheckDirect; ///< Current selection state
 
     explicit PeerSelector(HttpRequest *, StoreEntry *entry);
     ~PeerSelector();
@@ -138,21 +139,21 @@ public:
     /// a single selection loop iteration: attempts to add more destinations
     void selectMore();
 
-    /// Called from callers to request a new peer.
+    /// Used by caller to requests a new peer.
     void requestPeer(AsyncCall::Pointer &call);
 
     /// Add the peer to the candidate peers list
-    void addSelection(CachePeer*, const hier_code, int groupId = 0);
+    void addSelection(CachePeer*, const hier_code, const int groupId = 0);
 
     template <class Key> void addGroup(std::vector<std::pair<Key, CachePeer*> > &, const hier_code);
 
     /// ACL check callback, if peer allowed send it to the caller
-    void checkLastPeerAccess(allow_t answer);
+    void checkLastPeerAccess(const allow_t answer);
 
     /// This is an ACL check callback.
     /// If pinging the current neighbor is allowed, store it on peersToPing
     /// list and call continueIcpPing to find the next candidate neightbor.
-    void checkNeighborToPingAccess(allow_t answer);
+    void checkNeighborToPingAccess(const allow_t answer);
 
     HttpRequestPointer request;
     AccessLogEntry::Pointer al; ///< info for the future access.log entry
@@ -163,12 +164,14 @@ public:
     ping_data ping;
 
 protected:
-    /// Removes all servers with the same grouId exist after the given server
-    /// in candidate peers list
+    /// Discard all duplicated and same-group peers from the peer candidate list
     void groupSelect(FwdServer *);
 
     /// Checks if the CachePeer ACL check exist in cache (aclPeersCache)
-    bool accessCheckCached(CachePeer *p, allow_t &answer);
+    bool accessCheckCached(const CachePeer *p, allow_t &answer);
+
+    /// Run slow acl checks for the given peer.
+    void checkPeerAccess(CachePeer *, ACLCB *);
 
     /// Does final peer updates (statistics etc), before send the peer to caller
     void updateSelectedPeer(CachePeer *, hier_code);
@@ -230,8 +233,11 @@ protected:
     void selectAllParents();
     void selectPinned();
 
+    /// Initiates the next selection state step
     void planNextStep(SelectionState, const char *comment);
 
+    /// Start sending the next available peer to the caller or inform
+    /// him that no more peers are available.
     void sendNextPeer();
 
     static IRCB HandlePingReply;
@@ -295,8 +301,8 @@ private:
 template <class Key> void
 PeerSelector::addGroup(std::vector<std::pair<Key, CachePeer*> > &peers, const hier_code code)
 {
-    for (auto it = peers.rbegin(); it!= peers.rend(); ++it)
-        addSelection(it->second, code, code);
+    for (auto it : peers)
+        addSelection(it.second, code, code);
 }
 
 #endif /* SQUID_PEERSELECTSTATE_H */

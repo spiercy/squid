@@ -18,21 +18,38 @@
 #include "typedefs.h" //for IRCB
 
 #include <vector>
+
 class HttpRequest;
 class HttpRequestMethod;
 class CachePeer;
+class PeerSelector;
 class StoreEntry;
 class URL;
-class PeerSelector;
 
 CachePeer *getFirstPeer(void);
-void getFirstUpParent(PeerSelector *, HttpRequest *);
+
+/// Appends to PeerSelector peers list the first up parent group.
+/// This is includes all existing peers in the order they are configured.
+void retrieveFirstUpParentsGroup(PeerSelector *, HttpRequest *);
+
 CachePeer *getNextPeer(CachePeer *);
 CachePeer *getSingleParent(HttpRequest *);
 int neighborsCount(HttpRequest *);
+
+/// Retrieves a list of neighbors which can be pinged for the
+/// given HttpRequest object
 void getNeighborsToPing(HttpRequest *, std::vector<CbcPointer<CachePeer> > &);
-int neighborsUdpPing(std::vector<CbcPointer<CachePeer> > &, HttpRequest *, StoreEntry *, IRCB *, void *, int *, int *);
-bool neighborUdpPing(CachePeer *, int, HttpRequest *, StoreEntry *, IRCB *, void *);
+
+/// Iterates over the given neighbors list and ping them
+/// \param peers The neighbors list
+/// \param req The request initiated the peer selection procedure
+/// \param entry The StoreEntry built for the given HttpRequest object or nil
+/// \param callback A callback to use to report ping results (HIT, MISS, etc)
+/// \param calback_data Data to pass to the callback.
+/// \param exprep The ping replies to expect
+/// \param timeout A timeout for ping procedure. It depends on pinged neighbors configuration
+int neighborsUdpPing(std::vector<CbcPointer<CachePeer> > &peers, HttpRequest *req, StoreEntry *entry, IRCB *callback, void *callback_data, int *exprep, int *timeout);
+
 void neighborAddAcl(const char *, const char *);
 
 void neighborsUdpAck(const cache_key *, icp_common_t *, const Ip::Address &);
@@ -43,15 +60,36 @@ void neighborsHtcpClear(StoreEntry *, const char *, HttpRequest *, const HttpReq
 #endif
 CachePeer *peerFindByName(const char *);
 CachePeer *peerFindByNameAndPort(const char *, unsigned short);
-void getDefaultParent(PeerSelector *);
-void getRoundRobinParent(PeerSelector *);
-void getWeightedRoundRobinParent(PeerSelector *);
+
+/// Appends to PeerSelector peers list the default parents group.
+/// This is includes all existing peers configured as 'default' in the
+/// order they are configured.
+void retrieveDefaultParentsGroup(PeerSelector *);
+
+/// Appends to PeerSelector peers list the round-robin ordered parents group.
+/// This is includes the peers configured with round-robin option.
+void retrieveRoundRobinParentsGroup(PeerSelector *);
+
+/// Appends to PeerSelector peers list the weighted round-robin ordered parents
+/// group.
+/// This is includes the peers configured with weighted-round-robin option.
+void retrieveWeightedRoundRobinParentsGroup(PeerSelector *);
+
+/// Updates the CachePeer after selected for use with the round-robin method.
 void updateRoundRobinParent(CachePeer *);
+
+/// Updates the CachePeer after selected for use with the weighted-round-robin
+/// method.
 void updateWeightedRoundRobinParent(CachePeer *, HttpRequest *);
+
 void peerClearRRStart(void);
 void peerClearRR(void);
 lookup_t peerDigestLookup(CachePeer * p, HttpRequest * request);
+
+/// Appends to PeerSelector peers list the cache digest based best parents
+/// group (the CD_PARENT_HIT group).
 void neighborsDigestSelect(PeerSelector *);
+
 void peerNoteDigestLookup(HttpRequest * request, CachePeer * p, lookup_t lookup);
 void peerNoteDigestGone(CachePeer * p);
 int neighborUp(const CachePeer * e);

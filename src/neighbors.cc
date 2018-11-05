@@ -275,7 +275,7 @@ neighborsCount(PeerSelector *ps)
 void
 getNeighborsToPing(HttpRequest * request, std::vector<CbcPointer<CachePeer> > &list)
 {
-    CachePeer *p = NULL;
+    CachePeer *p = nullptr;
     int i;
 
     for (i = 0, p = first_ping; i++ < Config.npeers; p = p->next) {
@@ -293,7 +293,7 @@ getNeighborsToPing(HttpRequest * request, std::vector<CbcPointer<CachePeer> > &l
 }
 
 void
-getFirstUpParent(PeerSelector *selector)
+retrieveFirstUpParentsGroup(PeerSelector *ps)
 {
     assert(ps);
     HttpRequest *request = ps->request;
@@ -310,13 +310,13 @@ getFirstUpParent(PeerSelector *selector)
         if (!peerHTTPOkay(p, ps))
             continue;
 
-        selector->addSelection(p, FIRSTUP_PARENT);
-        debugs(15, 3, "getFirstUpParent: adding " << (p ? p->host : "NULL"));
+        ps->addSelection(p, FIRSTUP_PARENT);
+        debugs(15, 3, "adding first-up-parent parent: " << (p ? p->host : "NULL"));
     }
 }
 
 void
-getRoundRobinParent(PeerSelector *selector)
+retrieveRoundRobinParentsGroup(PeerSelector *ps)
 {
     assert(ps);
     HttpRequest *request = ps->request;
@@ -342,7 +342,7 @@ getRoundRobinParent(PeerSelector *selector)
 
     // First is the smalest score
     std::sort(sortedPeers.begin(), sortedPeers.end());
-    selector->addGroup(sortedPeers, ROUNDROBIN_PARENT);
+    ps->addGroup(sortedPeers, ROUNDROBIN_PARENT);
 }
 
 void
@@ -354,7 +354,7 @@ updateRoundRobinParent(CachePeer *peer)
 }
 
 void
-getWeightedRoundRobinParent(PeerSelector *selector)
+retrieveWeightedRoundRobinParentsGroup(PeerSelector *ps)
 {
     assert(ps);
     HttpRequest *request = ps->request;
@@ -376,7 +376,7 @@ getWeightedRoundRobinParent(PeerSelector *selector)
 
     // First is the smalest score
     std::sort(sortedPeers.begin(), sortedPeers.end());
-    selector->addGroup(sortedPeers, WEIGHTED_ROUNDROBIN_PARENT);
+    ps->addGroup(sortedPeers, WEIGHTED_ROUNDROBIN_PARENT);
 }
 
 void
@@ -475,7 +475,7 @@ peerAlive(CachePeer *p)
 }
 
 void
-getDefaultParent(PeerSelector *selector)
+retrieveDefaultParentsGroup(PeerSelector *ps)
 {
     assert(ps);
     HttpRequest *request = ps->request;
@@ -492,8 +492,8 @@ getDefaultParent(PeerSelector *selector)
         if (!peerHTTPOkay(p, ps))
             continue;
 
-        selector->addSelection(p, DEFAULT_PARENT);
-        debugs(15, 3, "getDefaultParent: adding " << p->host);
+        ps->addSelection(p, DEFAULT_PARENT);
+        debugs(15, 3, "adding default-parent parent: " << p->host);
     }
 }
 
@@ -623,9 +623,9 @@ neighborsUdpPing(
 
     reqnum = icpSetCacheKey((const cache_key *)entry->key);
 
-    for (auto it = pingPeers.begin(); it != pingPeers.end(); ++it) {
+    for (auto it : pingPeers) {
 
-        CachePeer *p = (*it).valid();
+        CachePeer *p = it.valid();
 
         if (!p)
             continue;
@@ -835,8 +835,7 @@ neighborsDigestSelect(PeerSelector *ps)
         sortedPeers.push_back(std::pair<double, CachePeer *>(p_rtt, p));
     }
 
-    if ((first_ping = first_ping->next) == NULL)
-        first_ping = Config.peers;
+    first_ping = first_ping->next ? first_ping->next : Config.peers;
 
     if (sortedPeers.size() == 0 && choice_count != 0) {
         // This is may cause some LOOKUP_NONE be logged
@@ -846,14 +845,14 @@ neighborsDigestSelect(PeerSelector *ps)
     } else {
         std::sort(sortedPeers.begin(), sortedPeers.end());
         //selector->addGroup(sortedPeers, CD_PARENT_HIT);
-        for (auto it = sortedPeers.begin(); it!= sortedPeers.end(); ++it) {
-            debugs(15, 5, "neighborsDigestSelect: peer " << it->second->host << " rtt: " << it->first);
+        for (auto it : sortedPeers) {
+            debugs(15, 5, "neighborsDigestSelect: peer " << it.second->host << " rtt: " << it.first);
             hier_code code;
-            if (neighborType(it->second, request->url) == PEER_PARENT)
+            if (neighborType(it.second, request->url) == PEER_PARENT)
                 code = CD_PARENT_HIT;
             else
                 code = CD_SIBLING_HIT;
-            selector->addSelection(it->second, code, CD_PARENT_HIT);
+            selector->addSelection(it.second, code, CD_PARENT_HIT);
         }
     }
 #endif
