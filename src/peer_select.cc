@@ -336,6 +336,7 @@ PeerSelector::checkNeverDirectDone(const allow_t answer)
         /** if never_direct says YES, do that. */
         direct = DIRECT_NO;
         debugs(44, 3, "direct = " << DirectStr[direct] << " (never_direct allow)");
+        planNextStep(DoPinned, "check for pinned after NeverDirect");
         break;
     case ACCESS_DENIED: // not relevant.
     case ACCESS_DUNNO:  // not relevant.
@@ -344,7 +345,6 @@ PeerSelector::checkNeverDirectDone(const allow_t answer)
         debugs(44, DBG_IMPORTANT, "WARNING: never_direct resulted in " << answer << ". Username ACLs are not reliable here.");
         break;
     }
-    planNextStep(DoPinned, "check for pinned after NeverDirect");
     selectMore();
 }
 
@@ -365,6 +365,7 @@ PeerSelector::checkAlwaysDirectDone(const allow_t answer)
         /** if always_direct says YES, do that. */
         direct = DIRECT_YES;
         debugs(44, 3, "direct = " << DirectStr[direct] << " (always_direct allow)");
+        planNextStep(DoPinned, "check for pinned after AlwaysDirect");
         break;
     case ACCESS_DENIED: // not relevant.
     case ACCESS_DUNNO:  // not relevant.
@@ -374,7 +375,6 @@ PeerSelector::checkAlwaysDirectDone(const allow_t answer)
         break;
     }
 
-    planNextStep(DoPinned, "check for pinned after AlwaysDirect");
     selectMore();
 }
 
@@ -648,44 +648,44 @@ PeerSelector::requestPeer(AsyncCall::Pointer &call)
 void
 PeerSelector::checkDirect()
 {
-    if (direct != DIRECT_UNKNOWN)
-        return; // already decided
+    if (direct == DIRECT_UNKNOWN) {
+        if (always_direct == ACCESS_DUNNO) {
+            debugs(44, 3, "direct = " << DirectStr[direct] << " (always_direct to be checked)");
+            /** check always_direct; */
+            ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.AlwaysDirect, request.getRaw(), NULL);
+            ch->al = al;
+            acl_checklist = ch;
+            acl_checklist->syncAle(request.getRaw(), nullptr);
+            acl_checklist->nonBlockingCheck(CheckAlwaysDirectDone, this);
+            return;
+        } else if (never_direct == ACCESS_DUNNO) {
+            debugs(44, 3, "direct = " << DirectStr[direct] << " (never_direct to be checked)");
+            /** check never_direct; */
+            ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.NeverDirect, request.getRaw(), NULL);
+            ch->al = al;
+            acl_checklist = ch;
+            acl_checklist->syncAle(request.getRaw(), nullptr);
+            acl_checklist->nonBlockingCheck(CheckNeverDirectDone, this);
+            return;
+        } else if (request->flags.noDirect) {
+            /** if we are accelerating, direct is not an option. */
+            direct = DIRECT_NO;
+            debugs(44, 3, "direct = " << DirectStr[direct] << " (forced non-direct)");
+        } else if (request->flags.loopDetected) {
+            /** if we are in a forwarding-loop, direct is not an option. */
+            direct = DIRECT_YES;
+            debugs(44, 3, "direct = " << DirectStr[direct] << " (forwarding loop detected)");
+        } else if (checkNetdbDirect()) {
+            direct = DIRECT_YES;
+            debugs(44, 3, "direct = " << DirectStr[direct] << " (checkNetdbDirect)");
+        } else {
+            direct = DIRECT_MAYBE;
+            debugs(44, 3, "direct = " << DirectStr[direct] << " (default)");
+        }
 
-    if (always_direct == ACCESS_DUNNO) {
-        debugs(44, 3, "direct = " << DirectStr[direct] << " (always_direct to be checked)");
-        /** check always_direct; */
-        ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.AlwaysDirect, request.getRaw(), NULL);
-        ch->al = al;
-        acl_checklist = ch;
-        acl_checklist->syncAle(request.getRaw(), nullptr);
-        acl_checklist->nonBlockingCheck(CheckAlwaysDirectDone, this);
-        return;
-    } else if (never_direct == ACCESS_DUNNO) {
-        debugs(44, 3, "direct = " << DirectStr[direct] << " (never_direct to be checked)");
-        /** check never_direct; */
-        ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.NeverDirect, request.getRaw(), NULL);
-        ch->al = al;
-        acl_checklist = ch;
-        acl_checklist->syncAle(request.getRaw(), nullptr);
-        acl_checklist->nonBlockingCheck(CheckNeverDirectDone, this);
-        return;
-    } else if (request->flags.noDirect) {
-        /** if we are accelerating, direct is not an option. */
-        direct = DIRECT_NO;
-        debugs(44, 3, "direct = " << DirectStr[direct] << " (forced non-direct)");
-    } else if (request->flags.loopDetected) {
-        /** if we are in a forwarding-loop, direct is not an option. */
-        direct = DIRECT_YES;
-        debugs(44, 3, "direct = " << DirectStr[direct] << " (forwarding loop detected)");
-    } else if (checkNetdbDirect()) {
-        direct = DIRECT_YES;
-        debugs(44, 3, "direct = " << DirectStr[direct] << " (checkNetdbDirect)");
-    } else {
-        direct = DIRECT_MAYBE;
-        debugs(44, 3, "direct = " << DirectStr[direct] << " (default)");
+        debugs(44, 3, "direct = " << DirectStr[direct]);
     }
 
-    debugs(44, 3, "direct = " << DirectStr[direct]);
     planNextStep(DoPinned, "check for pinned");
 }
 
