@@ -30,7 +30,7 @@ CachePeer *getFirstPeer(void);
 
 /// Appends to PeerSelector peers list the first up parent group.
 /// This is includes all existing peers in the order they are configured.
-void retrieveFirstUpParentsGroup(PeerSelector *, HttpRequest *);
+void retrieveFirstUpParentsGroup(PeerSelector *);
 
 CachePeer *getNextPeer(CachePeer *);
 CachePeer *getSingleParent(HttpRequest *);
@@ -38,17 +38,17 @@ int neighborsCount(HttpRequest *);
 
 /// Retrieves a list of neighbors which can be pinged for the
 /// given HttpRequest object
-void getNeighborsToPing(HttpRequest *, std::vector<CbcPointer<CachePeer> > &);
+void getNeighborsToPing(PeerSelector *, std::vector<CbcPointer<CachePeer> > &);
 
 /// Iterates over the given neighbors list and ping them
 /// \param peers The neighbors list
 /// \param req The request initiated the peer selection procedure
 /// \param entry The StoreEntry built for the given HttpRequest object or nil
 /// \param callback A callback to use to report ping results (HIT, MISS, etc)
-/// \param calback_data Data to pass to the callback.
+/// \param ps The PeerSelector to call back.
 /// \param exprep The ping replies to expect
 /// \param timeout A timeout for ping procedure. It depends on pinged neighbors configuration
-int neighborsUdpPing(std::vector<CbcPointer<CachePeer> > &peers, HttpRequest *req, StoreEntry *entry, IRCB *callback, void *callback_data, int *exprep, int *timeout);
+int neighborsUdpPing(std::vector<CbcPointer<CachePeer> > &peers, HttpRequest *req, StoreEntry *entry, IRCB *callback, PeerSelector *ps, int *exprep, int *timeout);
 
 void neighborAddAcl(const char *, const char *);
 

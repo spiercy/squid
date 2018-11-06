@@ -1305,11 +1305,11 @@ netdbExchangeStart(void *data)
 }
 
 void
-netdbClosestParent(PeerSelector *selector)
+netdbClosestParent(PeerSelector *ps)
 {
 #if USE_ICMP
     assert(ps);
-    HttpRequest *request = ps->request;
+    HttpRequestPointer request = ps->request;
 
     CachePeer *p = NULL;
     netdbEntry *n;
@@ -1358,7 +1358,7 @@ netdbClosestParent(PeerSelector *selector)
             continue;
 
         debugs(15, 5, "peer " << h->peername << " rtt: " << h->rtt);
-        selector->addSelection(p, CLOSEST_PARENT);
+        ps->addSelection(p, CLOSEST_PARENT);
     }
 #endif
     return;

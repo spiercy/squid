@@ -149,7 +149,7 @@ peerUserHashRegisterWithCacheManager(void)
 }
 
 void
-peerUserHashSelectParent(PeerSelector *selector)
+peerUserHashSelectParent(PeerSelector *ps)
 {
     int k;
     const char *c;
@@ -163,7 +163,7 @@ peerUserHashSelectParent(PeerSelector *selector)
         return;
 
     assert(ps);
-    HttpRequest *request = ps->request;
+    HttpRequest::Pointer request = ps->request;
 
     if (request->auth_user_request != NULL)
         key = request->auth_user_request->username();
@@ -193,7 +193,7 @@ peerUserHashSelectParent(PeerSelector *selector)
     }
 
     std::sort(sortedPeers.begin(), sortedPeers.end(), std::greater<std::pair<int, CachePeer *> >());
-    selector->addGroup(sortedPeers, USERHASH_PARENT);
+    ps->addGroup(sortedPeers, USERHASH_PARENT);
 }
 
 static void

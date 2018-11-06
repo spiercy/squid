@@ -136,7 +136,7 @@ bool
 peerAllowedToUse(const CachePeer * p, PeerSelector * ps)
 {
     assert(ps);
-    HttpRequest *request = ps->request;
+    HttpRequest::Pointer request = ps->request;
     assert(request != NULL);
 
     if (neighborType(p, request->url) == PEER_SIBLING) {
@@ -171,7 +171,7 @@ static int
 peerWouldBePinged(const CachePeer * p, PeerSelector * ps)
 {
     assert(ps);
-    HttpRequest *request = ps->request;
+    HttpRequest::Pointer request = ps->request;
 
     if (p->icp.port == 0)
         return 0;
@@ -273,7 +273,7 @@ neighborsCount(PeerSelector *ps)
 }
 
 void
-getNeighborsToPing(HttpRequest * request, std::vector<CbcPointer<CachePeer> > &list)
+getNeighborsToPing(PeerSelector *ps, std::vector<CbcPointer<CachePeer> > &list)
 {
     CachePeer *p = nullptr;
     int i;
@@ -282,7 +282,7 @@ getNeighborsToPing(HttpRequest * request, std::vector<CbcPointer<CachePeer> > &l
         if (p == nullptr)
             p = Config.peers;
 
-        if (peerWouldBePinged(p, request))
+        if (peerWouldBePinged(p, ps))
             list.push_back(p);
     }
 
@@ -296,7 +296,7 @@ void
 retrieveFirstUpParentsGroup(PeerSelector *ps)
 {
     assert(ps);
-    HttpRequest *request = ps->request;
+    HttpRequest::Pointer request = ps->request;
 
     CachePeer *p = NULL;
 
@@ -319,7 +319,7 @@ void
 retrieveRoundRobinParentsGroup(PeerSelector *ps)
 {
     assert(ps);
-    HttpRequest *request = ps->request;
+    HttpRequest::Pointer request = ps->request;
 
     CachePeer *p;
     std::vector<std::pair<double, CachePeer *> > sortedPeers;
@@ -357,7 +357,7 @@ void
 retrieveWeightedRoundRobinParentsGroup(PeerSelector *ps)
 {
     assert(ps);
-    HttpRequest *request = ps->request;
+    HttpRequest::Pointer request = ps->request;
 
     CachePeer *p;
     std::vector<std::pair<int, CachePeer *> > sortedPeers;
@@ -478,7 +478,7 @@ void
 retrieveDefaultParentsGroup(PeerSelector *ps)
 {
     assert(ps);
-    HttpRequest *request = ps->request;
+    HttpRequest::Pointer request = ps->request;
 
     CachePeer *p = NULL;
 
@@ -598,7 +598,7 @@ neighborsUdpPing(
                  HttpRequest * request,
                  StoreEntry * entry,
                  IRCB * callback,
-                 void *callback_data,
+                 PeerSelector *ps,
                  int *exprep,
                  int *timeout)
 {
@@ -606,7 +606,6 @@ neighborsUdpPing(
     MemObject *mem = entry->mem_obj;
     int reqnum = 0;
     int flags;
-    icp_common_t *query;
     int queries_sent = 0;
     int peers_pinged = 0;
     int parent_timeout = 0, parent_exprep = 0;
@@ -619,7 +618,7 @@ neighborsUdpPing(
 
     mem->ping_reply_callback = callback;
 
-    mem->ircb_data = callback_data;
+    mem->ircb_data = ps;
 
     reqnum = icpSetCacheKey((const cache_key *)entry->key);
 
@@ -663,18 +662,18 @@ neighborsUdpPing(
 
                 if (p->icp.port == echo_port) {
                     debugs(15, 4, "neighborsUdpPing: Looks like a dumb cache, send DECHO ping");
-                    query = icp_common_t::CreateMessage(ICP_DECHO, 0, url, reqnum, 0);
-                    icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LOG_ICP_QUERY, 0);
+                    // TODO: Get ALE from callback_data if possible.
+                    icpCreateAndSend(ICP_DECHO, 0, url, reqnum, 0,
+                                     icpOutgoingConn->fd, p->in_addr, nullptr);
                 } else {
                     flags = 0;
 
                     if (Config.onoff.query_icmp)
                         if (p->icp.version == ICP_VERSION_2)
                             flags |= ICP_FLAG_SRC_RTT;
-
-                    query = icp_common_t::CreateMessage(ICP_QUERY, flags, url, reqnum, 0);
-
-                    icpUdpSend(icpOutgoingConn->fd, p->in_addr, query, LOG_ICP_QUERY, 0.0);
+                    // TODO: Get ALE from callback_data if possible.
+                    icpCreateAndSend(ICP_QUERY, flags, url, reqnum, 0,
+                                     icpOutgoingConn->fd, p->in_addr, nullptr);
                 }
             }
         }
@@ -755,8 +754,8 @@ peerDigestLookup(CachePeer * p, PeerSelector * ps)
 {
 #if USE_CACHE_DIGESTS
     assert(ps);
-    HttpRequest *request = ps->request;
-    const cache_key *key = request ? storeKeyPublicByRequest(request) : NULL;
+    HttpRequest::Pointer request = ps->request;
+    const cache_key *key = request ? storeKeyPublicByRequest(request.getRaw()) : NULL;
     assert(p);
     assert(request);
     debugs(15, 5, "peerDigestLookup: peer " << p->host);
@@ -799,7 +798,7 @@ neighborsDigestSelect(PeerSelector *ps)
 {
 #if USE_CACHE_DIGESTS
     assert(ps);
-    HttpRequest *request = ps->request;
+    HttpRequest::Pointer request = ps->request;
 
     int p_rtt;
     int i;
@@ -808,7 +807,7 @@ neighborsDigestSelect(PeerSelector *ps)
     if (!request->flags.hierarchical)
         return;
 
-    storeKeyPublicByRequest(request);
+    storeKeyPublicByRequest(request.getRaw());
 
     std::vector<std::pair<int, CachePeer *> > sortedPeers;
     i = 0;
@@ -841,7 +840,7 @@ neighborsDigestSelect(PeerSelector *ps)
         // This is may cause some LOOKUP_NONE be logged
         // as LOOKUP_MISS, in the case the peer_access acl would failed
         // if executed for all of the misses)
-        peerNoteDigestLookup(request, nullptr, LOOKUP_MISS);
+        peerNoteDigestLookup(request.getRaw(), nullptr, LOOKUP_MISS);
     } else {
         std::sort(sortedPeers.begin(), sortedPeers.end());
         //selector->addGroup(sortedPeers, CD_PARENT_HIT);
@@ -852,7 +851,7 @@ neighborsDigestSelect(PeerSelector *ps)
                 code = CD_PARENT_HIT;
             else
                 code = CD_SIBLING_HIT;
-            selector->addSelection(it.second, code, CD_PARENT_HIT);
+            ps->addSelection(it.second, code, CD_PARENT_HIT);
         }
     }
 #endif

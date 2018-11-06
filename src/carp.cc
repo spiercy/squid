@@ -148,7 +148,7 @@ void
 carpSelectParent(PeerSelector *ps)
 {
     assert(ps);
-    HttpRequest *request = ps->request;
+    HttpRequest::Pointer request = ps->request;
 
     int k;
     CachePeer *tp;
@@ -213,7 +213,7 @@ carpSelectParent(PeerSelector *ps)
     }
 
     std::sort(sortedPeers.begin(), sortedPeers.end());
-    selector->addGroup(sortedPeers, CARP);
+    ps->addGroup(sortedPeers, CARP);
 }
 
 static void

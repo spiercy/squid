@@ -1217,9 +1217,9 @@ FwdState::pconnPop(const Comm::ConnectionPointer &dest, const char *domain)
 {
     bool retriable = checkRetriable();
     if (!retriable && Config.accessList.serverPconnForNonretriable) {
-        ACLFilledChecklist ch(Config.accessList.serverPconnForNonretriable, request, NULL);
+        ACLFilledChecklist ch(Config.accessList.serverPconnForNonretriable, request.getRaw(), NULL);
         ch.al = al;
-        ch.syncAle(request, nullptr);
+        ch.syncAle(request.getRaw(), nullptr);
         retriable = ch.fastCheck().allowed();
     }
     // always call shared pool first because we need to close an idle

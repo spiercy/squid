@@ -144,7 +144,7 @@ peerSourceHashRegisterWithCacheManager(void)
 }
 
 void
-peerSourceHashSelectParent(PeerSelector *selector)
+peerSourceHashSelectParent(PeerSelector *ps)
 {
     int k;
     const char *c;
@@ -159,7 +159,7 @@ peerSourceHashSelectParent(PeerSelector *selector)
         return;
 
     assert(ps);
-    HttpRequest *request = ps->request;
+    HttpRequest::Pointer request = ps->request;
 
     key = request->client_addr.toStr(ntoabuf, sizeof(ntoabuf));
 
@@ -184,7 +184,7 @@ peerSourceHashSelectParent(PeerSelector *selector)
     }
 
     std::sort(sortedPeers.begin(), sortedPeers.end(), std::greater<std::pair<int, CachePeer *> >());
-    selector->addGroup(sortedPeers, SOURCEHASH_PARENT);
+    ps->addGroup(sortedPeers, SOURCEHASH_PARENT);
 }
 
 static void

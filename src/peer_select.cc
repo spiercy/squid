@@ -168,7 +168,7 @@ PeerSelector::findIcpNeighborsToPing()
         if (direct != DIRECT_NO)
             return false;
 
-    getNeighborsToPing(request.getRaw(), candidatePingPeers);
+    getNeighborsToPing(this, candidatePingPeers);
 
     debugs(44, 3, "counted " << candidatePingPeers.size() << "candidate neighbors");
 
@@ -727,7 +727,7 @@ PeerSelector::selectPinned()
     if (request->pinnedConnection()) {
         CachePeer *pear = request->pinnedConnection()->pinnedPeer();
         if (Comm::IsConnOpen(request->pinnedConnection()->validatePinnedConnection(request.getRaw(), pear))) {
-            const bool usePinned = pear ? peerAllowedToUse(pear, request.getRaw()) : (direct != DIRECT_NO);
+            const bool usePinned = pear ? peerAllowedToUse(pear, this) : (direct != DIRECT_NO);
             if (usePinned) {
                 addSelection(pear, PINNED);
                 planNextStep(DoFinal, "pinned connection");
@@ -763,7 +763,7 @@ PeerSelector::selectSomeNeighbor()
 #if USE_CACHE_DIGESTS
     neighborsDigestSelect(this);
 #endif
-    netdbClosestParent(this, request.getRaw());
+    netdbClosestParent(this);
 
     planNextStep(DoStartPing, "consider pinging");
 }
