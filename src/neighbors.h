@@ -33,8 +33,6 @@ CachePeer *getFirstPeer(void);
 void retrieveFirstUpParentsGroup(PeerSelector *);
 
 CachePeer *getNextPeer(CachePeer *);
-CachePeer *getSingleParent(HttpRequest *);
-int neighborsCount(HttpRequest *);
 
 /// Retrieves a list of neighbors which can be pinged for the
 /// given HttpRequest object
@@ -84,7 +82,7 @@ void updateWeightedRoundRobinParent(CachePeer *, HttpRequest *);
 
 void peerClearRRStart(void);
 void peerClearRR(void);
-lookup_t peerDigestLookup(CachePeer * p, HttpRequest * request);
+lookup_t peerDigestLookup(CachePeer * p, PeerSelector *);
 
 /// Appends to PeerSelector peers list the cache digest based best parents
 /// group (the CD_PARENT_HIT group).

@@ -704,7 +704,7 @@ Ftp::Client::sendPassive()
     default: {
         bool doEpsv = true;
         if (Config.accessList.ftp_epsv) {
-            ACLFilledChecklist checklist(Config.accessList.ftp_epsv, request.getRaw(), NULL);
+            ACLFilledChecklist checklist(Config.accessList.ftp_epsv, request.getRaw(), nullptr);
             doEpsv = checklist.fastCheck().allowed();
         }
         if (!doEpsv) {

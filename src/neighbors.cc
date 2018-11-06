@@ -257,21 +257,6 @@ peerHTTPOkay(const CachePeer * p, PeerSelector * ps)
     return 1;
 }
 
-int
-neighborsCount(PeerSelector *ps)
-{
-    CachePeer *p = NULL;
-    int count = 0;
-
-    for (p = Config.peers; p; p = p->next)
-        if (peerWouldBePinged(p, ps))
-            ++count;
-
-    debugs(15, 3, "neighborsCount: " << count);
-
-    return count;
-}
-
 void
 getNeighborsToPing(PeerSelector *ps, std::vector<CbcPointer<CachePeer> > &list)
 {
@@ -288,8 +273,7 @@ getNeighborsToPing(PeerSelector *ps, std::vector<CbcPointer<CachePeer> > &list)
 
     debugs(15, 3, "candidate neighbors to ping: " << list.size());
 
-    if ((first_ping = first_ping->next) == NULL)
-        first_ping = Config.peers;
+    first_ping = first_ping->next ? first_ping->next : Config.peers;
 }
 
 void
@@ -612,7 +596,7 @@ neighborsUdpPing(
     int sibling_timeout = 0, sibling_exprep = 0;
     int mcast_timeout = 0, mcast_exprep = 0;
 
-    assert(entry->swap_status == SWAPOUT_NONE);
+    assert(!entry->hasDisk());
 
     mem->start_ping = current_time;
 

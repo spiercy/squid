@@ -35,7 +35,6 @@ void peerSelectInit(void);
 /// request to.
 class PeerSelectionInitiator: public Dns::IpReceiver
 {
-
 public:
     explicit PeerSelectionInitiator(HttpRequest *req);
     virtual ~PeerSelectionInitiator();

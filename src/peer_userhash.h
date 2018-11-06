@@ -11,8 +11,6 @@
 #ifndef SQUID_PEER_USERHASH_H_
 #define SQUID_PEER_USERHASH_H_
 
-class CachePeer;
-class HttpRequest;
 class PeerSelector;
 
 void peerUserHashInit(void);

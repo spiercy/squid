@@ -515,6 +515,7 @@ PeerSelector::checkPeerAccess(CachePeer *p, ACLCB *cb)
             ACLFilledChecklist *ch = new ACLFilledChecklist(p->access, request.getRaw(), NULL);
             ch->al = al;
             acl_checklist = ch;
+            acl_checklist->syncAle(request.getRaw(), nullptr);
             // TODO: Avoid deep recursion when finding the first allowed peer
             // using fast/cached ACLs.
             acl_checklist->nonBlockingCheck(cb, this);
@@ -656,6 +657,7 @@ PeerSelector::checkDirect()
         ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.AlwaysDirect, request.getRaw(), NULL);
         ch->al = al;
         acl_checklist = ch;
+        acl_checklist->syncAle(request.getRaw(), nullptr);
         acl_checklist->nonBlockingCheck(CheckAlwaysDirectDone, this);
         return;
     } else if (never_direct == ACCESS_DUNNO) {
@@ -664,6 +666,7 @@ PeerSelector::checkDirect()
         ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.NeverDirect, request.getRaw(), NULL);
         ch->al = al;
         acl_checklist = ch;
+        acl_checklist->syncAle(request.getRaw(), nullptr);
         acl_checklist->nonBlockingCheck(CheckNeverDirectDone, this);
         return;
     } else if (request->flags.noDirect) {
@@ -1060,6 +1063,7 @@ PeerSelector::handleIcpReply(CachePeer *p, const peer_t type, icp_common_t *head
     if (p && request)
         peerNoteDigestLookup(request, p,
                              peerDigestLookup(p, this));
+
 #endif
 
     ++ping.n_recv;
@@ -1211,7 +1215,7 @@ PeerSelector::PeerSelector(HttpRequest *req, StoreEntry *anEntry):
     closest_parent_miss(),
     hit(NULL),
     hit_type(PEER_NONE),
-    acl_checklist (NULL)
+    acl_checklist (nullptr)
 {
     if (entry)
         entry->lock("PeerSelector");
