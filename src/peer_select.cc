@@ -198,8 +198,6 @@ PeerSelectionInitiator::notePeer(CachePeer *peer, const hier_code code)
         }
         // May kill our self:
         noteDestinationsEnd(lastError);
-        delete selector; // it is not needed any more
-        selector = nullptr;
         return;
     }
 
