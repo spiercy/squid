@@ -1217,7 +1217,7 @@ FwdState::pconnPop(const Comm::ConnectionPointer &dest, const char *domain)
 {
     bool retriable = checkRetriable();
     if (!retriable && Config.accessList.serverPconnForNonretriable) {
-        ACLFilledChecklist ch(Config.accessList.serverPconnForNonretriable, request.getRaw(), NULL);
+        ACLFilledChecklist ch(Config.accessList.serverPconnForNonretriable, request.getRaw(), nullptr);
         ch.al = al;
         ch.syncAle(request.getRaw(), nullptr);
         retriable = ch.fastCheck().allowed();

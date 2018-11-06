@@ -739,7 +739,7 @@ peerDigestLookup(CachePeer * p, PeerSelector * ps)
 #if USE_CACHE_DIGESTS
     assert(ps);
     HttpRequest::Pointer request = ps->request;
-    const cache_key *key = request ? storeKeyPublicByRequest(request.getRaw()) : NULL;
+    const cache_key *key = request ? storeKeyPublicByRequest(request.getRaw()) : nullptr;
     assert(p);
     assert(request);
     debugs(15, 5, "peerDigestLookup: peer " << p->host);

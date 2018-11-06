@@ -62,7 +62,12 @@ public:
 
     CbcPointer<CachePeer> _peer;                /* NULL --> origin server */
     hier_code code;
-    int groupId; ///< selection groupId for peer
+
+    /// Selection groupId for peer.
+    /// Peers selected with the same method (eg netdb, roundrobin etc)
+    /// has the same groupId. Currently as groupId values the related
+    /// hier_code is used.
+    int groupId;
     FwdServer *next;
 };
 
@@ -87,7 +92,7 @@ public:
     const PeerSelector * const selector; ///< selection parameters
     const CachePeer * const peer; ///< successful selection info
     const hier_code code; ///< selection algorithm
-    const int groupId; ///< selection groupId for peer
+    const int groupId; ///< selection groupId for peer.
 };
 
 CBDATA_CLASS_INIT(PeerSelector);
@@ -210,7 +215,7 @@ PeerSelectionInitiator::notePeer(CachePeer *peer, const hier_code code)
             noteIp(originalDst);
             return;
         }
-        requestMoreDestinations();//nothing to send continue to the next Peer
+        requestMoreDestinations(); //nothing to send continue to the next Peer
         return;
     }
 
@@ -395,7 +400,7 @@ PeerSelector::selectionAborted()
 }
 
 bool
-PeerSelector::accessCheckCached(const CachePeer *p, allow_t &answer)
+PeerSelector::accessCheckCached(const CachePeer *p, allow_t &answer) const
 {
     if (!p)
         return false;
@@ -510,7 +515,7 @@ PeerSelector::checkPeerAccess(CachePeer *p, ACLCB *cb)
         if (accessCheckCached(p, cached))
             cb(cached, this);
         else {
-            ACLFilledChecklist *ch = new ACLFilledChecklist(p->access, request.getRaw(), NULL);
+            ACLFilledChecklist *ch = new ACLFilledChecklist(p->access, request.getRaw(), nullptr);
             ch->al = al;
             acl_checklist = ch;
             acl_checklist->syncAle(request.getRaw(), nullptr);
@@ -650,7 +655,7 @@ PeerSelector::checkDirect()
         if (always_direct == ACCESS_DUNNO) {
             debugs(44, 3, "direct = " << DirectStr[direct] << " (always_direct to be checked)");
             /** check always_direct; */
-            ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.AlwaysDirect, request.getRaw(), NULL);
+            ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.AlwaysDirect, request.getRaw(), nullptr);
             ch->al = al;
             acl_checklist = ch;
             acl_checklist->syncAle(request.getRaw(), nullptr);
@@ -659,7 +664,7 @@ PeerSelector::checkDirect()
         } else if (never_direct == ACCESS_DUNNO) {
             debugs(44, 3, "direct = " << DirectStr[direct] << " (never_direct to be checked)");
             /** check never_direct; */
-            ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.NeverDirect, request.getRaw(), NULL);
+            ACLFilledChecklist *ch = new ACLFilledChecklist(Config.accessList.NeverDirect, request.getRaw(), nullptr);
             ch->al = al;
             acl_checklist = ch;
             acl_checklist->syncAle(request.getRaw(), nullptr);

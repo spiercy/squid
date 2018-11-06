@@ -81,7 +81,7 @@ private:
     PeerSelector *selector = nullptr;
 
     hier_code peerType_ = HIER_NONE; ///< current candidate peers type
-    CbcPointer<CachePeer> peer_; ///< current candidate peer
+    CbcPointer<CachePeer> peer_; ///< current candidate peer or nil for origin server
     size_t foundPaths = 0; ///< number of unique destinations identified so far
 
     ///< The last DNS error.
@@ -116,7 +116,6 @@ public:
         hier_code code_ = HIER_NONE;
     };
 
-    /// Selection states
     enum SelectionState {
         DoCheckDirect, ///< check for direct
         DoPinned, ///< check for pinned
@@ -167,7 +166,7 @@ protected:
     void groupSelect(FwdServer *);
 
     /// Checks if the CachePeer ACL check exist in cache (aclPeersCache)
-    bool accessCheckCached(const CachePeer *p, allow_t &answer);
+    bool accessCheckCached(const CachePeer *p, allow_t &answer) const;
 
     /// Run slow acl checks for the given peer.
     void checkPeerAccess(CachePeer *, ACLCB *);
@@ -176,7 +175,7 @@ protected:
     void updateSelectedPeer(CachePeer *, hier_code);
 
     /// Runs candidatePingPeers list for the next valid Peer
-    /// and initializes an non-blocking ACL check  for this peer.
+    /// and initializes an non-blocking ACL check for this peer.
     /// \return false if no more candidate neighbors to ping true otherwise
     bool moreNeighborsToPing();
 
