@@ -89,7 +89,6 @@ public:
     bool noConnections() const;
     char *url;
     CbcPointer<ClientHttpRequest> http;
-    HttpRequest::Pointer request;
     AccessLogEntryPointer al;
     Comm::ConnectionList serverDestinations;
 
