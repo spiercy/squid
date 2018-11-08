@@ -177,7 +177,7 @@ peerUserHashSelectParent(PeerSelector *ps)
     for (c = key; *c != 0; ++c)
         user_hash += ROTATE_LEFT(user_hash, 19) + *c;
 
-    std::vector<std::pair<int, CachePeer *> > sortedPeers;
+    PeerSelector::CachePeersByKey<double> sortedPeers;
     /* select CachePeer */
     for (k = 0; k < n_userhash_peers; ++k) {
         tp = userhash_peers[k];
@@ -188,11 +188,12 @@ peerUserHashSelectParent(PeerSelector *ps)
         debugs(39, 3, "peerUserHashSelectParent: " << tp->name << " combined_hash " << combined_hash  <<
                " score " << std::setprecision(0) << score);
 
-        if (peerHTTPOkay(tp, ps))
-            sortedPeers.push_back(std::pair<int, CachePeer *>(score, tp));
+        if (peerHTTPOkay(tp, ps)) {
+            // add negative score we want the highest score first
+            sortedPeers.push_back(std::make_pair(-score, tp));
+        }
     }
 
-    std::sort(sortedPeers.begin(), sortedPeers.end(), std::greater<std::pair<int, CachePeer *> >());
     ps->addGroup(sortedPeers, USERHASH_PARENT);
 }
 

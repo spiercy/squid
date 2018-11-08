@@ -97,6 +97,8 @@ class PeerSelector
     CBDATA_CLASS(PeerSelector);
 
 public:
+    /// key/CachePeer pairs list
+    template<typename Key> using CachePeersByKey = std::vector<std::pair<Key, CachePeer*> >;
 
     class CbDialer: public CallDialer {
     public:
@@ -143,7 +145,19 @@ public:
     /// Add the peer to the candidate peers list
     void addSelection(CachePeer*, const hier_code, const int groupId = 0);
 
-    template <class Key> void addGroup(std::vector<std::pair<Key, CachePeer*> > &, const hier_code);
+    /// Add the given group of CachePeers to the candidate peers list
+    /// It sorts by the key the list before add it to candidate peers list.
+    /// The smallest key added first.
+    /// \param hierCodeFunc a function in the form: "
+    ///        hier_code (*hierCodeFunc)(CachePeer *)
+    ///        It is used to compute the Hier code of the given cache.
+    /// \param groupId an id to use for the given CachePeers group
+    template <class Key, typename FUNC> void addGroup(CachePeersByKey<Key> &, FUNC hierCodeFunc, const int groupId);
+
+    /// Similar to the above.
+    /// \param hier_code The Hier code to use for all of the peers. Also
+    ///        use it as groupId for the given CachePeers group.
+    template <class Key> void addGroup(CachePeersByKey<Key> &, const hier_code);
 
     /// ACL check callback, if peer allowed send it to the caller
     void checkLastPeerAccess(const allow_t answer);
@@ -207,7 +221,7 @@ protected:
     /// Ping selected peers stored in peersToPing list
     void doIcpPing();
 
-    /// Calls caller
+    /// Callback the caller
     void callback(CachePeer *, hier_code);
 
     bool selectionAborted();
@@ -296,11 +310,21 @@ private:
     const InstanceId<PeerSelector> id; ///< unique identification in worker log
 };
 
-template <class Key> void
-PeerSelector::addGroup(std::vector<std::pair<Key, CachePeer*> > &peers, const hier_code code)
+template <class Key, typename FUNC> void
+PeerSelector::addGroup(CachePeersByKey<Key> &peers, FUNC getHierCode, const int groupId)
 {
-    for (auto it : peers)
-        addSelection(it.second, code, code);
+    typedef std::pair<Key, CachePeer *> KeyPeerPair;
+    std::sort(peers.begin(), peers.end(), [](const KeyPeerPair &a, const KeyPeerPair &b) {return a.first > b.first;});
+    for (auto it : peers) {
+        const hier_code code = getHierCode(it.second);
+        addSelection(it.second, code, groupId);
+    }
+}
+
+template <class Key> void
+PeerSelector::addGroup(CachePeersByKey<Key> &peers, const hier_code code)
+{
+    addGroup(peers, [code](const CachePeer *) { return code;}, code);
 }
 
 #endif /* SQUID_PEERSELECTSTATE_H */

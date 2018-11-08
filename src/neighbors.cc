@@ -306,7 +306,7 @@ retrieveRoundRobinParentsGroup(PeerSelector *ps)
     HttpRequest::Pointer request = ps->request;
 
     CachePeer *p;
-    std::vector<std::pair<double, CachePeer *> > sortedPeers;
+    PeerSelector::CachePeersByKey<double> sortedPeers;
     for (p = Config.peers; p; p = p->next) {
         if (!p->options.roundrobin)
             continue;
@@ -321,11 +321,9 @@ retrieveRoundRobinParentsGroup(PeerSelector *ps)
             continue;
 
         double score = ((double) p->rr_count / p->weight);
-        sortedPeers.push_back(std::pair<double, CachePeer *>(score, p));
+        sortedPeers.push_back(std::make_pair(score, p));
     }
 
-    // First is the smalest score
-    std::sort(sortedPeers.begin(), sortedPeers.end());
     ps->addGroup(sortedPeers, ROUNDROBIN_PARENT);
 }
 
@@ -344,7 +342,7 @@ retrieveWeightedRoundRobinParentsGroup(PeerSelector *ps)
     HttpRequest::Pointer request = ps->request;
 
     CachePeer *p;
-    std::vector<std::pair<int, CachePeer *> > sortedPeers;
+    PeerSelector::CachePeersByKey<int> sortedPeers;
     for (p = Config.peers; p; p = p->next) {
         if (!p->options.weighted_roundrobin)
             continue;
@@ -355,11 +353,9 @@ retrieveWeightedRoundRobinParentsGroup(PeerSelector *ps)
         if (!peerHTTPOkay(p, ps))
             continue;
 
-        sortedPeers.push_back(std::pair<int, CachePeer *>(p->rr_count, p));
+        sortedPeers.push_back(std::make_pair(p->rr_count, p));
     }
 
-    // First is the smalest score
-    std::sort(sortedPeers.begin(), sortedPeers.end());
     ps->addGroup(sortedPeers, WEIGHTED_ROUNDROBIN_PARENT);
 }
 
@@ -793,7 +789,7 @@ neighborsDigestSelect(PeerSelector *ps)
 
     storeKeyPublicByRequest(request.getRaw());
 
-    std::vector<std::pair<int, CachePeer *> > sortedPeers;
+    PeerSelector::CachePeersByKey<int> sortedPeers;
     i = 0;
     for (CachePeer *p = first_ping; i++ < Config.npeers; p = p->next) {
         lookup_t lookup;
@@ -815,7 +811,7 @@ neighborsDigestSelect(PeerSelector *ps)
 
         debugs(15, 5, "neighborsDigestSelect: peer " << p->host << " rtt: " << p_rtt);
 
-        sortedPeers.push_back(std::pair<double, CachePeer *>(p_rtt, p));
+        sortedPeers.push_back(std::make_pair(p_rtt, p));
     }
 
     first_ping = first_ping->next ? first_ping->next : Config.peers;
@@ -826,17 +822,10 @@ neighborsDigestSelect(PeerSelector *ps)
         // if executed for all of the misses)
         peerNoteDigestLookup(request.getRaw(), nullptr, LOOKUP_MISS);
     } else {
-        std::sort(sortedPeers.begin(), sortedPeers.end());
-        //selector->addGroup(sortedPeers, CD_PARENT_HIT);
-        for (auto it : sortedPeers) {
-            debugs(15, 5, "neighborsDigestSelect: peer " << it.second->host << " rtt: " << it.first);
-            hier_code code;
-            if (neighborType(it.second, request->url) == PEER_PARENT)
-                code = CD_PARENT_HIT;
-            else
-                code = CD_SIBLING_HIT;
-            ps->addSelection(it.second, code, CD_PARENT_HIT);
-        }
+        auto getHierFunc = [&request](const CachePeer *p) -> const hier_code {
+            return (neighborType(p, request->url) == PEER_PARENT) ? CD_PARENT_HIT : CD_SIBLING_HIT;
+        };
+        ps->addGroup(sortedPeers, getHierFunc, CD_PARENT_HIT);
     }
 #endif
 }

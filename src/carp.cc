@@ -162,7 +162,7 @@ carpSelectParent(PeerSelector *ps)
     /* calculate hash key */
     debugs(39, 2, "carpSelectParent: Calculating hash for " << request->effectiveRequestUri());
 
-    std::vector<std::pair<int, CachePeer *> > sortedPeers;
+    PeerSelector::CachePeersByKey<double> sortedPeers;
     /* select CachePeer */
     for (k = 0; k < n_carp_peers; ++k) {
         SBuf key;
@@ -209,10 +209,9 @@ carpSelectParent(PeerSelector *ps)
                " score=" << std::setprecision(0) << score);
 
         if (peerHTTPOkay(tp, ps))
-            sortedPeers.push_back(std::pair<int, CachePeer *>(score, tp));
+            sortedPeers.push_back(std::make_pair(score, tp));
     }
 
-    std::sort(sortedPeers.begin(), sortedPeers.end());
     ps->addGroup(sortedPeers, CARP);
 }
 

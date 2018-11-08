@@ -58,7 +58,7 @@ public:
     {}
 
     /// whether the given peer is already covered by this selection
-    bool duplicates(CachePeer *peer, const hier_code code, int groupId);
+    bool duplicates(CachePeer *peer, const hier_code code, const int groupId);
 
     CbcPointer<CachePeer> _peer;                /* NULL --> origin server */
     hier_code code;
@@ -112,7 +112,7 @@ operator <<(std::ostream &os, const PeerSelectionDumper &fsd)
 }
 
 bool
-FwdServer::duplicates(CachePeer *peer, const hier_code peerCode, int peerGroup)
+FwdServer::duplicates(CachePeer *peer, const hier_code peerCode, const int peerGroup)
 {
     // there can be at most one PINNED destination
     if (peerCode == PINNED)
@@ -273,16 +273,17 @@ PeerSelectionInitiator::noteIp(const Ip::Address &ip)
 void
 PeerSelectionInitiator::noteIps(const Dns::CachedIps *ips, const Dns::LookupDetails &details)
 {
-    if (!ips) {
-        debugs(17, 3, "Unknown host: " << (peer_.valid() ? peer_->host : request->url.host()));
-        if (peerType_ == HIER_DIRECT) {
-            assert(!peer_.raw());
-            // discard any previous error.
-            delete lastError;
-            lastError = new ErrorState(ERR_DNS_FAIL, Http::scServiceUnavailable, request.getRaw());
-            lastError->dnsError = details.error;
-            requestMoreDestinations(); //nothing to send continue to the next Peer
-        }
+    if (ips)
+        return; // noteIp() calls have already processed all IPs
+
+    debugs(17, 3, "Unknown host: " << (peer_.valid() ? peer_->host : request->url.host()));
+    if (peerType_ == HIER_DIRECT) {
+        assert(!peer_.raw());
+        // discard any previous error.
+        delete lastError;
+        lastError = new ErrorState(ERR_DNS_FAIL, Http::scServiceUnavailable, request.getRaw());
+        lastError->dnsError = details.error;
+        requestMoreDestinations(); //nothing to send continue to the next Peer
     }
 }
 
@@ -417,7 +418,7 @@ PeerSelector::accessCheckCached(const CachePeer *p, allow_t &answer) const
 static void
 checkLastPeerAccessWrapper(allow_t answer, void *data)
 {
-    PeerSelector *selector = static_cast<PeerSelector *>(data);
+    auto selector = static_cast<PeerSelector *>(data);
     selector->checkLastPeerAccess(answer);
 }
 
@@ -475,7 +476,7 @@ PeerSelector::sendNextPeer()
     if (selectionAborted())
         return;
 
-    if (currentServer == nullptr) {
+    if (!currentServer) {
         // Done with peers
         ping.stop = current_time;
         request->hier.ping = ping; // final result
@@ -777,7 +778,7 @@ PeerSelector::selectSomeNeighbor()
 static void
 checkNeighborToPingAccessWrapper(allow_t answer, void *data)
 {
-    PeerSelector *selector = static_cast<PeerSelector *>(data);
+    auto selector = static_cast<PeerSelector *>(data);
     selector->checkNeighborToPingAccess(answer);
 }
 
@@ -806,7 +807,7 @@ PeerSelector::checkNeighborToPingAccess(const allow_t answer)
 bool
 PeerSelector::moreNeighborsToPing()
 {
-    while (!candidatePingPeers.front().valid())
+    while (!candidatePingPeers.empty() && !candidatePingPeers.front().valid())
         candidatePingPeers.erase(candidatePingPeers.begin());
 
     if (candidatePingPeers.empty())
@@ -860,33 +861,36 @@ PeerSelector::finalizeIcpPing()
 void
 PeerSelector::doIcpPing()
 {
+    if (peersToPing.empty()) {
+        debugs(44, 3, "No servers to ping");
+        return;
+    }
+
     debugs(44, 3, "Start pinging " << peersToPing.size() << " servers");
 
-    if (peersToPing.size()) {
-        ping.start = current_time;
-        ping.n_sent = neighborsUdpPing(
-            peersToPing,
-            request.getRaw(),
-            entry,
-            HandlePingReply,
-            this,
-            &ping.n_replies_expected,
-            &ping.timeout);
+    ping.start = current_time;
+    ping.n_sent = neighborsUdpPing(
+        peersToPing,
+        request.getRaw(),
+        entry,
+        HandlePingReply,
+        this,
+        &ping.n_replies_expected,
+        &ping.timeout);
 
-        if (ping.n_sent == 0)
-            debugs(44, DBG_CRITICAL, "WARNING: neighborsUdpPing returned 0");
+    if (ping.n_sent == 0)
+        debugs(44, DBG_CRITICAL, "WARNING: neighborsUdpPing returned 0");
 
-        debugs(44, 3, ping.n_replies_expected <<
-               " ICP replies expected, RTT " << ping.timeout <<
-               " msec");
+    debugs(44, 3, ping.n_replies_expected <<
+           " ICP replies expected, RTT " << ping.timeout <<
+           " msec");
 
-        if (ping.n_replies_expected > 0) {
-            eventAdd("PeerSelector::HandlePingTimeout",
-                     HandlePingTimeout,
-                     this,
-                     0.001 * ping.timeout,
-                     0);
-        }
+    if (ping.n_replies_expected > 0) {
+        eventAdd("PeerSelector::HandlePingTimeout",
+                 HandlePingTimeout,
+                 this,
+                 0.001 * ping.timeout,
+                 0);
     }
 }
 
