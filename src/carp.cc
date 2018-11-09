@@ -209,7 +209,7 @@ carpSelectParent(PeerSelector *ps)
                " score=" << std::setprecision(0) << score);
 
         if (peerHTTPOkay(tp, ps))
-            sortedPeers.push_back(std::make_pair(score, tp));
+            sortedPeers.push_back(std::make_pair(-score, tp));
     }
 
     ps->addGroup(sortedPeers, CARP);

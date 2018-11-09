@@ -314,7 +314,7 @@ template <class Key, typename FUNC> void
 PeerSelector::addGroup(CachePeersByKey<Key> &peers, FUNC getHierCode, const int groupId)
 {
     typedef std::pair<Key, CachePeer *> KeyPeerPair;
-    std::sort(peers.begin(), peers.end(), [](const KeyPeerPair &a, const KeyPeerPair &b) {return a.first > b.first;});
+    std::sort(peers.begin(), peers.end(), [](const KeyPeerPair &a, const KeyPeerPair &b) { return a.first < b.first; });
     for (auto it : peers) {
         const hier_code code = getHierCode(it.second);
         addSelection(it.second, code, groupId);
@@ -324,7 +324,7 @@ PeerSelector::addGroup(CachePeersByKey<Key> &peers, FUNC getHierCode, const int 
 template <class Key> void
 PeerSelector::addGroup(CachePeersByKey<Key> &peers, const hier_code code)
 {
-    addGroup(peers, [code](const CachePeer *) { return code;}, code);
+    addGroup(peers, [code](const CachePeer *) { return code; }, code);
 }
 
 #endif /* SQUID_PEERSELECTSTATE_H */
