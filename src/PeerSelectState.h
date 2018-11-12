@@ -146,11 +146,11 @@ public:
     void addSelection(CachePeer*, const hier_code, const int groupId = 0);
 
     /// Add the given group of CachePeers to the candidate peers list
-    /// It sorts by the key the list before add it to candidate peers list.
-    /// The smallest key added first.
+    /// It sorts the list by the key in ascending order before add it
+    /// to candidate peers list.
     /// \param hierCodeFunc a function in the form: "
     ///        hier_code (*hierCodeFunc)(CachePeer *)
-    ///        It is used to compute the Hier code of the given cache.
+    ///        It is used to compute the Hier code of the given peer.
     /// \param groupId an id to use for the given CachePeers group
     template <class Key, typename FUNC> void addGroup(CachePeersByKey<Key> &, FUNC hierCodeFunc, const int groupId);
 

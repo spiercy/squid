@@ -169,7 +169,7 @@ peerSourceHashSelectParent(PeerSelector *ps)
     for (c = key; *c != 0; ++c)
         user_hash += ROTATE_LEFT(user_hash, 19) + *c;
 
-    PeerSelector::CachePeersByKey<double> sortedPeers;
+    PeerSelector::CachePeersByKey<double> peers;
     /* select CachePeer */
     for (k = 0; k < n_sourcehash_peers; ++k) {
         tp = sourcehash_peers[k];
@@ -181,11 +181,11 @@ peerSourceHashSelectParent(PeerSelector *ps)
                " score " << std::setprecision(0) << score);
         if (peerHTTPOkay(tp, ps)) {
             // add negative score we want the highest score first
-            sortedPeers.push_back(std::make_pair(-score, tp));
+            peers.push_back(std::make_pair(-score, tp));
         }
     }
 
-    ps->addGroup(sortedPeers, SOURCEHASH_PARENT);
+    ps->addGroup(peers, SOURCEHASH_PARENT);
 }
 
 static void
