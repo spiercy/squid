@@ -185,6 +185,10 @@ public:
     /// number of items in outgoing queue to a given remote process
     int outSize(const int remoteProcessId) const { return outQueue(remoteProcessId).size(); }
 
+    /// Whether an outgoing queue is full. The remote process ID for this queue
+    /// corresponds to the process which incoming queue is likely to be popped next.
+    bool outFull() const;
+
 protected:
     /// incoming queue from a given remote process
     virtual const OneToOneUniQueue &inQueue(const int remoteProcessId) const = 0;
