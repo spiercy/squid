@@ -256,7 +256,7 @@ public:
     /// opens entry (identified by key) for reading, increments read level
     const Anchor *openForReading(const cache_key *const key, sfileno &fileno);
     /// opens entry (identified by sfileno) for reading, increments read level
-    const Anchor *openForReadingAt(const sfileno fileno);
+    const Anchor *openForReadingAt(const sfileno, const cache_key *const);
     /// closes open entry after reading, decrements read level
     void closeForReading(const sfileno fileno);
 
@@ -279,6 +279,10 @@ public:
 
     /// either finds and frees an entry with at least 1 slice or returns false
     bool purgeOne();
+
+    /// validates locked hit metadata and calls freeEntry() for invalid entries
+    /// \returns whether hit metadata is correct
+    bool validateHit(const sfileno);
 
     /// copies slice to its designated position
     void importSlice(const SliceId sliceId, const Slice &slice);
