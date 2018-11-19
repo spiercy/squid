@@ -10,6 +10,7 @@
 #define SQUID_IPC_READ_WRITE_LOCK_H
 
 #include <atomic>
+#include <iosfwd>
 
 class StoreEntry;
 
