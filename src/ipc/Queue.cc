@@ -196,18 +196,6 @@ Ipc::BaseMultiQueue::remoteReader(const int remoteProcessId)
     return const_cast<QueueReader &>(reader);
 }
 
-bool
-Ipc::BaseMultiQueue::outFull() const {
-    int popProcessId = theLastPopProcessId;
-    for (int i = 0; i < remotesCount(); ++i) {
-        if (++popProcessId >= remotesIdOffset() + remotesCount())
-            popProcessId = remotesIdOffset();
-        if (outQueue(popProcessId).full())
-            return true;
-    }
-    return false;
-}
-
 // FewToFewBiQueue
 
 Ipc::FewToFewBiQueue::Owner *

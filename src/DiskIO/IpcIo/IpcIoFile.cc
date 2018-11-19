@@ -363,9 +363,12 @@ IpcIoFile::push(IpcIoPendingRequest *const pending)
 
         debugs(47, 7, HERE << "pushing " << SipcIo(KidIdentifier, ipcIo, diskId));
 
+        // prevent pop queue overflow
+        if (ioPendingRequests() >= QueueCapacity)
+            throw Ipc::OneToOneUniQueue::Full();
+
         if (queue->push(diskId, ipcIo))
             Notify(diskId); // must notify disker
-
         trackPendingRequest(ipcIo.requestId, pending);
     } catch (const Queue::Full &) {
         debugs(47, DBG_IMPORTANT, "ERROR: worker I/O push queue for " <<
@@ -443,15 +446,11 @@ IpcIoFile::HandleResponses(const char *const when)
     IpcIoMsg ipcIo;
     // get all responses we can: since we are not pushing, this will stop
     int diskId;
-    std::set<int> diskerIds;
     while (queue->pop(diskId, ipcIo)) {
         const IpcIoFilesMap::const_iterator i = IpcIoFiles.find(diskId);
         Must(i != IpcIoFiles.end()); // TODO: warn but continue
         i->second->handleResponse(ipcIo);
-        diskerIds.insert(diskId);
     }
-    for (const auto id: diskerIds)
-        Notify(id);
 }
 
 void
@@ -824,7 +823,7 @@ IpcIoFile::DiskerHandleRequests()
     int popped = 0;
     int workerId = 0;
     IpcIoMsg ipcIo;
-    while (!queue->outFull() && !WaitBeforePop() && queue->pop(workerId, ipcIo)) {
+    while (!WaitBeforePop() && queue->pop(workerId, ipcIo)) {
         ++popped;
 
         // at least one I/O per call is guaranteed if the queue is not empty
@@ -881,8 +880,8 @@ IpcIoFile::DiskerHandleRequest(const int workerId, IpcIoMsg &ipcIo)
         if (queue->push(workerId, ipcIo))
             Notify(workerId); // must notify worker
     } catch (const Queue::Full &) {
-        // The worker pop queue should not overflow because we must
-        // have checked already that the queue is not full.
+        // The worker pop queue should not overflow because the worker
+        // can push only if the overall pending IO requests number <= N
         debugs(47, DBG_IMPORTANT, "BUG: Worker I/O pop queue for " <<
                DbName << " overflow: " <<
                SipcIo(workerId, ipcIo, KidIdentifier)); // TODO: report queue len
