@@ -397,6 +397,7 @@ private:
 
     /// The SSL server host name appears in CONNECT request or the server ip address for the intercepted requests
     String sslConnectHostOrIp; ///< The SSL server host name as passed in the CONNECT request
+    int tlsConnectPort; ///< The TLS server port used in the CONNECT request
     SBuf sslCommonName_; ///< CN name for SSL certificate generation
 
     /// TLS client delivered SNI value. Empty string if none has been received.
