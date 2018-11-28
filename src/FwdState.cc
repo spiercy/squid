@@ -72,8 +72,6 @@ static CLCB fwdServerClosedWrapper;
 
 static OBJH fwdStats;
 
-static void GetMarkings(HttpRequest * request, tos_t &tos, nfmark_t &nfmark);
-
 #define MAX_FWD_STATS_IDX 9
 static int FwdReplyCodes[MAX_FWD_STATS_IDX + 1][Http::scInvalidHeader + 1];
 
@@ -785,12 +783,8 @@ FwdState::noteConnection(const HappyConnOpener::Answer &cd)
 
     closeHandler = comm_add_close_handler(serverConnection()->fd,  fwdServerClosedWrapper, this);
 
-    if (cd.host)
-        syncWithServerConn(cd.host);
-    else
-        syncWithServerConn(request->url.host());
-
     if (cd.reused) {
+        syncWithServerConn(cd.host ? cd.host : request->url.host());
         flags.connected_okay = true;
         pconnRace = racePossible;
         dispatch();
@@ -869,14 +863,7 @@ FwdState::connectedToPeer(Security::EncryptorAnswer &answer)
 void
 FwdState::syncWithServerConn(const char *host)
 {
-    if (Ip::Qos::TheConfig.isAclTosActive())
-        Ip::Qos::setSockTos(serverConn, GetTosToServer(request));
-
-#if SO_MARK
-    if (Ip::Qos::TheConfig.isAclNfmarkActive())
-        Ip::Qos::setSockNfmark(serverConn, GetNfmarkToServer(request));
-#endif
-
+    SetMarkingsToServer(request, serverConn);
     syncHierNote(serverConn, host);
 }
 
@@ -914,7 +901,8 @@ FwdState::connectStart()
         calls.connector = asyncCall(17, 5, "FwdState::noteConnection", HappyConnOpener::CbDialer(&FwdState::noteConnection, this));
 
         assert(Config.forward_max_tries - n_tries > 0);
-        const auto cs = new HappyConnOpener(destinations, calls.connector, start_t, Config.forward_max_tries - n_tries);
+        HttpRequest::Pointer cause = request;
+        const auto cs = new HappyConnOpener(destinations, calls.connector, cause, start_t, Config.forward_max_tries - n_tries);
         cs->setHost(request->url.host());
         bool retriable = checkRetriable();
         if (!retriable && Config.accessList.serverPconnForNonretriable) {
@@ -925,7 +913,6 @@ FwdState::connectStart()
         }
         cs->setRetriable(retriable);
         cs->allowPersistent(pconnRace != raceHappened);
-        GetMarkings(request, cs->useTos, cs->useNfmark);
         destinations->notificationPending = true; // start() is async
         connOpener = cs;
         AsyncJob::Start(cs);
@@ -1346,44 +1333,55 @@ getOutgoingAddress(HttpRequest * request, Comm::ConnectionPointer conn)
     }
 }
 
-tos_t
-GetTosToServer(HttpRequest * request)
+/**
+ * Returns the TOS value that we should be setting on the connection
+ * to the server, based on the ACL.
+ */
+static tos_t
+GetTosToServer(HttpRequest * request, Comm::ConnectionPointer &conn)
 {
-    // XXX: Supply the destination address to ACLs and (after that) move to
-    // HappyConnOpener::startConnecting()
+    if (!Ip::Qos::TheConfig.tosToServer)
+        return 0;
+
     ACLFilledChecklist ch(NULL, request, NULL);
+    ch.dst_peer_name = conn->getPeer() ? conn->getPeer()->name : NULL;
+    ch.dst_addr = conn->remote;
     return aclMapTOS(Ip::Qos::TheConfig.tosToServer, &ch);
 }
 
-nfmark_t
-GetNfmarkToServer(HttpRequest * request)
+/**
+ * Returns the Netfilter mark value that we should be setting on the
+ * connection to the server, based on the ACL.
+ */
+static nfmark_t
+GetNfmarkToServer(HttpRequest * request, Comm::ConnectionPointer &conn)
 {
-    // XXX: Supply the destination address to ACLs and (after that) move to
-    // HappyConnOpener::startConnecting()
+    if (!Ip::Qos::TheConfig.nfmarkToServer)
+        return 0;
+
     ACLFilledChecklist ch(NULL, request, NULL);
+    ch.dst_peer_name = conn->getPeer() ? conn->getPeer()->name : NULL;
+    ch.dst_addr = conn->remote;
     const auto mc = aclFindNfMarkConfig(Ip::Qos::TheConfig.nfmarkToServer, &ch);
     return mc.mark;
 }
 
-void GetMarkings(HttpRequest * request, tos_t &tos, nfmark_t &nfmark)
+void
+GetMarkingsToServer(HttpRequest * request, Comm::ConnectionPointer &conn)
 {
     // Get the server side TOS and Netfilter mark to be set on the connection.
-    if (Ip::Qos::TheConfig.isAclTosActive()) {
-        tos = GetTosToServer(request);
-    } else
-        tos = 0;
-
-#if SO_MARK && USE_LIBCAP
-    nfmark = GetNfmarkToServer(request);
-#else
-    nfmark = 0;
-#endif
+    conn->tos = GetTosToServer(request, conn);
+    conn->nfmark = GetNfmarkToServer(request, conn);
+    debugs(17, 3, "from " << conn->local << " tos " << int(conn->tos) << " netfilter mark " << conn->nfmark);
 }
 
 void
-GetMarkingsToServer(HttpRequest * request, Comm::Connection &conn)
+SetMarkingsToServer(HttpRequest * request, Comm::ConnectionPointer &conn)
 {
-    GetMarkings(request, conn.tos, conn.nfmark);
-    debugs(17, 3, "from " << conn.local << " tos " << int(conn.tos) << " netfilter mark " << conn.nfmark);
-}
+    GetMarkingsToServer(request, conn);
+    if (conn->tos)
+        Ip::Qos::setSockTos(conn, conn->tos);
 
+    if (conn->nfmark)
+        Ip::Qos::setSockNfmark(conn, conn->nfmark);
+}
