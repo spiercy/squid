@@ -888,7 +888,6 @@ Rock::SwapDir::handleWriteCompletionSuccess(const WriteRequest &request)
 {
     auto &sio = *(request.sio);
     sio.splicingPoint = request.sidCurrent;
-
     // do not increment sio.offset_ because we do it in sio->write()
 
     // finalize the shared slice info after writing slice contents to disk
@@ -946,8 +945,8 @@ Rock::SwapDir::droppedEarlierRequest(const WriteRequest &request) const
     const auto &sio = *request.sio;
     assert(sio.writeableAnchor_);
     const Ipc::StoreMapSliceId expectedSliceId = sio.splicingPoint < 0 ?
-        sio.writeableAnchor_->start :
-        map->writeableSlice(sio.swap_filen, sio.splicingPoint).next;
+            sio.writeableAnchor_->start :
+            map->writeableSlice(sio.swap_filen, sio.splicingPoint).next;
     if (expectedSliceId != request.sidCurrent) {
         debugs(79, 3, "yes; expected " << expectedSliceId << ", but got " << request.sidCurrent);
         return true;
