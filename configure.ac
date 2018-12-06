@@ -10,7 +10,7 @@ AC_PREREQ(2.61)
 AC_CONFIG_HEADERS([include/autoconf.h])
 AC_CONFIG_AUX_DIR(cfgaux)
 AC_CONFIG_SRCDIR([src/main.cc])
-AM_INIT_AUTOMAKE([tar-ustar nostdinc subdir-objects])
+AM_INIT_AUTOMAKE([tar-ustar nostdinc subdir-objects dist-xz])
 AC_REVISION($Revision$)dnl
 AC_PREFIX_DEFAULT(/usr/local/squid)
 AM_MAINTAINER_MODE
@@ -1295,12 +1295,19 @@ AH_TEMPLATE(USE_OPENSSL,[OpenSSL support is available])
 ## OpenSSL is default disable due to licensing issues on some OS
 if test "x$with_openssl" = "xyes"; then
   AC_CHECK_HEADERS( \
+    openssl/asn1.h \
     openssl/bio.h \
+    openssl/bn.h \
     openssl/crypto.h \
+    openssl/dh.h \
     openssl/err.h \
+    openssl/evp.h \
+    openssl/lhash.h \
     openssl/md5.h \
     openssl/opensslv.h \
+    openssl/rsa.h \
     openssl/ssl.h \
+    openssl/x509.h \
     openssl/x509v3.h \
     openssl/engine.h \
     openssl/txt_db.h \

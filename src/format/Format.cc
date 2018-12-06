@@ -1210,7 +1210,7 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
                 ConnStateData *conn = al->request->clientConnectionManager.get();
                 if (conn && Comm::IsConnOpen(conn->clientConnection)) {
                     if (auto ssl = fd_table[conn->clientConnection->fd].ssl.get())
-                        out = sslGetUserAttribute(ssl, format->data.header.header);
+                        out = sslGetUserAttribute(ssl, fmt->data.header.header);
                 }
             }
             break;
@@ -1220,7 +1220,7 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
                 ConnStateData *conn = al->request->clientConnectionManager.get();
                 if (conn && Comm::IsConnOpen(conn->clientConnection)) {
                     if (auto ssl = fd_table[conn->clientConnection->fd].ssl.get())
-                        out = sslGetCAAttribute(ssl, format->data.header.header);
+                        out = sslGetCAAttribute(ssl, fmt->data.header.header);
                 }
             }
             break;

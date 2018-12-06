@@ -252,6 +252,12 @@ DOC_START
 DOC_END
 
 # Options Removed in 3.2
+NAME: balance_on_multiple_ip
+TYPE: obsolete
+DOC_START
+	Remove this line. Squid performs a 'Happy Eyeballs' algorithm, this multiple-IP algorithm is not longer relevant.
+DOC_END
+
 NAME: chunked_request_body_max_size
 TYPE: obsolete
 DOC_START
@@ -862,6 +868,8 @@ DOC_START
 
 			If you do not specify a DATA macro inside FORMAT,
 			Squid automatically appends %DATA to your FORMAT.
+			Note that Squid-3.x may expand %DATA to whitespace
+			or nothing in this case.
 
 			By default, Squid applies URL-encoding to each ACL
 			argument inside the argument string. If an explicit
@@ -3924,11 +3932,15 @@ DEFAULT: 25
 TYPE: int
 LOC: Config.forward_max_tries
 DOC_START
-	Limits the number of request attempts. See also request_attempts
-	and forward_timeout.
+	Limits the number of attempts to forward the request.
+
+	For the purpose of this limit, Squid counts all high-level request
+	forwarding attempts, including any same-destination retries after
+	certain persistent connection failures and any attempts to use a
+	different peer. However, low-level connection reopening attempts
+	(enabled using connect_retries) are not counted.
 	
-	NOTE: connect_retries (default: none) can make each of
-	possible forwarding paths be tried multiple times.
+	See also: forward_timeout and connect_retries.
 DOC_END
 
 COMMENT_START
@@ -10103,19 +10115,23 @@ LOC: Config.connect_retries
 DEFAULT: 0
 DEFAULT_DOC: Do not retry failed connections.
 DOC_START
-	This sets the maximum number of connection attempts made for each
-	TCP connection. The connect_retries attempts must all still
-	complete within the connection timeout period.
+	Limits the number of reopening attempts when establishing a single
+	TCP connection. All these attempts must still complete before the
+	applicable connection opening timeout expires.
 
-	The default is not to re-try if the first connection attempt fails.
-	The (not recommended) maximum is 10 tries.
+	By default and when connect_retries is set to zero, Squid does not
+	retry failed connection opening attempts.
 
-	A warning message will be generated if it is set to a too-high
-	value and the configured value will be over-ridden.
+	The (not recommended) maximum is 10 tries. An attempt to configure a
+	higher value results in the value of 10 being used (with a warning).
 
-	Note: These re-tries are in addition to forward_max_tries
-	which limits the number of request attempts to find
-	a useful server.
+	Squid may open connections to retry various high-level forwarding
+	failures. For an outside observer, that activity may look like a
+	low-level connection reopening attempt, but those high-level retries
+	are governed by forward_max_tries instead.
+
+	See also: connect_timeout, forward_timeout, icap_connect_timeout,
+	ident_timeout, and forward_max_tries.
 DOC_END
 
 NAME: retry_on_error
@@ -10200,22 +10216,6 @@ DOC_START
 	privileges after initializing.  This means, for example, if you
 	use a HTTP port less than 1024 and try to reconfigure, you may
 	get an error saying that Squid can not open the port.
-DOC_END
-
-NAME: balance_on_multiple_ip
-TYPE: onoff
-LOC: Config.onoff.balance_on_multiple_ip
-DEFAULT: off
-DOC_START
-	Modern IP resolvers in squid sort lookup results by preferred access.
-	By default squid will use these IP in order and only rotates to
-	the next listed when the most preffered fails.
-
-	Some load balancing servers based on round robin DNS have been
-	found not to preserve user session state across requests
-	to different IP addresses.
-
-	Enabling this directive Squid rotates IP's per request.
 DOC_END
 
 NAME: pipeline_prefetch

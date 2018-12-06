@@ -135,10 +135,10 @@ private:
 
     /// increments ALE::requestAttempts counter, if ALE is available
     void addRequestAttempt() { if (al) al->requestAttempts++; }
-    /// whether we have not yet run out of permitted request sending attempts
-    bool forwardTriesAllowed() const;
     /// The number of primary request sending attempts. See %request_attempts.
     int forwardTries() const { return al ? al->requestAttempts : 0; }
+    /// whether we have used up all permitted forwarding attempts
+    bool exhaustedTries() const;
 
 public:
     StoreEntry *entry;

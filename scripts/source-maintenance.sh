@@ -116,6 +116,17 @@ for FILENAME in `git ls-files`; do
 	esac
 
 	#
+	# If a file includes openssl headers, then it must include compat/openssl.h
+	#
+	if test "${FILENAME}" != "compat/openssl.h"; then
+		FA=`grep "#include.*openssl/" "${FILENAME}" 2>/dev/null | head -1`;
+		FB=`grep '#include.*compat/openssl[.]h' "${FILENAME}" 2>/dev/null | head -1`;
+		if test "x${FA}" != "x" -a "x${FB}" = "x"; then
+			echo "ERROR: ${FILENAME} includes openssl headers without including \"compat/openssl.h\""
+		fi
+	fi
+
+	#
 	# forward.h means different things to Squid code depending on the path
 	# require the full path is explicit for every include
 	#
@@ -130,7 +141,7 @@ for FILENAME in `git ls-files`; do
 	# sprintf() - not allowed anywhere.
 	#
 	STRDUP=`grep -e "[^x]strdup(" ${FILENAME}`;
-	if test "x${STRDUP}" != "x" -a "${FILENAME}" != "xstring.h"; then
+	if test "x${STRDUP}" != "x" -a "${FILENAME}" != "compat/xstring.h"; then
 		echo "ERROR: ${FILENAME} contains unprotected use of strdup()"
 	fi
 	SPRINTF=`grep -e "[^v]sprintf(" ${FILENAME}`;
