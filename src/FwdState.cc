@@ -518,7 +518,7 @@ FwdState::complete()
     entry->mem_obj->checkUrlChecksum();
 #endif
 
-    logReplyStatus(forwardTries(), entry->getReply()->sline.status());
+    logReplyStatus(tries(), entry->getReply()->sline.status());
 
     if (reforward()) {
         debugs(17, 3, HERE << "re-forwarding " << entry->getReply()->sline.status() << " " << entry->url());
@@ -676,7 +676,7 @@ void
 FwdState::retryOrBail()
 {
     if (checkRetry()) {
-        debugs(17, 3, "re-forwarding (" << forwardTries() << " tries, " << (squid_curtime - start_t) << " secs)");
+        debugs(17, 3, "re-forwarding (" << tries() << " tries, " << (squid_curtime - start_t) << " secs)");
         // we should retry the same destination if it failed due to pconn race
         if (pconnRace == raceHappened)
             debugs(17, 4, HERE << "retrying the same destination");
@@ -730,6 +730,7 @@ FwdState::connectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, in
         if (conn != NULL) {
             if (conn->getPeer())
                 peerConnectFailed(conn->getPeer());
+
             conn->close();
         }
         retryOrBail();
@@ -862,6 +863,7 @@ void
 FwdState::connectStart()
 {
     assert(serverDestinations.size() > 0);
+
     debugs(17, 3, "fwdConnectStart: " << entry->url());
 
     request->hier.startPeerClock();
@@ -885,7 +887,7 @@ FwdState::connectStart()
         // pinned_connection may become nil after a pconn race
         serverConn = pinned_connection ? pinned_connection->borrowPinnedConnection(request, serverDestinations[0]->getPeer()) : nullptr;
         if (Comm::IsConnOpen(serverConn)) {
-            addRequestAttempt();
+            addTry();
             flags.connected_okay = true;
             request->flags.pinned = true;
 
@@ -930,7 +932,7 @@ FwdState::connectStart()
         serverConn = temp;
         flags.connected_okay = true;
         debugs(17, 3, HERE << "reusing pconn " << serverConnection());
-        addRequestAttempt();
+        addTry();
 
         closeHandler = comm_add_close_handler(serverConnection()->fd,  fwdServerClosedWrapper, this);
 
@@ -957,7 +959,7 @@ FwdState::connectStart()
     Comm::ConnOpener *cs = new Comm::ConnOpener(serverDestinations[0], calls.connector, connTimeout);
     if (host)
         cs->setHost(host);
-    addRequestAttempt();
+    addTry();
     AsyncJob::Start(cs);
 }
 

@@ -133,10 +133,10 @@ private:
     void syncWithServerConn(const char *host);
     void syncHierNote(const Comm::ConnectionPointer &server, const char *host);
 
-    /// increments ALE::requestAttempts counter, if ALE is available
-    void addRequestAttempt() { if (al) al->requestAttempts++; }
-    /// The number of primary request sending attempts. See %request_attempts.
-    int forwardTries() const { return al ? al->requestAttempts : 0; }
+    /// increments the forwarding attempts counter
+    void addTry() { if (al) al->requestAttempts++; }
+    /// the number of forwarding attempts so far
+    int tries() const { return al ? al->requestAttempts : 0; }
     /// whether we have used up all permitted forwarding attempts
     bool exhaustedTries() const;
 
