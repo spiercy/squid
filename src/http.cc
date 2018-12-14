@@ -82,7 +82,6 @@ static const char *const crlf = "\r\n";
 static void httpMaybeRemovePublic(StoreEntry *, Http::StatusCode);
 static void copyOneHeaderFromClientsideRequestToUpstreamRequest(const HttpHeaderEntry *e, const String strConnection, const HttpRequest * request,
         HttpHeader * hdr_out, const int we_do_ranges, const Http::StateFlags &);
-static void makeUpgradeHeader(HttpStateData *, HttpRequest *, const HttpHeader &hdr_in, HttpHeader &hdr_out);
 
 HttpStateData::HttpStateData(FwdState *theFwdState) :
     AsyncJob("HttpStateData"),
@@ -135,7 +134,7 @@ HttpStateData::~HttpStateData()
 
     cbdataReferenceDone(_peer);
 
-    delete upgradeProtocols;
+    delete upgradeProtocolsSentToPeer;
 
     debugs(11,5, HERE << "HttpStateData " << this << " destroyed; " << serverConnection);
 }
@@ -876,7 +875,7 @@ private:
 bool
 HttpStateData::upgradeProtocolsSupported(const HttpReply *reply) const
 {
-    if (!upgradeProtocols)
+    if (!upgradeProtocolsSentToPeer)
         return false;
 
     const String upgradeProtos = reply->header.getList(Http::HdrType::UPGRADE);
@@ -884,8 +883,8 @@ HttpStateData::upgradeProtocolsSupported(const HttpReply *reply) const
     const char *item;
     int ilen = 0;
     while (strListGetItem(&upgradeProtos, ',', &item, &ilen, &pos)) {
-        auto it = std::find_if(upgradeProtocols->cbegin(), upgradeProtocols->cend(), MatchProtocol(item, ilen));
-        if (it == upgradeProtocols->cend()) { // protocol not listed by client!
+        const auto it = std::find_if(upgradeProtocolsSentToPeer->cbegin(), upgradeProtocolsSentToPeer->cend(), MatchProtocol(item, ilen));
+        if (it == upgradeProtocolsSentToPeer->cend()) { // protocol not listed by client!
             debugs(11, 2, "Upgrade to " << SBuf(item, ilen) << " is not allowed by client or squid configuration");
             return false;
         }
@@ -943,9 +942,7 @@ HttpStateData::proceedAfter1xx()
     if (flags.handling101) {
         // Our job is finished here. The control passed to other
         // squid subsystems.
-        ConnStateData::ServerConnectionContext scc(serverConnection,
-                                                   request,
-                                                   ConnStateData::ServerConnectionContext::SwitchingProtocol);
+        ConnStateData::ServerConnectionContext scc(serverConnection, request);
         ServerConnectionControlDialer dialer(request->clientConnectionManager, scc);
         AsyncCall::Pointer call = asyncCall(11, 3, dialer.callName, dialer);
         ScheduleCallHere(call);
@@ -1880,8 +1877,7 @@ httpFixupAuthentication(HttpRequest * request, const HttpHeader * hdr_in, HttpHe
  * note: initialised the HttpHeader, the caller is responsible for Clean()-ing
  */
 void
-HttpStateData::httpBuildRequestHeader(HttpStateData *state,
-                                      HttpRequest * request,
+HttpStateData::httpBuildRequestHeader(HttpRequest * request,
                                       StoreEntry * entry,
                                       const AccessLogEntryPointer &al,
                                       HttpHeader * hdr_out,
@@ -2037,13 +2033,7 @@ HttpStateData::httpBuildRequestHeader(HttpStateData *state,
         delete cc;
     }
 
-    // Adds the Upgrade header if required. Must called before the Connection
-    // header is built.
-    makeUpgradeHeader(state, request, *hdr_in, *hdr_out);
-
-    if (hdr_out->has(Http::HdrType::UPGRADE))
-        hdr_out->putStr(Http::HdrType::CONNECTION, "Upgrade");
-    else if (flags.keepalive) /* maybe append Connection: keep-alive */
+    if (flags.keepalive) /* maybe append Connection: keep-alive */
         hdr_out->putStr(Http::HdrType::CONNECTION, "keep-alive");
 
     /* append Front-End-Https */
@@ -2064,11 +2054,10 @@ HttpStateData::httpBuildRequestHeader(HttpStateData *state,
     strConnection.clean();
 }
 
-static void
-makeUpgradeHeader(HttpStateData *state, HttpRequest *req, const HttpHeader &hdr_in, HttpHeader &hdr_out)
+void
+HttpStateData::makeUpgradeHeaders(HttpHeader &hdr_out)
 {
-    if (!state)
-        return;
+    const HttpHeader &hdr_in = request->header;
 
     if (!hdr_in.has(Http::HdrType::UPGRADE))
         return;
@@ -2079,28 +2068,31 @@ makeUpgradeHeader(HttpStateData *state, HttpRequest *req, const HttpHeader &hdr_
     const char *item;
     int ilen = 0;
     while (strListGetItem(&upgradeIn, ',', &item, &ilen, &pos)) {
-        //Config.accessList.http_upgrade_protocols
         SBuf proto(item, ilen);
-        auto it = Config.accessList.http_upgrade_protocols->find(proto);
+        auto it = Config.http_upgrade_protocols->find(proto);
 
         // If protocol not found try the "ANY" protocol
-        if (it == Config.accessList.http_upgrade_protocols->end())
-            it = Config.accessList.http_upgrade_protocols->find(SBuf("ANY"));
+        if (it == Config.http_upgrade_protocols->end()) {
+            static const SBuf any("ANY");
+            it = Config.http_upgrade_protocols->find(any);
+        }
 
-        if (it != Config.accessList.http_upgrade_protocols->end() && it->second != nullptr) {
+        if (it != Config.http_upgrade_protocols->end() && it->second != nullptr) {
             const acl_access *acl = it->second;
-            ACLFilledChecklist ch(acl, req);
+            ACLFilledChecklist ch(acl, request.getRaw());
             if (ch.fastCheck().allowed()) {
                 strListAdd(&upgradeOut, proto.c_str(), ',');
-                if (!state->upgradeProtocols)
-                    state->upgradeProtocols = new std::vector<SBuf>;
-                state->upgradeProtocols->push_back(proto);
+                if (!upgradeProtocolsSentToPeer)
+                    upgradeProtocolsSentToPeer = new HttpStateData::ProtocolNamesList;
+                upgradeProtocolsSentToPeer->push_back(proto);
             }
         }
     }
 
-    if (upgradeOut.size())
-        hdr_out.addEntry(new HttpHeaderEntry(Http::HdrType::UPGRADE, SBuf(), upgradeOut.termedBuf()));
+    if (upgradeOut.size()) {
+        hdr_out.putStr(Http::HdrType::UPGRADE, upgradeOut.termedBuf());
+        hdr_out.putStr(Http::HdrType::CONNECTION, "Upgrade");
+    }
 }
 
 /**
@@ -2331,7 +2323,8 @@ HttpStateData::buildRequestPrefix(MemBuf * mb)
     /* build and pack headers */
     {
         HttpHeader hdr(hoRequest);
-        httpBuildRequestHeader(this, request.getRaw(), entry, fwd->al, &hdr, flags);
+        makeUpgradeHeaders(hdr);
+        httpBuildRequestHeader(request.getRaw(), entry, fwd->al, &hdr, flags);
 
         if (request->flags.pinned && request->flags.connectionAuth)
             request->flags.authSent = true;
