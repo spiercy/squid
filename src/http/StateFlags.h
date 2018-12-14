@@ -20,7 +20,9 @@ public:
     bool keepalive = false;
     bool only_if_cached = false;
     bool handling1xx = false;       ///< we are ignoring or forwarding 1xx response
-    /// we are waiting client side feedback for an 101 switching protocol response.
+
+    /// Sets after the positive Server decision regarding 101 (Switching
+    /// Protocols) handling. True handling101 implies true handling1xx.
     bool handling101 = false;
     bool headers_parsed = false;
     bool originpeer = false;
