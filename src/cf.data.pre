@@ -4827,17 +4827,27 @@ DOC_START
 	service name in curly braces to record response time(s) specific
 	to that service. For example: %{my_service}adapt::sum_trs
 
-	Format codes related to PROXY protocol:
+	Format codes related to the PROXY protocol:
 
-		proxy_protocol::>h  PROXY protocol headers, including protocol
-				block headers and TLV block headers.
-				Some important PROXY protocol block headers are mapped
-				into pre-defined pseudo header names, starting with a colon:
-				:command, :version, :src_addr, :dst_addr, :src_port, :dst_port.
-				Each TLV is a single HTTP header field: the field name
-				is the decimal TLV type, and the field value is the TLV
-				value. Supports the same field and element extraction
-				logic as %http::>h.
+		proxy_protocol::>h PROXY protocol header, including optional TLVs.
+
+				Supports the same field and element reporting/extraction logic
+				as %http::>h. For configuration and reporting purposes, Squid
+				maps each PROXY TLV to an HTTP header field: The TLV type
+				(configured as a decimal integer) is the field name, and the
+				TLV value is the field value.
+
+				Squid also maps the following standard PROXY protocol header
+				blocks to pseudo HTTP headers (their names use PROXY
+				terminology and start with a colon, following HTTP tradition
+				for pseudo headers): :command, :version, :src_addr, :dst_addr,
+				:src_port, and :dst_port.
+
+				This format code uses pass-through URL encoding by default.
+
+				Example:
+					# relay custom PROXY TLV #224 to adaptation services
+					adaptation_meta Client-Foo "%proxy_protocol::>h{224}"
 
 				See also: %http::>h
 
