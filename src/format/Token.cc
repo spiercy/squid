@@ -179,7 +179,7 @@ static TokenTableEntry TokenTableMisc[] = {
 };
 
 static TokenTableEntry TokenTableProxyProtocol[] = {
-    TokenTableEntry(">h", LFT_REQUEST_PROXY_TLV),
+    TokenTableEntry(">h", LFT_PROXY_PROTOCOL_RECEIVED_HEADER),
 };
 
 #if USE_ADAPTATION
@@ -486,13 +486,13 @@ Format::Token::parse(const char *def, Quoting *quoting)
 
     case LFT_NOTE:
 
-    case LFT_REQUEST_PROXY_TLV:
+    case LFT_PROXY_PROTOCOL_RECEIVED_HEADER:
 
         if (data.string) {
             char *header = data.string;
             // Http header field names cannot have ':' while
             // some PROXY protocol related pseudo headers may start with it.
-            const bool colonStarted = type == LFT_REQUEST_PROXY_TLV && strlen(header) > 1 && header[0] == ':';
+            const bool colonStarted = type == LFT_PROXY_PROTOCOL_RECEIVED_HEADER && strlen(header) > 1 && header[0] == ':';
             char *cp = strchr(colonStarted ? header + 1 : header, ':');
 
             if (cp) {
@@ -533,16 +533,16 @@ Format::Token::parse(const char *def, Quoting *quoting)
                     type = LFT_ICAP_REP_HEADER_ELEM;
                     break;
 #endif
-                case LFT_REQUEST_PROXY_TLV:
-                    type = LFT_REQUEST_PROXY_TLV_ELEM;
+                case LFT_PROXY_PROTOCOL_RECEIVED_HEADER:
+                    type = LFT_PROXY_PROTOCOL_RECEIVED_HEADER_ELEM;
                     break;
                 default:
                     break;
                 }
             }
 
-            if (type == LFT_REQUEST_PROXY_TLV || type == LFT_REQUEST_PROXY_TLV_ELEM)
-                ProxyProtocol::ParseProxyProtocolHeaderType(SBuf(header), data.headerId);
+            if (type == LFT_PROXY_PROTOCOL_RECEIVED_HEADER || type == LFT_PROXY_PROTOCOL_RECEIVED_HEADER_ELEM)
+                ProxyProtocol::HeaderNameToHeaderType(SBuf(header), data.headerId);
 
             data.header.header = header;
         } else {
@@ -571,8 +571,8 @@ Format::Token::parse(const char *def, Quoting *quoting)
                 type = LFT_ICAP_REP_ALL_HEADERS;
                 break;
 #endif
-            case LFT_REQUEST_PROXY_TLV:
-                type = LFT_REQUEST_ALL_PROXY_TLVS;
+            case LFT_PROXY_PROTOCOL_RECEIVED_HEADER:
+                type = LFT_PROXY_PROTOCOL_RECEIVED_ALL_HEADERS;
                 break;
             default:
                 break;

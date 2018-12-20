@@ -50,7 +50,7 @@ public:
     const char *label;
     struct {
         char *string;
-        // TODO: Add ID caching for protocols other than PROXY protocol
+        // TODO: Add ID caching for protocols other than PROXY protocol.
         /// the cached ID of the parsed header or zero
         uint32_t headerId;
 

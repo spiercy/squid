@@ -958,18 +958,18 @@ HttpHeader::getByNameListMember(const char *name, const char *member, const char
 {
     assert(name);
     String header = getByName(name);
-    return getListMember(header, member, separator);
+    return ::getListMember(header, member, separator);
 }
 
 /*
  * returns a the value of the specified list member, if any.
  */
 SBuf
-HttpHeader::getByIdListMember(Http::HdrType id, const char *member, const char separator) const
+HttpHeader::getListMember(Http::HdrType id, const char *member, const char separator) const
 {
     assert(any_registered_header(id));
     String header = getStrOrList(id);
-    return getListMember(header, member, separator);
+    return ::getListMember(header, member, separator);
 }
 
 /* test if a field is present */

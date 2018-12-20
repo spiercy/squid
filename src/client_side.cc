@@ -1790,12 +1790,6 @@ ConnStateData::proxyProtocolError(const char *msg)
     return false;
 }
 
-/// magic octet prefix for PROXY protocol version 1
-static const SBuf Proxy1p0magic("PROXY ", 6);
-
-/// magic octet prefix for PROXY protocol version 2
-static const SBuf Proxy2p0magic("\x0D\x0A\x0D\x0A\x00\x0D\x0A\x51\x55\x49\x54\x0A", 12);
-
 bool
 ConnStateData::parseProxyProtocolMessage()
 {
@@ -1803,9 +1797,9 @@ ConnStateData::parseProxyProtocolMessage()
         proxyProtocolMessage_ = ProxyProtocol::Parse(inBuf);
         assert(bool(proxyProtocolMessage_));
         needProxyProtocolHeader_ = false;
-        if (proxyProtocolMessage_->usable()) {
-            clientConnection->local = proxyProtocolMessage_->dstIpAddr;
-            clientConnection->remote = proxyProtocolMessage_->srcIpAddr;
+        if (proxyProtocolMessage_->hasForwardedAddresses()) {
+            clientConnection->local = proxyProtocolMessage_->destinationAddress;
+            clientConnection->remote = proxyProtocolMessage_->sourceAddress;
             if ((clientConnection->flags & COMM_TRANSPARENT))
                 clientConnection->flags ^= COMM_TRANSPARENT; // prevent TPROXY spoofing of this new IP.
             debugs(33, 5, "PROXY/" << proxyProtocolMessage_->version() << " upgrade: " << clientConnection);

@@ -9,11 +9,8 @@
 #ifndef SQUID_SRC_PARSER_BINARYTOKENIZER_H
 #define SQUID_SRC_PARSER_BINARYTOKENIZER_H
 
+#include "ip/forward.h"
 #include "sbuf/SBuf.h"
-
-namespace Ip {
-    class Address;
-}
 
 namespace Parser
 {
@@ -87,10 +84,10 @@ public:
     SBuf area(uint64_t size, const char *description);
 
     /// interpret the next 4 bytes as a raw in_addr structure
-    Ip::Address inV4(const char *description);
+    Ip::Address inet4(const char *description);
 
     /// interpret the next 16 bytes as a raw in6_addr structure
-    Ip::Address inV6(const char *description);
+    Ip::Address inet6(const char *description);
 
     /*
      * Variable-length arrays (a.k.a. Pascal or prefix strings).
