@@ -61,6 +61,9 @@ class Message: public RefCountable
         /// whether the message relays address information (including LOCAL connections)
         bool hasAddresses() const { return !ignoreAddresses_; }
 
+        /// whether both source and destination addresses have tcpVersion
+        bool hasMatchingTcpVersion(const SBuf &tcpVersion);
+
         /// a mapping between pseudo header names and ids
         static FieldMap PseudoHeaderFields;
 

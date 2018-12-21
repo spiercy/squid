@@ -56,7 +56,7 @@ typedef enum {
 } AddressFamily;
 
 typedef enum {
-    tpUnspec = 0,
+    tpUnspecified = 0,
     tpStream = 0x1,
     tpDgram = 0x2
 } TransportProtocol;

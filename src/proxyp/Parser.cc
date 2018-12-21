@@ -44,7 +44,7 @@ namespace ProxyProtocol {
 }
 
 static void
-v1ExtractIp(::Parser::Tokenizer &tok, Ip::Address &addr)
+v1ExtractIp(Parser::Tokenizer &tok, Ip::Address &addr)
 {
     static const CharacterSet ipChars = CharacterSet("IP Address",".:") + CharacterSet::HEXDIG;
 
@@ -62,9 +62,9 @@ v1ExtractIp(::Parser::Tokenizer &tok, Ip::Address &addr)
 }
 
 static void
-v1ExtractPort(::Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSpace)
+v1ExtractPort(Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSpace)
 {
-    int64_t port;
+    int64_t port = -1;
 
     if (!tok.int64(port, 10, false))
         throw TexcHere("PROXY/1.0 error: malformed port");
@@ -82,12 +82,11 @@ v1ExtractPort(::Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSp
 static ProxyProtocol::Message::Pointer
 ProxyProtocol::One::Parse(SBuf &buf)
 {
-    ::Parser::Tokenizer tok(buf);
+    Parser::Tokenizer tok(buf);
     tok.skip(ProxyProtocol::One::Magic);
 
-
     static const SBuf::size_type maxMessageLength = 107; // including CRLF
-    static const SBuf::size_type maxInteriorLength = maxMessageLength - 2;
+    static const auto maxInteriorLength = maxMessageLength - 2;
     static const auto interiorChars = CharacterSet::CR.complement().rename("non-CR");
     SBuf interior;
 
@@ -95,7 +94,7 @@ ProxyProtocol::One::Parse(SBuf &buf)
                 tok.skip('\r') &&
                 tok.skip('\n'))) {
         if (tok.atEnd())
-            throw ::Parser::BinaryTokenizer::InsufficientInput();
+            throw Parser::BinaryTokenizer::InsufficientInput();
         else if (interior.isEmpty())
             throw TexcHere("Empty PROXY/1.0 message");
         else
@@ -107,13 +106,11 @@ ProxyProtocol::One::Parse(SBuf &buf)
 
     static const SBuf protoUnknown("UNKNOWN");
     static const SBuf protoTcp("TCP");
-    ::Parser::Tokenizer interiorTok(interior);
+    Parser::Tokenizer interiorTok(interior);
 
     if (interiorTok.skip(protoTcp)) {
-
         // skip TCP/IP version number
         static const CharacterSet tcpVersions("TCP-version","46");
-
         SBuf parsedTcpVersion;
 
         if (!interiorTok.prefix(parsedTcpVersion, tcpVersions, 1))
@@ -128,8 +125,7 @@ ProxyProtocol::One::Parse(SBuf &buf)
         v1ExtractIp(interiorTok, message->sourceAddress);
         v1ExtractIp(interiorTok, message->destinationAddress);
 
-        if (!((parsedTcpVersion.cmp("4") == 0 && message->sourceAddress.isIPv4() && message->destinationAddress.isIPv4()) ||
-             (parsedTcpVersion.cmp("6") == 0 && message->sourceAddress.isIPv6() && message->destinationAddress.isIPv6())))
+        if (!message->hasMatchingTcpVersion(parsedTcpVersion))
             throw TexcHere("PROXY/1.0 error: TCP version and IP address family mismatch");
 
         v1ExtractPort(interiorTok, message->sourceAddress, true);
@@ -148,11 +144,11 @@ ProxyProtocol::One::Parse(SBuf &buf)
 static ProxyProtocol::Message::Pointer
 ProxyProtocol::Two::Parse(SBuf &buf)
 {
-    static const SBuf::size_type magicLength = ProxyProtocol::Two::Magic.length();
+    static const auto magicLength = Magic.length();
 
-    ProxyProtocol::Message::Pointer message;
+    Message::Pointer message;
 
-    ::Parser::BinaryTokenizer tokMessage(buf, true);
+    Parser::BinaryTokenizer tokMessage(buf, true);
     tokMessage.skip(magicLength, "magic");
 
     const auto versionAndCommand = tokMessage.uint8("version and command");
@@ -162,7 +158,7 @@ ProxyProtocol::Two::Parse(SBuf &buf)
         throw TexcHere(ToSBuf("PROXY/2.0 error: invalid version ", version));
 
     const auto command = (versionAndCommand & 0x0F);
-    if (command > ProxyProtocol::Two::cmdProxy)
+    if (command > cmdProxy)
         throw TexcHere(ToSBuf("PROXY/2.0 error: invalid command ", command));
 
     debugs(88, 3, "parsed pp2_tlv command " << command);
@@ -170,21 +166,21 @@ ProxyProtocol::Two::Parse(SBuf &buf)
     const auto familyAndProto = tokMessage.uint8("family and proto");
 
     const auto family = (familyAndProto & 0xF0) >> 4;
-    if (family > ProxyProtocol::Two::afUnix)
+    if (family > afUnix)
         throw TexcHere(ToSBuf("PROXY/2.0 error: invalid address family ", family));
 
     const auto proto = (familyAndProto & 0x0F);
-    if (proto > ProxyProtocol::Two::tpDgram)
+    if (proto > tpDgram)
         throw TexcHere(ToSBuf("PROXY/2.0 error: invalid transport protocol ", proto));
 
     // the header length field contains the number following bytes beyond this field
-    auto headerLen = tokMessage.uint16("header length");
+    const auto headerLen = tokMessage.uint16("header length");
 
     const auto header = tokMessage.area(headerLen, "header");
 
-    message = new ProxyProtocol::Message("2.0", command);
+    message = new Message("2.0", command);
 
-    if (proto == ProxyProtocol::Two::tpUnspec || family == ProxyProtocol::Two::afUnspecified)
+    if (proto == tpUnspecified || family == afUnspecified)
         message->ignoreAddresses();
 
     if (!message->hasForwardedAddresses()) {
@@ -194,11 +190,11 @@ ProxyProtocol::Two::Parse(SBuf &buf)
         return message;
     }
 
-    ::Parser::BinaryTokenizer tokHeader(header, "TLV list");
+    Parser::BinaryTokenizer tokHeader(header, "TLV list");
 
     switch (family) {
 
-    case ProxyProtocol::Two::afInet: {
+    case afInet: {
         message->sourceAddress = tokHeader.inet4("src_addr IPv4");
         message->destinationAddress = tokHeader.inet4("dst_addr IPv4");
         message->sourceAddress.port(tokHeader.uint16("src_port"));
@@ -206,7 +202,7 @@ ProxyProtocol::Two::Parse(SBuf &buf)
         break;
     }
 
-    case ProxyProtocol::Two::afInet6: {
+    case afInet6: {
         message->sourceAddress = tokHeader.inet6("src_addr IPv6");
         message->destinationAddress = tokHeader.inet6("dst_addr IPv6");
         message->sourceAddress.port(tokHeader.uint16("src_port"));
@@ -214,7 +210,7 @@ ProxyProtocol::Two::Parse(SBuf &buf)
         break;
     }
 
-    case ProxyProtocol::Two::afUnix: { // TODO: add support
+    case afUnix: { // TODO: add support
         // the address block length is 216 bytes
         tokHeader.skip(216, "unix_addr");
         break;
@@ -239,8 +235,8 @@ ProxyProtocol::Two::Parse(SBuf &buf)
 void
 ProxyProtocol::HeaderNameToHeaderType(const SBuf &headerStr, uint32_t &headerType)
 {
-    const auto it = ProxyProtocol::Message::PseudoHeaderFields.find(headerStr);
-    if (it != ProxyProtocol::Message::PseudoHeaderFields.end()) {
+    const auto it = Message::PseudoHeaderFields.find(headerStr);
+    if (it != Message::PseudoHeaderFields.end()) {
         headerType = it->second;
     } else {
         Parser::Tokenizer ptok(headerStr);
@@ -258,17 +254,17 @@ ProxyProtocol::Message::Pointer
 ProxyProtocol::Parse(SBuf &buf)
 {
     // detect and parse PROXY/2.0 protocol header
-    if (buf.startsWith(ProxyProtocol::Two::Magic)) {
+    if (buf.startsWith(Two::Magic)) {
         return Two::Parse(buf);
     }
 
     // detect and parse PROXY/1.0 protocol header
-    if (buf.startsWith(ProxyProtocol::One::Magic)) {
+    if (buf.startsWith(One::Magic)) {
         return One::Parse(buf);
     }
 
     // detect and terminate other protocols
-    if (buf.length() >= ProxyProtocol::Two::Magic.length()) {
+    if (buf.length() >= Two::Magic.length()) {
         // PROXY/1.0 magic is shorter, so we know that
         // the input does not start with any PROXY magic
         throw TexcHere("PROXY protocol error: invalid magic");
@@ -278,6 +274,6 @@ ProxyProtocol::Parse(SBuf &buf)
     // waiting for more data which may never come
 
     // not enough bytes to parse yet
-    throw ::Parser::BinaryTokenizer::InsufficientInput();
+    throw Parser::BinaryTokenizer::InsufficientInput();
 }
 

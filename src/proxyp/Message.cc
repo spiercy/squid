@@ -85,3 +85,11 @@ ProxyProtocol::Message::getElem(const uint32_t headerType, const char *member, c
     return getListMember(whole, member, sep);
 }
 
+bool
+ProxyProtocol::Message::hasMatchingTcpVersion(const SBuf &tcpVersion)
+{
+    if (tcpVersion.cmp("4") == 0)
+        return sourceAddress.isIPv4() && destinationAddress.isIPv4();
+    return tcpVersion.cmp("6") == 0 && sourceAddress.isIPv6() && destinationAddress.isIPv6();
+}
+
