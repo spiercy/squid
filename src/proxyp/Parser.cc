@@ -13,7 +13,6 @@
 #include "proxyp/Message.h"
 #include "proxyp/Protocol.h"
 #include "sbuf/Stream.h"
-#include "SquidString.h"
 
 #include <algorithm>
 
@@ -46,7 +45,7 @@ namespace ProxyProtocol {
 static void
 v1ExtractIp(Parser::Tokenizer &tok, Ip::Address &addr)
 {
-    static const CharacterSet ipChars = CharacterSet("IP Address",".:") + CharacterSet::HEXDIG;
+    static const auto ipChars = CharacterSet("IP Address",".:") + CharacterSet::HEXDIG;
 
     SBuf ip;
 
