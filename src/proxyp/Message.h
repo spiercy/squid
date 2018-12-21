@@ -16,7 +16,7 @@
 
 namespace ProxyProtocol {
 
-/// parsed PROXY protocol v1 or v2 message
+/// PROXY protocol v1 or v2 message
 class Message: public RefCountable
 {
 public:
@@ -26,7 +26,7 @@ public:
 
     Message(const char *ver, const uint8_t cmd = Two::cmdProxy);
 
-    /// HTTP header-like string representation of the parsed message.
+    /// HTTP header-like string representation of the message.
     /// The returned string has several mandatory lines for the protocol
     /// version, command addresses and ports:
     /// :version: version CRLF
@@ -35,7 +35,7 @@ public:
     /// :dst_addr: dstAddr CRLF
     /// :src_port: srcPort CRLF
     /// :dst_port: dstPort CRLF
-    /// and may also contain several optional lines for each parsed TLV:
+    /// and may also contain several optional lines for each TLV:
     /// type: value CRLF
     SBuf getAll(const char sep) const;
 
@@ -49,7 +49,7 @@ public:
     /// \returns the value of the found pair or an empty string.
     SBuf getElem(const uint32_t headerType, const char *member, const char delimiter) const;
 
-    /// the version of the parsed message
+    /// the message version
     const char *version() const { return version_; }
 
     /// whether source and destination addresses are valid addresses of the original "client" connection
