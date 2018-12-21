@@ -18,28 +18,29 @@ namespace ProxyProtocol {
 namespace Two {
 
 typedef enum {
-    // TLV types defined by the PROXY protocol specs
-    PP2_TYPE_UNKNOWN = 0,
-    PP2_TYPE_ALPN = 0x01,
-    PP2_TYPE_AUTHORITY = 0x02,
-    PP2_TYPE_CRC32C = 0x03,
-    PP2_TYPE_NOOP = 0x04,
-    PP2_TYPE_SSL = 0x20,
-    PP2_SUBTYPE_SSL_VERSION = 0x21,
-    PP2_SUBTYPE_SSL_CN = 0x22,
-    PP2_SUBTYPE_SSL_CIPHER = 0x23,
-    PP2_SUBTYPE_SSL_SIG_ALG = 0x24,
-    PP2_SUBTYPE_SSL_KEY_ALG = 0x25,
-    PP2_TYPE_NETNS = 0x30,
+    htUnknown = 0,
+
+    // The PROXY protocol specs lists these TLV types as already registered.
+    htAlpn = 0x01, // PP2_TYPE_ALPN
+    htAuthority = 0x02, // PP2_TYPE_AUTHORITY
+    htCrc32c = 0x03, // PP2_TYPE_CRC32C
+    htNoop = 0x04, // PP2_TYPE_NOOP
+    htSsl = 0x20, // PP2_TYPE_SSL
+    htSslVersion = 0x21, // PP2_SUBTYPE_SSL_VERSION
+    htSslCn = 0x22, // PP2_SUBTYPE_SSL_CN
+    htSslCipher = 0x23, // PP2_SUBTYPE_SSL_CIPHER
+    htSslSigAlg = 0x24, // PP2_SUBTYPE_SSL_SIG_ALG
+    htSslKeyAlg = 0x25, // PP2_SUBTYPE_SSL_KEY_ALG
+    htNetns = 0x30, // PP2_TYPE_NETNS
 
     // IDs for PROXY protocol message pseudo-headers.
     // Larger than 255 to avoid clashes with possible TLV type IDs.
-    PP2_PSEUDO_VERSION = 0x101,
-    PP2_PSEUDO_COMMAND = 0x102,
-    PP2_PSEUDO_SRC_ADDR = 0x103,
-    PP2_PSEUDO_DST_ADDR = 0x104,
-    PP2_PSEUDO_SRC_PORT = 0x105,
-    PP2_PSEUDO_DST_PORT = 0x106
+    htPseudoVersion = 0x101,
+    htPseudoCommand = 0x102,
+    htPseudoSrcAddr = 0x103,
+    htPseudoDstAddr = 0x104,
+    htPseudoSrcPort = 0x105,
+    htPseudoDstPort = 0x106
 } HeaderType;
 
 /// PROXY protocol 'command' field value
@@ -49,7 +50,7 @@ typedef enum {
 } Command;
 
 typedef enum {
-    /// corresponds to a local connection or an unsupported protocol familily
+    /// corresponds to a local connection or an unsupported protocol family
     afUnspecified = 0,
     afInet = 0x1,
     afInet6 = 0x2,
@@ -84,8 +85,6 @@ class Message: public RefCountable
 
         Message(const char *ver, const uint8_t cmd = Two::cmdProxy);
 
-
-
         /// HTTP header-like string representation of the parsed message.
         /// The returned string has several mandatory lines for the protocol
         /// version, command addresses and ports:
@@ -112,15 +111,16 @@ class Message: public RefCountable
         /// the version of the parsed message
         const char *version() const { return version_; }
 
-        /// whether source and destination addresses are valid
-        /// addresses of the original "client" connection
+        /// whether source and destination addresses are valid addresses of the original "client" connection
         bool hasForwardedAddresses() const { return !localConnection() && hasAddresses(); }
 
+        /// marks the message as lacking address information
         void ignoreAddresses() { ignoreAddresses_ = true; }
 
+        /// whether the message relays address information (including LOCAL connections)
         bool hasAddresses() const { return !ignoreAddresses_; }
 
-        /// a mapping bettween pseudo header names and ids
+        /// a mapping between pseudo header names and ids
         static FieldMap PseudoHeaderFields;
 
         /// source address of the client connection
@@ -139,9 +139,11 @@ class Message: public RefCountable
         /// PROXY protocol version of the message, either "1.0" or "2.0".
         const char *version_;
 
-        /// either v2 command field or, for v1 messages, Two::cmdProxy
+        /// for v2 messages: the command field
+        /// for v1 messages: Two::cmdProxy
         Two::Command command_;
 
+        /// true if the message relays no address information
         bool ignoreAddresses_;
 };
 

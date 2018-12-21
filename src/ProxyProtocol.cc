@@ -45,12 +45,12 @@ namespace ProxyProtocol {
 }
 
 ProxyProtocol::Message::FieldMap ProxyProtocol::Message::PseudoHeaderFields = {
-    { SBuf(":version"), ProxyProtocol::Two::PP2_PSEUDO_VERSION },
-    { SBuf(":command"), ProxyProtocol::Two::PP2_PSEUDO_COMMAND },
-    { SBuf(":src_addr"), ProxyProtocol::Two::PP2_PSEUDO_SRC_ADDR },
-    { SBuf(":dst_addr"), ProxyProtocol::Two::PP2_PSEUDO_DST_ADDR },
-    { SBuf(":src_port"), ProxyProtocol::Two::PP2_PSEUDO_SRC_PORT },
-    { SBuf(":dst_port"), ProxyProtocol::Two::PP2_PSEUDO_DST_PORT }
+    { SBuf(":version"), ProxyProtocol::Two::htPseudoVersion },
+    { SBuf(":command"), ProxyProtocol::Two::htPseudoCommand },
+    { SBuf(":src_addr"), ProxyProtocol::Two::htPseudoSrcAddr },
+    { SBuf(":dst_addr"), ProxyProtocol::Two::htPseudoDstAddr },
+    { SBuf(":src_port"), ProxyProtocol::Two::htPseudoSrcPort },
+    { SBuf(":dst_port"), ProxyProtocol::Two::htPseudoDstPort }
 };
 
 ProxyProtocol::Message::Message(const char *ver, const uint8_t cmd):
@@ -77,20 +77,25 @@ ProxyProtocol::Message::getValues(const uint32_t headerType, const char sep) con
     SBufStream result;
     char ipBuf[MAX_IPSTRLEN];
 
-    if (headerType == Two::PP2_PSEUDO_VERSION) {
+    if (headerType == Two::htPseudoVersion) {
         result << version_;
-    } else if (headerType == Two::PP2_PSEUDO_COMMAND) {
+    } else if (headerType == Two::htPseudoCommand) {
         result << command_;
-    } else if (headerType == Two::PP2_PSEUDO_SRC_ADDR) {
-        auto logAddr = sourceAddress;
-        (void)logAddr.applyClientMask(Config.Addrs.client_netmask);
-        result << logAddr.toStr(ipBuf, sizeof(ipBuf));
-    } else if (headerType == Two::PP2_PSEUDO_DST_ADDR) {
-        result << destinationAddress.toStr(ipBuf, sizeof(ipBuf));
-    } else if (headerType == Two::PP2_PSEUDO_SRC_PORT) {
-        result << sourceAddress.port();
-    } else if (headerType == Two::PP2_PSEUDO_DST_PORT) {
-        result << destinationAddress.port();
+    } else if (headerType == Two::htPseudoSrcAddr) {
+        if (!ignoreAddresses_) {
+            auto logAddr = sourceAddress;
+            (void)logAddr.applyClientMask(Config.Addrs.client_netmask);
+            result << logAddr.toStr(ipBuf, sizeof(ipBuf));
+        }
+    } else if (headerType == Two::htPseudoDstAddr) {
+        if (!ignoreAddresses_)
+            result << destinationAddress.toStr(ipBuf, sizeof(ipBuf));
+    } else if (headerType == Two::htPseudoSrcPort) {
+        if (!ignoreAddresses_)
+            result << sourceAddress.port();
+    } else if (headerType == Two::htPseudoDstPort) {
+        if (!ignoreAddresses_)
+            result << destinationAddress.port();
     } else {
         for (const auto &m: tlvs) {
             if (m.type == headerType) {
