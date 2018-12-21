@@ -69,7 +69,7 @@ ProxyProtocol::Message::getValues(const uint32_t headerType, const char sep) con
     } else {
         for (const auto &m: tlvs) {
             if (m.type == headerType) {
-                if (result.tellp())
+                if (!result.buf().isEmpty())
                     result << sep;
                 result << m.value;
             }
