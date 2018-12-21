@@ -86,7 +86,7 @@ ProxyProtocol::Message::getElem(const uint32_t headerType, const char *member, c
 }
 
 bool
-ProxyProtocol::Message::hasMatchingTcpVersion(const SBuf &tcpVersion)
+ProxyProtocol::Message::hasMatchingTcpVersion(const SBuf &tcpVersion) const
 {
     if (tcpVersion.cmp("4") == 0)
         return sourceAddress.isIPv4() && destinationAddress.isIPv4();

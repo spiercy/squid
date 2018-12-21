@@ -82,14 +82,14 @@ static ProxyProtocol::Message::Pointer
 ProxyProtocol::One::Parse(SBuf &buf)
 {
     Parser::Tokenizer tok(buf);
-    tok.skip(ProxyProtocol::One::Magic);
+    tok.skip(Magic);
 
     static const SBuf::size_type maxMessageLength = 107; // including CRLF
     static const auto maxInteriorLength = maxMessageLength - 2;
     static const auto interiorChars = CharacterSet::CR.complement().rename("non-CR");
     SBuf interior;
 
-    if (!(tok.prefix(interior, interiorChars, maxInteriorLength - ProxyProtocol::One::Magic.length()) &&
+    if (!(tok.prefix(interior, interiorChars, maxInteriorLength - Magic.length()) &&
             tok.skip('\r') &&
             tok.skip('\n'))) {
         if (tok.atEnd())
@@ -99,23 +99,20 @@ ProxyProtocol::One::Parse(SBuf &buf)
         else
             throw TexcHere(ToSBuf("PROXY/1.0 error: missing CRLF in the first ", maxMessageLength, " bytes"));
     }
+    // grabbed all header bytes
 
-    // found valid header
-    ProxyProtocol::Message::Pointer message = new ProxyProtocol::Message("1.0");
+    MessagePointer message = new Message("1.0");
 
     static const SBuf protoUnknown("UNKNOWN");
     static const SBuf protoTcp("TCP");
     Parser::Tokenizer interiorTok(interior);
 
     if (interiorTok.skip(protoTcp)) {
-        // skip TCP/IP version number
         static const CharacterSet tcpVersions("TCP-version","46");
         SBuf parsedTcpVersion;
 
         if (!interiorTok.prefix(parsedTcpVersion, tcpVersions, 1))
             throw TexcHere("PROXY/1.0 error: missing or invalid TCP version");
-
-        //if (!interiorTok.skipOne(tcpVersions))
 
         if (!interiorTok.skip(' '))
             throw TexcHere("PROXY/1.0 error: missing SP after the TCP version");
@@ -131,7 +128,6 @@ ProxyProtocol::One::Parse(SBuf &buf)
         v1ExtractPort(interiorTok, message->destinationAddress, false);
 
     } else if (interiorTok.skip(protoUnknown)) {
-        // discard the rest of the line
         message->ignoreAddresses();
     } else
         throw TexcHere("PROXY/1.0 error: invalid INET protocol or family");
@@ -143,12 +139,10 @@ ProxyProtocol::One::Parse(SBuf &buf)
 static ProxyProtocol::Message::Pointer
 ProxyProtocol::Two::Parse(SBuf &buf)
 {
-    static const auto magicLength = Magic.length();
-
-    Message::Pointer message;
+    MessagePointer message;
 
     Parser::BinaryTokenizer tokMessage(buf, true);
-    tokMessage.skip(magicLength, "magic");
+    tokMessage.skip(Magic.length(), "magic");
 
     const auto versionAndCommand = tokMessage.uint8("version and command");
 
@@ -159,8 +153,6 @@ ProxyProtocol::Two::Parse(SBuf &buf)
     const auto command = (versionAndCommand & 0x0F);
     if (command > cmdProxy)
         throw TexcHere(ToSBuf("PROXY/2.0 error: invalid command ", command));
-
-    debugs(88, 3, "parsed pp2_tlv command " << command);
 
     const auto familyAndProto = tokMessage.uint8("family and proto");
 
