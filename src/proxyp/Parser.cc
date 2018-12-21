@@ -27,19 +27,19 @@
 #endif
 
 namespace ProxyProtocol {
-    namespace One {
-        /// magic octet prefix for PROXY protocol version 1
-        static const SBuf Magic("PROXY ", 6);
-        /// extracts PROXY protocol v1 message from the given buffer
-        static Message::Pointer Parse(SBuf &buf);
-    }
+namespace One {
+/// magic octet prefix for PROXY protocol version 1
+static const SBuf Magic("PROXY ", 6);
+/// extracts PROXY protocol v1 message from the given buffer
+static Message::Pointer Parse(SBuf &buf);
+}
 
-    namespace Two {
-        /// magic octet prefix for PROXY protocol version 2
-        static const SBuf Magic("\x0D\x0A\x0D\x0A\x00\x0D\x0A\x51\x55\x49\x54\x0A", 12);
-        /// extracts PROXY protocol v2 message from the given buffer
-        static Message::Pointer Parse(SBuf &buf);
-    }
+namespace Two {
+/// magic octet prefix for PROXY protocol version 2
+static const SBuf Magic("\x0D\x0A\x0D\x0A\x00\x0D\x0A\x51\x55\x49\x54\x0A", 12);
+/// extracts PROXY protocol v2 message from the given buffer
+static Message::Pointer Parse(SBuf &buf);
+}
 }
 
 static void
@@ -90,8 +90,8 @@ ProxyProtocol::One::Parse(SBuf &buf)
     SBuf interior;
 
     if (!(tok.prefix(interior, interiorChars, maxInteriorLength - ProxyProtocol::One::Magic.length()) &&
-                tok.skip('\r') &&
-                tok.skip('\n'))) {
+            tok.skip('\r') &&
+            tok.skip('\n'))) {
         if (tok.atEnd())
             throw Parser::BinaryTokenizer::InsufficientInput();
         else if (interior.isEmpty())
@@ -244,7 +244,7 @@ ProxyProtocol::HeaderNameToHeaderType(const SBuf &headerStr, uint32_t &headerTyp
             throw TexcHere(ToSBuf("Invalid PROXY protocol TLV type. Expecting a positive decimal integer but got ", headerStr));
         if (tlvType > std::numeric_limits<uint8_t>::max())
             throw TexcHere(ToSBuf("Invalid PROXY protocol TLV type. Expecting an integer less than ",
-                       std::numeric_limits<uint8_t>::max(), " but got ", tlvType));
+                                  std::numeric_limits<uint8_t>::max(), " but got ", tlvType));
         headerType = static_cast<uint32_t>(tlvType);
     }
 }

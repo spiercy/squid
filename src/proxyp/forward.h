@@ -29,6 +29,5 @@ void HeaderNameToHeaderType(const SBuf &headerStr, uint32_t &headerType);
 
 }
 
-
 #endif /* _SQUID_SRC_PROXYP_FORWARD_H */
 

@@ -24,9 +24,9 @@ ProxyProtocol::Message::FieldMap ProxyProtocol::Message::PseudoHeaderFields = {
 };
 
 ProxyProtocol::Message::Message(const char *ver, const uint8_t cmd):
-                               version_(ver),
-                               command_(Two::Command(cmd)),
-                               ignoreAddresses_(false)
+    version_(ver),
+    command_(Two::Command(cmd)),
+    ignoreAddresses_(false)
 {}
 
 SBuf

@@ -64,11 +64,11 @@ typedef enum {
 /// a single Type-Length-Value (TLV) block from PROXY protocol specs
 class Tlv
 {
-    public:
-        Tlv(const uint8_t t, const SBuf &val) : value(val), type(t) {}
+public:
+    Tlv(const uint8_t t, const SBuf &val) : value(val), type(t) {}
 
-        SBuf value;
-        uint8_t type;
+    SBuf value;
+    uint8_t type;
 };
 
 } // namespace Two
