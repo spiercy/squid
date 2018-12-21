@@ -3938,6 +3938,3 @@ operator <<(std::ostream &os, const ConnStateData::PinnedIdleContext &pic)
     return os << pic.connection << ", request=" << pic.request;
 }
 
-ProxyProtocol::MessagePointer
-ConnStateData::proxyProtocolMessage() { return proxyProtocolMessage_; }
-

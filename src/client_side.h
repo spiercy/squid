@@ -320,7 +320,7 @@ public:
     NotePairs::Pointer notes();
     bool hasNotes() const { return bool(theNotes) && !theNotes->empty(); }
 
-    ProxyProtocol::MessagePointer proxyProtocolMessage();
+    const ProxyProtocol::MessagePointer &proxyProtocolMessage() { return proxyProtocolMessage_; }
 
 protected:
     void startDechunkingRequest();
