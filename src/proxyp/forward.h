@@ -24,6 +24,9 @@ typedef RefCount<Message> MessagePointer;
 /// \returns the parsed message or nil pointer if more data is needed
 MessagePointer Parse(SBuf &);
 
+/// Parses PROXY protocol header type from the buffer.
+void HeaderNameToHeaderType(const SBuf &headerStr, uint32_t &headerType);
+
 }
 
 

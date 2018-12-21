@@ -12,7 +12,7 @@
 #include "format/TokenTableEntry.h"
 #include "globals.h"
 #include "parser/Tokenizer.h"
-#include "proxyp/ProxyProtocol.h"
+#include "proxyp/forward.h"
 #include "SquidConfig.h"
 #include "Store.h"
 
