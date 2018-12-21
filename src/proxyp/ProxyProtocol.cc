@@ -9,7 +9,7 @@
 #include "squid.h"
 #include "parser/BinaryTokenizer.h"
 #include "parser/Tokenizer.h"
-#include "ProxyProtocol.h"
+#include "proxyp/ProxyProtocol.h"
 #include "sbuf/StringConvert.h"
 #include "sbuf/Stream.h"
 #include "SquidConfig.h"

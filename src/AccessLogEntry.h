@@ -21,6 +21,7 @@
 #include "LogTags.h"
 #include "MessageSizes.h"
 #include "Notes.h"
+#include "proxyp/forward.h"
 #include "sbuf/SBuf.h"
 #if ICAP_CLIENT
 #include "adaptation/icap/Elements.h"
@@ -34,11 +35,6 @@
 class HttpReply;
 class HttpRequest;
 class CustomLog;
-
-namespace ProxyProtocol {
-    class Message;
-    typedef RefCount<ProxyProtocol::Message> MessagePointer;
-}
 
 class AccessLogEntry: public RefCountable
 {

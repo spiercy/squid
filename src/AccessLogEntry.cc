@@ -10,7 +10,7 @@
 #include "AccessLogEntry.h"
 #include "HttpReply.h"
 #include "HttpRequest.h"
-#include "ProxyProtocol.h"
+#include "proxyp/ProxyProtocol.h"
 #include "SquidConfig.h"
 #include "ssl/support.h"
 

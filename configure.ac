@@ -3849,6 +3849,7 @@ AC_CONFIG_FILES([
 	src/mem/Makefile
 	src/mgr/Makefile
 	src/parser/Makefile
+	src/proxyp/Makefile
 	src/repl/Makefile
 	src/sbuf/Makefile
 	src/security/Makefile

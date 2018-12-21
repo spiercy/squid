@@ -18,6 +18,7 @@
 #include "http/forward.h"
 #include "HttpControlMsg.h"
 #include "ipc/FdNotes.h"
+#include "proxyp/forward.h"
 #include "sbuf/SBuf.h"
 #include "servers/Server.h"
 #if USE_AUTH
@@ -32,7 +33,6 @@
 #endif
 
 #include <iosfwd>
-#include "ProxyProtocol.h"
 
 class ClientHttpRequest;
 class HttpHdrRangeSpec;
@@ -320,7 +320,7 @@ public:
     NotePairs::Pointer notes();
     bool hasNotes() const { return bool(theNotes) && !theNotes->empty(); }
 
-    ProxyProtocol::Message::Pointer proxyProtocolMessage() { return proxyProtocolMessage_; }
+    ProxyProtocol::MessagePointer proxyProtocolMessage();
 
 protected:
     void startDechunkingRequest();
@@ -388,7 +388,7 @@ private:
     bool needProxyProtocolHeader_;
 
     /// the parsed PROXY protocol message
-    ProxyProtocol::Message::Pointer proxyProtocolMessage_;
+    ProxyProtocol::MessagePointer proxyProtocolMessage_;
 
 #if USE_AUTH
     /// some user details that can be used to perform authentication on this connection

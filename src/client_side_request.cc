@@ -48,6 +48,7 @@
 #include "MemObject.h"
 #include "Parsing.h"
 #include "profiler/Profiler.h"
+#include "proxyp/ProxyProtocol.h"
 #include "redirect.h"
 #include "rfc1738.h"
 #include "SquidConfig.h"

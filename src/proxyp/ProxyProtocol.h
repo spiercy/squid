@@ -11,6 +11,7 @@
 
 #include "base/RefCount.h"
 #include "ip/Address.h"
+#include "proxyp/forward.h"
 #include "sbuf/SBuf.h"
 
 // https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt
@@ -149,12 +150,6 @@ class Message: public RefCountable
 
 /// Parses PROXY protocol header type from the buffer.
 void HeaderNameToHeaderType(const SBuf &headerStr, uint32_t &headerType);
-
-/// Parses a PROXY protocol message from the buffer, determining
-/// the protocol version (v1 or v2) by the signature.
-/// Throws on error.
-/// \returns the parsed message or nil pointer if more data is needed
-Message::Pointer Parse(SBuf &);
 
 } // namespace ProxyProtocol
 

@@ -103,6 +103,7 @@
 #include "mime_header.h"
 #include "parser/Tokenizer.h"
 #include "profiler/Profiler.h"
+#include "proxyp/ProxyProtocol.h"
 #include "security/NegotiationHistory.h"
 #include "servers/forward.h"
 #include "SquidConfig.h"
@@ -3935,4 +3936,8 @@ operator <<(std::ostream &os, const ConnStateData::PinnedIdleContext &pic)
 {
     return os << pic.connection << ", request=" << pic.request;
 }
+
+
+ProxyProtocol::MessagePointer
+ConnStateData::proxyProtocolMessage() { return proxyProtocolMessage_; }
 
