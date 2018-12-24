@@ -209,19 +209,6 @@ Parser::BinaryTokenizer::skip(uint64_t size, const char *description)
     skipped(size, description);
 }
 
-bool
-Parser::BinaryTokenizer::skip(const SBuf &tokenToSkip, const char *description)
-{
-    if (data_.startsWith(tokenToSkip)) {
-        const auto size = tokenToSkip.length();
-        parsed_ += size;
-        skipped(size, description);
-        return true;
-    }
-    debugs(24, 7, "no match, not skipping '" << tokenToSkip << '\'');
-    return false;
-}
-
 /*
  * BinaryTokenizer::pstringN() implementations below reduce debugging noise by
  * not parsing empty areas and not summarizing parsing context.success().

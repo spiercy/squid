@@ -100,10 +100,6 @@ public:
     /// ignore the next size bytes
     void skip(uint64_t size, const char *description);
 
-    /// skips a given character sequence
-    /// \returns true if the characer sequence was found and skipped
-    bool skip(const SBuf &tokenToSkip, const char *description);
-
     /// the number of already parsed bytes
     uint64_t parsed() const { return parsed_; }
 
