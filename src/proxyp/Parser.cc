@@ -31,14 +31,14 @@ namespace One {
 /// magic octet prefix for PROXY protocol version 1
 static const SBuf Magic("PROXY ", 6);
 /// extracts PROXY protocol v1 message from the given buffer
-static Message::Pointer Parse(SBuf &buf);
+static Parsed Parse(const SBuf &buf);
 }
 
 namespace Two {
 /// magic octet prefix for PROXY protocol version 2
 static const SBuf Magic("\x0D\x0A\x0D\x0A\x00\x0D\x0A\x51\x55\x49\x54\x0A", 12);
 /// extracts PROXY protocol v2 message from the given buffer
-static Message::Pointer Parse(SBuf &buf);
+static Parsed Parse(const SBuf &buf);
 }
 }
 
@@ -78,11 +78,10 @@ v1ExtractPort(Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSpac
 }
 
 /// parses PROXY protocol v1 message from the buffer
-static ProxyProtocol::Message::Pointer
-ProxyProtocol::One::Parse(SBuf &buf)
+static ProxyProtocol::Parsed
+ProxyProtocol::One::Parse(const SBuf &buf)
 {
     Parser::Tokenizer tok(buf);
-    tok.skip(Magic);
 
     static const SBuf::size_type maxMessageLength = 107; // including CRLF
     static const auto maxInteriorLength = maxMessageLength - 2;
@@ -97,7 +96,7 @@ ProxyProtocol::One::Parse(SBuf &buf)
         else if (interior.isEmpty())
             throw TexcHere("Empty PROXY/1.0 message");
         else
-            throw TexcHere(ToSBuf("PROXY/1.0 error: missing CRLF in the first ", maxMessageLength, " bytes"));
+            throw TexcHere("PROXY/1.0 error: missing CRLF in the message");
     }
     // grabbed all header bytes
 
@@ -132,17 +131,15 @@ ProxyProtocol::One::Parse(SBuf &buf)
     } else
         throw TexcHere("PROXY/1.0 error: invalid INET protocol or family");
 
-    buf.consume(tok.parsedSize());
-    return message;
+    return Parsed(message, tok.parsedSize());
 }
 
-static ProxyProtocol::Message::Pointer
-ProxyProtocol::Two::Parse(SBuf &buf)
+static ProxyProtocol::Parsed
+ProxyProtocol::Two::Parse(const SBuf &buf)
 {
     MessagePointer message;
 
     Parser::BinaryTokenizer tokMessage(buf, true);
-    tokMessage.skip(Magic.length(), "magic");
 
     const auto versionAndCommand = tokMessage.uint8("version and command");
 
@@ -177,8 +174,7 @@ ProxyProtocol::Two::Parse(SBuf &buf)
     if (!message->hasForwardedAddresses()) {
         // TODO: parse TLVs for local connections
         // discard the whole PROXY protocol message
-        buf.consume(tokMessage.parsed());
-        return message;
+        return Parsed(message, tokMessage.parsed());
     }
 
     Parser::BinaryTokenizer tokHeader(header, "TLV list");
@@ -219,8 +215,7 @@ ProxyProtocol::Two::Parse(SBuf &buf)
         message->tlvs.emplace_back(type, tokHeader.pstring16("pp2_tlv length and value"));
     }
 
-    buf.consume(tokMessage.parsed());
-    return message;
+    return Parsed(message, tokMessage.parsed());
 }
 
 void
@@ -241,17 +236,19 @@ ProxyProtocol::HeaderNameToHeaderType(const SBuf &headerStr, uint32_t &headerTyp
     }
 }
 
-ProxyProtocol::Message::Pointer
-ProxyProtocol::Parse(SBuf &buf)
+ProxyProtocol::Parsed
+ProxyProtocol::Parse(const SBuf &buf)
 {
-    // detect and parse PROXY/2.0 protocol header
-    if (buf.startsWith(Two::Magic)) {
-        return Two::Parse(buf);
-    }
+    Parser::Tokenizer magicTok(buf);
 
-    // detect and parse PROXY/1.0 protocol header
-    if (buf.startsWith(One::Magic)) {
-        return One::Parse(buf);
+    const auto parser =
+        magicTok.skip(Two::Magic) ? &Two::Parse :
+        magicTok.skip(One::Magic) ? &One::Parse :
+        nullptr;
+
+    if (parser) {
+        const auto parsed = (parser)(magicTok.remaining());
+        return Parsed(parsed.message, magicTok.parsedSize() + parsed.size);
     }
 
     // detect and terminate other protocols

@@ -15,6 +15,7 @@ namespace ProxyProtocol
 {
 
 class Message;
+class Parsed;
 
 typedef RefCount<Message> MessagePointer;
 
@@ -22,7 +23,7 @@ typedef RefCount<Message> MessagePointer;
 /// the protocol version (v1 or v2) by the signature.
 /// Throws on error.
 /// \returns the parsed message or nil pointer if more data is needed
-MessagePointer Parse(SBuf &);
+Parsed Parse(const SBuf &);
 
 /// Parses PROXY protocol header type from the buffer.
 void HeaderNameToHeaderType(const SBuf &headerStr, uint32_t &headerType);

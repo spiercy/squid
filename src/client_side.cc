@@ -1796,8 +1796,10 @@ bool
 ConnStateData::parseProxyProtocolMessage()
 {
     try {
-        proxyProtocolMessage_ = ProxyProtocol::Parse(inBuf);
+        const auto parsed = ProxyProtocol::Parse(inBuf);
+        proxyProtocolMessage_ = parsed.message;
         assert(bool(proxyProtocolMessage_));
+        inBuf.consume(parsed.size);
         needProxyProtocolHeader_ = false;
         if (proxyProtocolMessage_->hasForwardedAddresses()) {
             clientConnection->local = proxyProtocolMessage_->destinationAddress;

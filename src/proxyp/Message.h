@@ -91,6 +91,18 @@ private:
     bool ignoreAddresses_;
 };
 
+/// successful parsing result
+class Parsed
+{
+public:
+    Parsed(const Message::Pointer &parsedMessage, size_t parsedSize):
+        message(parsedMessage),
+        size(parsedSize) {}
+
+    Message::Pointer message; ///< successfully parsed message; not nil
+    size_t size; ///< raw bytes parsed, including any magic/delimiters
+};
+
 } // namespace ProxyProtocol
 
 #endif
