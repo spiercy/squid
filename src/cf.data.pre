@@ -4833,7 +4833,7 @@ DOC_START
 
 				Supports the same field and element reporting/extraction logic
 				as %http::>h. For configuration and reporting purposes, Squid
-				maps each PROXY TLV to an HTTP header field: The TLV type
+				maps each PROXY TLV to an HTTP header field: the TLV type
 				(configured as a decimal integer) is the field name, and the
 				TLV value is the field value. All TLVs of "LOCAL" connections
 				(in PROXY protocol terminology) are currently skipped/ignored.
