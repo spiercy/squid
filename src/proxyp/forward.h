@@ -21,8 +21,8 @@ typedef RefCount<Message> MessagePointer;
 
 /// Parses a PROXY protocol message from the buffer, determining
 /// the protocol version (v1 or v2) by the signature.
-/// Throws on error.
-/// \returns the parsed message or nil pointer if more data is needed
+/// Throws on error or insufficient input.
+/// \returns the successfully parsed message
 Parsed Parse(const SBuf &);
 
 /// Parses PROXY protocol header type from the buffer.
