@@ -95,9 +95,9 @@ private:
 class Parsed
 {
 public:
-    Parsed(const Message::Pointer &parsedMessage, size_t parsedSize):
+    Parsed(const Message::Pointer &parsedMessage, const size_t parsedSize):
         message(parsedMessage),
-        size(parsedSize) {}
+        size(parsedSize) { assert(bool(parsedMessage)); }
 
     Message::Pointer message; ///< successfully parsed message; not nil
     size_t size; ///< raw bytes parsed, including any magic/delimiters

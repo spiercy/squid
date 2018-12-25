@@ -140,8 +140,6 @@ ProxyProtocol::One::Parse(const SBuf &buf)
 static ProxyProtocol::Parsed
 ProxyProtocol::Two::Parse(const SBuf &buf)
 {
-    MessagePointer message;
-
     Parser::BinaryTokenizer tokMessage(buf, true);
 
     const auto versionAndCommand = tokMessage.uint8("version and command");
@@ -169,7 +167,7 @@ ProxyProtocol::Two::Parse(const SBuf &buf)
 
     const auto header = tokMessage.area(headerLen, "header");
 
-    message = new Message("2.0", command);
+    MessagePointer message = new Message("2.0", command);
 
     if (proto == tpUnspecified || family == afUnspecified)
         message->ignoreAddresses();
