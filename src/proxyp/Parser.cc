@@ -32,6 +32,9 @@ namespace One {
 static const SBuf Magic("PROXY", 5);
 /// extracts PROXY protocol v1 message from the given buffer
 static Parsed Parse(const SBuf &buf);
+
+static void extractIp(Parser::Tokenizer &tok, Ip::Address &addr);
+static void extractPort(Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSpace);
 }
 
 namespace Two {
@@ -43,7 +46,7 @@ static Parsed Parse(const SBuf &buf);
 }
 
 static void
-v1ExtractIp(Parser::Tokenizer &tok, Ip::Address &addr)
+ProxyProtocol::One::extractIp(Parser::Tokenizer &tok, Ip::Address &addr)
 {
     static const auto ipChars = CharacterSet("IP Address",".:") + CharacterSet::HEXDIG;
 
@@ -61,7 +64,7 @@ v1ExtractIp(Parser::Tokenizer &tok, Ip::Address &addr)
 }
 
 static void
-v1ExtractPort(Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSpace)
+ProxyProtocol::One::extractPort(Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSpace)
 {
     int64_t port = -1;
 
@@ -120,14 +123,14 @@ ProxyProtocol::One::Parse(const SBuf &buf)
             throw TexcHere("PROXY/1.0 error: missing SP after the TCP version");
 
         // parse: src-IP SP dst-IP SP src-port SP dst-port
-        v1ExtractIp(interiorTok, message->sourceAddress);
-        v1ExtractIp(interiorTok, message->destinationAddress);
+        extractIp(interiorTok, message->sourceAddress);
+        extractIp(interiorTok, message->destinationAddress);
 
         if (!message->hasMatchingTcpVersion(parsedTcpVersion))
             throw TexcHere("PROXY/1.0 error: TCP version and IP address family mismatch");
 
-        v1ExtractPort(interiorTok, message->sourceAddress, true);
-        v1ExtractPort(interiorTok, message->destinationAddress, false);
+        extractPort(interiorTok, message->sourceAddress, true);
+        extractPort(interiorTok, message->destinationAddress, false);
 
     } else if (interiorTok.skip(protoUnknown)) {
         message->ignoreAddresses();
