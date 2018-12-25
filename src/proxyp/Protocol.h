@@ -6,8 +6,8 @@
  * Please see the COPYING and CONTRIBUTORS files for details.
  */
 
-#ifndef SQUID_PROXYPROTOCOL_H
-#define SQUID_PROXYPROTOCOL_H
+#ifndef SQUID_PROXYP_ROTOCOL_H
+#define SQUID_PROXYP_ROTOCOL_H
 
 #include "sbuf/SBuf.h"
 
