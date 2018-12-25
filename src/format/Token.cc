@@ -13,6 +13,7 @@
 #include "globals.h"
 #include "parser/Tokenizer.h"
 #include "proxyp/forward.h"
+#include "sbuf/Stream.h"
 #include "SquidConfig.h"
 #include "Store.h"
 
@@ -492,8 +493,8 @@ Format::Token::parse(const char *def, Quoting *quoting)
             char *header = data.string;
             // Http header field names cannot have ':' while
             // some PROXY protocol related pseudo headers may start with it.
-            const bool colonStarted = type == LFT_PROXY_PROTOCOL_RECEIVED_HEADER && strlen(header) > 1 && header[0] == ':';
-            char *cp = strchr(colonStarted ? header + 1 : header, ':');
+            const auto proxyPseudoHeader = type == LFT_PROXY_PROTOCOL_RECEIVED_HEADER && header[0] == ':';
+            char *cp = strchr(proxyPseudoHeader ? header+1 : header, ':');
 
             if (cp) {
                 *cp = '\0';
@@ -541,8 +542,11 @@ Format::Token::parse(const char *def, Quoting *quoting)
                 }
             }
 
-            if (type == LFT_PROXY_PROTOCOL_RECEIVED_HEADER || type == LFT_PROXY_PROTOCOL_RECEIVED_HEADER_ELEM)
-                ProxyProtocol::HeaderNameToHeaderType(SBuf(header), data.headerId);
+            if (*header == '\0')
+                throw TexcHere(ToSBuf("Can't parse configuration token: '", def, "': missing header name"));
+
+            if (proxyPseudoHeader)
+                data.headerId = ProxyProtocol::HeaderNameToHeaderType(SBuf(header));
 
             data.header.header = header;
         } else {

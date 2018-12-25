@@ -26,7 +26,7 @@ typedef RefCount<Message> MessagePointer;
 Parsed Parse(const SBuf &);
 
 /// Parses PROXY protocol header type from the buffer.
-void HeaderNameToHeaderType(const SBuf &headerStr, uint32_t &headerType);
+uint32_t HeaderNameToHeaderType(const SBuf &headerStr);
 
 }
 
