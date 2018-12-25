@@ -29,7 +29,7 @@
 namespace ProxyProtocol {
 namespace One {
 /// magic octet prefix for PROXY protocol version 1
-static const SBuf Magic("PROXY ", 6);
+static const SBuf Magic("PROXY", 5);
 /// extracts PROXY protocol v1 message from the given buffer
 static Parsed Parse(const SBuf &buf);
 }
@@ -84,11 +84,11 @@ ProxyProtocol::One::Parse(const SBuf &buf)
     Parser::Tokenizer tok(buf);
 
     static const SBuf::size_type maxMessageLength = 107; // including CRLF
-    static const auto maxInteriorLength = maxMessageLength - 2;
+    static const auto maxInteriorLength = maxMessageLength - Magic.length() - 2;
     static const auto interiorChars = CharacterSet::CR.complement().rename("non-CR");
     SBuf interior;
 
-    if (!(tok.prefix(interior, interiorChars, maxInteriorLength - Magic.length()) &&
+    if (!(tok.prefix(interior, interiorChars, maxInteriorLength) &&
             tok.skip('\r') &&
             tok.skip('\n'))) {
         if (tok.atEnd())
@@ -105,6 +105,9 @@ ProxyProtocol::One::Parse(const SBuf &buf)
     static const SBuf protoUnknown("UNKNOWN");
     static const SBuf protoTcp("TCP");
     Parser::Tokenizer interiorTok(interior);
+
+    if (!interiorTok.skip(' '))
+        throw TexcHere("PROXY/1.0 error: missing SP after the magic sequence");
 
     if (interiorTok.skip(protoTcp)) {
         static const CharacterSet tcpVersions("TCP-version","46");
