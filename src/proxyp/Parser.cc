@@ -94,7 +94,7 @@ ProxyProtocol::One::Parse(const SBuf &buf)
         if (tok.atEnd())
             throw Parser::BinaryTokenizer::InsufficientInput();
         else if (interior.isEmpty())
-            throw TexcHere("Empty PROXY/1.0 message");
+            throw TexcHere("PROXY/1.0 error: the message block is empty");
         else
             throw TexcHere("PROXY/1.0 error: missing CRLF in the message");
     }
@@ -218,22 +218,21 @@ ProxyProtocol::Two::Parse(const SBuf &buf)
     return Parsed(message, tokMessage.parsed());
 }
 
-void
-ProxyProtocol::HeaderNameToHeaderType(const SBuf &headerStr, uint32_t &headerType)
+uint32_t
+ProxyProtocol::HeaderNameToHeaderType(const SBuf &headerStr)
 {
     const auto it = Message::PseudoHeaderFields.find(headerStr);
-    if (it != Message::PseudoHeaderFields.end()) {
-        headerType = it->second;
-    } else {
-        Parser::Tokenizer ptok(headerStr);
-        int64_t tlvType = 0;
-        if (!ptok.int64(tlvType, 10, false))
-            throw TexcHere(ToSBuf("Invalid PROXY protocol TLV type. Expecting a positive decimal integer but got ", headerStr));
-        if (tlvType > std::numeric_limits<uint8_t>::max())
-            throw TexcHere(ToSBuf("Invalid PROXY protocol TLV type. Expecting an integer less than ",
-                                  std::numeric_limits<uint8_t>::max(), " but got ", tlvType));
-        headerType = static_cast<uint32_t>(tlvType);
-    }
+    if (it != Message::PseudoHeaderFields.end())
+        return it->second;
+
+    Parser::Tokenizer ptok(headerStr);
+    int64_t tlvType = 0;
+    if (!ptok.int64(tlvType, 10, false))
+        throw TexcHere(ToSBuf("Invalid PROXY protocol TLV type. Expecting a positive decimal integer but got ", headerStr));
+    if (tlvType > std::numeric_limits<uint8_t>::max())
+        throw TexcHere(ToSBuf("Invalid PROXY protocol TLV type. Expecting an integer less than ",
+                              std::numeric_limits<uint8_t>::max(), " but got ", tlvType));
+    return static_cast<uint32_t>(tlvType);
 }
 
 ProxyProtocol::Parsed
