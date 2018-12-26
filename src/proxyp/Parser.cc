@@ -218,16 +218,16 @@ ProxyProtocol::Two::Parse(const SBuf &buf)
 
     MessagePointer message = new Message("2.0", command);
 
-    if (proto == tpUnspecified || family == afUnspecified)
+    if (proto == tpUnspecified || family == afUnspecified) {
         message->ignoreAddresses();
-
-    Parser::BinaryTokenizer tokHeader(header);
-
-    // TODO: parse TLVs for local connections
-    if (message->hasForwardedAddresses()) {
+        // discard address block and TLVs
+    } else {
+        Parser::BinaryTokenizer tokHeader(header);
         parseAddresses(family, tokHeader, message);
-        parseTLVs(tokHeader, message);
-    } // else discard the whole PROXY protocol message
+        // TODO: parse TLVs for local connections
+        if (message->hasForwardedAddresses())
+            parseTLVs(tokHeader, message);
+    }
 
     return Parsed(message, tokMessage.parsed());
 }
