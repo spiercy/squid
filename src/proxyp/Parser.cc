@@ -42,10 +42,13 @@ namespace Two {
 static const SBuf Magic("\x0D\x0A\x0D\x0A\x00\x0D\x0A\x51\x55\x49\x54\x0A", 12);
 /// extracts PROXY protocol v2 message from the given buffer
 static Parsed Parse(const SBuf &buf);
+
+static void parseAddresses(const uint8_t family, Parser::BinaryTokenizer &tok, MessagePointer &message);
+static void parseTLVs(Parser::BinaryTokenizer &tok, MessagePointer &message);
 }
 }
 
-static void
+void
 ProxyProtocol::One::extractIp(Parser::Tokenizer &tok, Ip::Address &addr)
 {
     static const auto ipChars = CharacterSet("IP Address",".:") + CharacterSet::HEXDIG;
@@ -63,7 +66,7 @@ ProxyProtocol::One::extractIp(Parser::Tokenizer &tok, Ip::Address &addr)
 
 }
 
-static void
+void
 ProxyProtocol::One::extractPort(Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSpace)
 {
     int64_t port = -1;
@@ -81,7 +84,7 @@ ProxyProtocol::One::extractPort(Parser::Tokenizer &tok, Ip::Address &addr, const
 }
 
 /// parses PROXY protocol v1 message from the buffer
-static ProxyProtocol::Parsed
+ProxyProtocol::Parsed
 ProxyProtocol::One::Parse(const SBuf &buf)
 {
     Parser::Tokenizer tok(buf);
@@ -140,7 +143,50 @@ ProxyProtocol::One::Parse(const SBuf &buf)
     return Parsed(message, tok.parsedSize());
 }
 
-static ProxyProtocol::Parsed
+void
+ProxyProtocol::Two::parseAddresses(const uint8_t family, Parser::BinaryTokenizer &tok, MessagePointer &message)
+{
+    switch (family) {
+
+    case afInet: {
+        message->sourceAddress = tok.inet4("src_addr IPv4");
+        message->destinationAddress = tok.inet4("dst_addr IPv4");
+        message->sourceAddress.port(tok.uint16("src_port"));
+        message->destinationAddress.port(tok.uint16("dst_port"));
+        break;
+    }
+
+    case afInet6: {
+        message->sourceAddress = tok.inet6("src_addr IPv6");
+        message->destinationAddress = tok.inet6("dst_addr IPv6");
+        message->sourceAddress.port(tok.uint16("src_port"));
+        message->destinationAddress.port(tok.uint16("dst_port"));
+        break;
+    }
+
+    case afUnix: { // TODO: add support
+        // the address block length is 216 bytes
+        tok.skip(216, "unix_addr");
+        break;
+    }
+
+    default: {
+        // unreachable code: we have checked family validity already
+        Must(false);
+        break;
+    }
+    }
+}
+
+void
+ProxyProtocol::Two::parseTLVs(Parser::BinaryTokenizer &tok, MessagePointer &message) {
+    while (!tok.atEnd()) {
+        const auto type = tok.uint8("pp2_tlv::type");
+        message->tlvs.emplace_back(type, tok.pstring16("pp2_tlv length and value"));
+    }
+}
+
+ProxyProtocol::Parsed
 ProxyProtocol::Two::Parse(const SBuf &buf)
 {
     Parser::BinaryTokenizer tokMessage(buf, true);
@@ -175,49 +221,13 @@ ProxyProtocol::Two::Parse(const SBuf &buf)
     if (proto == tpUnspecified || family == afUnspecified)
         message->ignoreAddresses();
 
-    if (!message->hasForwardedAddresses()) {
-        // TODO: parse TLVs for local connections
-        // discard the whole PROXY protocol message
-        return Parsed(message, tokMessage.parsed());
-    }
-
     Parser::BinaryTokenizer tokHeader(header);
 
-    switch (family) {
-
-    case afInet: {
-        message->sourceAddress = tokHeader.inet4("src_addr IPv4");
-        message->destinationAddress = tokHeader.inet4("dst_addr IPv4");
-        message->sourceAddress.port(tokHeader.uint16("src_port"));
-        message->destinationAddress.port(tokHeader.uint16("dst_port"));
-        break;
-    }
-
-    case afInet6: {
-        message->sourceAddress = tokHeader.inet6("src_addr IPv6");
-        message->destinationAddress = tokHeader.inet6("dst_addr IPv6");
-        message->sourceAddress.port(tokHeader.uint16("src_port"));
-        message->destinationAddress.port(tokHeader.uint16("dst_port"));
-        break;
-    }
-
-    case afUnix: { // TODO: add support
-        // the address block length is 216 bytes
-        tokHeader.skip(216, "unix_addr");
-        break;
-    }
-
-    default: {
-        // unreachable code: we have checked family validity already
-        Must(false);
-        break;
-    }
-    }
-
-    while (!tokHeader.atEnd()) {
-        const auto type = tokHeader.uint8("pp2_tlv::type");
-        message->tlvs.emplace_back(type, tokHeader.pstring16("pp2_tlv length and value"));
-    }
+    // TODO: parse TLVs for local connections
+    if (message->hasForwardedAddresses()) {
+        parseAddresses(family, tokHeader, message);
+        parseTLVs(tokHeader, message);
+    } // else discard the whole PROXY protocol message
 
     return Parsed(message, tokMessage.parsed());
 }
