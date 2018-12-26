@@ -181,7 +181,7 @@ ProxyProtocol::Two::Parse(const SBuf &buf)
         return Parsed(message, tokMessage.parsed());
     }
 
-    Parser::BinaryTokenizer tokHeader(header, "TLV list");
+    Parser::BinaryTokenizer tokHeader(header);
 
     switch (family) {
 
