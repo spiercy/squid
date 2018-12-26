@@ -35,6 +35,7 @@ static Parsed Parse(const SBuf &buf);
 
 static void extractIp(Parser::Tokenizer &tok, Ip::Address &addr);
 static void extractPort(Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSpace);
+static void parseAddresses(Parser::Tokenizer &tok, MessagePointer &message);
 }
 
 namespace Two {
@@ -83,6 +84,29 @@ ProxyProtocol::One::extractPort(Parser::Tokenizer &tok, Ip::Address &addr, const
     addr.port(static_cast<uint16_t>(port));
 }
 
+void
+ProxyProtocol::One::parseAddresses(Parser::Tokenizer &tok, MessagePointer &message)
+{
+    static const CharacterSet tcpVersions("TCP-version","46");
+    SBuf parsedTcpVersion;
+
+    if (!tok.prefix(parsedTcpVersion, tcpVersions, 1))
+        throw TexcHere("PROXY/1.0 error: missing or invalid TCP version");
+
+    if (!tok.skip(' '))
+        throw TexcHere("PROXY/1.0 error: missing SP after the TCP version");
+
+    // parse: src-IP SP dst-IP SP src-port SP dst-port
+    extractIp(tok, message->sourceAddress);
+    extractIp(tok, message->destinationAddress);
+
+    if (!message->hasMatchingTcpVersion(parsedTcpVersion))
+        throw TexcHere("PROXY/1.0 error: TCP version and IP address family mismatch");
+
+    extractPort(tok, message->sourceAddress, true);
+    extractPort(tok, message->destinationAddress, false);
+}
+
 /// parses PROXY protocol v1 message from the buffer
 ProxyProtocol::Parsed
 ProxyProtocol::One::Parse(const SBuf &buf)
@@ -108,36 +132,19 @@ ProxyProtocol::One::Parse(const SBuf &buf)
 
     MessagePointer message = new Message("1.0");
 
-    static const SBuf protoUnknown("UNKNOWN");
-    static const SBuf protoTcp("TCP");
     Parser::Tokenizer interiorTok(interior);
 
     if (!interiorTok.skip(' '))
         throw TexcHere("PROXY/1.0 error: missing SP after the magic sequence");
 
-    if (interiorTok.skip(protoTcp)) {
-        static const CharacterSet tcpVersions("TCP-version","46");
-        SBuf parsedTcpVersion;
+    static const SBuf protoUnknown("UNKNOWN");
+    static const SBuf protoTcp("TCP");
 
-        if (!interiorTok.prefix(parsedTcpVersion, tcpVersions, 1))
-            throw TexcHere("PROXY/1.0 error: missing or invalid TCP version");
-
-        if (!interiorTok.skip(' '))
-            throw TexcHere("PROXY/1.0 error: missing SP after the TCP version");
-
-        // parse: src-IP SP dst-IP SP src-port SP dst-port
-        extractIp(interiorTok, message->sourceAddress);
-        extractIp(interiorTok, message->destinationAddress);
-
-        if (!message->hasMatchingTcpVersion(parsedTcpVersion))
-            throw TexcHere("PROXY/1.0 error: TCP version and IP address family mismatch");
-
-        extractPort(interiorTok, message->sourceAddress, true);
-        extractPort(interiorTok, message->destinationAddress, false);
-
-    } else if (interiorTok.skip(protoUnknown)) {
+    if (interiorTok.skip(protoTcp))
+        parseAddresses(interiorTok, message);
+    else if (interiorTok.skip(protoUnknown))
         message->ignoreAddresses();
-    } else
+    else
         throw TexcHere("PROXY/1.0 error: invalid INET protocol or family");
 
     return Parsed(message, tok.parsedSize());
