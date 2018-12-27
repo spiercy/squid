@@ -11,7 +11,7 @@
 
 #include "base/RefCount.h"
 #include "ip/Address.h"
-#include "proxyp/Protocol.h"
+#include "proxyp/Elements.h"
 #include "sbuf/SBuf.h"
 
 namespace ProxyProtocol {
@@ -22,31 +22,21 @@ class Message: public RefCountable
 public:
     typedef RefCount<Message> Pointer;
     typedef std::vector<Two::Tlv> Tlvs;
-    typedef std::map<SBuf, Two::HeaderType> FieldMap;
 
     Message(const char *ver, const uint8_t cmd = Two::cmdProxy);
 
     /// HTTP header-like string representation of the message.
-    /// The returned string has several mandatory lines for the protocol
-    /// version, command addresses and ports:
-    /// :version: version CRLF
-    /// :command: command CRLF
-    /// :src_addr: srcAddr CRLF
-    /// :dst_addr: dstAddr CRLF
-    /// :src_port: srcPort CRLF
-    /// :dst_port: dstPort CRLF
-    /// and may also contain several optional lines for each TLV:
-    /// type: value CRLF
-    SBuf getAll(const char sep) const;
+    /// The returned string has one line per pseudo header version,
+    /// command addresses and ports and one line per TLV (if any).
+    SBuf toMime() const;
 
     /// \returns a delimiter-separated list of values of TLVs of the given type
     SBuf getValues(const uint32_t headerType, const char delimiter = ',') const;
 
-    /// Searches for the first key-value pair occurrence within the
+    /// Searches for the first key=value pair occurrence within the
     /// value for the provided TLV type. Assumes that the TLV value
-    /// is a list of delimiter-separated items and the items are
-    /// pairs separated by '='.
-    /// \returns the value of the found pair or an empty string.
+    /// is a delimiter-separated list.
+    /// \returns the value of the found pair or the empty string.
     SBuf getElem(const uint32_t headerType, const char *member, const char delimiter) const;
 
     /// the message version
@@ -61,11 +51,9 @@ public:
     /// whether the message relays address information (including LOCAL connections)
     bool hasAddresses() const { return !ignoreAddresses_; }
 
-    /// whether both source and destination addresses have tcpVersion
-    bool hasMatchingTcpVersion(const SBuf &tcpVersion) const;
-
-    /// a mapping between pseudo header names and ids
-    static FieldMap PseudoHeaderFields;
+    /// \returns "4" or "6" if both source and destination adddresses are IPv4 or IPv6
+    /// \returns "mix" otherwise
+    const SBuf &addressFamily() const;
 
     /// source address of the client connection
     Ip::Address sourceAddress;
@@ -102,6 +90,17 @@ public:
     Message::Pointer message; ///< successfully parsed message; not nil
     size_t size; ///< raw bytes parsed, including any magic/delimiters
 };
+
+typedef std::map<SBuf, Two::HeaderType> FieldMap;
+
+/// a mapping between pseudo header names and ids
+extern const FieldMap PseudoHeaderFields;
+
+/// Parses a PROXY protocol message from the buffer, determining
+/// the protocol version (v1 or v2) by the signature.
+/// Throws on error or insufficient input.
+/// \returns the successfully parsed message
+Parsed Parse(const SBuf &);
 
 } // namespace ProxyProtocol
 

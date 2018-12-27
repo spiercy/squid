@@ -9,9 +9,8 @@
 #include "squid.h"
 #include "parser/BinaryTokenizer.h"
 #include "parser/Tokenizer.h"
-#include "proxyp/forward.h"
+#include "proxyp/Elements.h"
 #include "proxyp/Message.h"
-#include "proxyp/Protocol.h"
 #include "sbuf/Stream.h"
 
 #include <algorithm>
@@ -33,9 +32,9 @@ static const SBuf Magic("PROXY", 5);
 /// extracts PROXY protocol v1 message from the given buffer
 static Parsed Parse(const SBuf &buf);
 
-static void extractIp(Parser::Tokenizer &tok, Ip::Address &addr);
-static void extractPort(Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSpace);
-static void parseAddresses(Parser::Tokenizer &tok, MessagePointer &message);
+static void ExtractIp(Parser::Tokenizer &tok, Ip::Address &addr);
+static void ExtractPort(Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSpace);
+static void ParseAddresses(Parser::Tokenizer &tok, Message::Pointer &message);
 }
 
 namespace Two {
@@ -44,13 +43,13 @@ static const SBuf Magic("\x0D\x0A\x0D\x0A\x00\x0D\x0A\x51\x55\x49\x54\x0A", 12);
 /// extracts PROXY protocol v2 message from the given buffer
 static Parsed Parse(const SBuf &buf);
 
-static void parseAddresses(const uint8_t family, Parser::BinaryTokenizer &tok, MessagePointer &message);
-static void parseTLVs(Parser::BinaryTokenizer &tok, MessagePointer &message);
+static void ParseAddresses(const uint8_t family, Parser::BinaryTokenizer &tok, Message::Pointer &message);
+static void ParseTLVs(Parser::BinaryTokenizer &tok, Message::Pointer &message);
 }
 }
 
 void
-ProxyProtocol::One::extractIp(Parser::Tokenizer &tok, Ip::Address &addr)
+ProxyProtocol::One::ExtractIp(Parser::Tokenizer &tok, Ip::Address &addr)
 {
     static const auto ipChars = CharacterSet("IP Address",".:") + CharacterSet::HEXDIG;
 
@@ -68,7 +67,7 @@ ProxyProtocol::One::extractIp(Parser::Tokenizer &tok, Ip::Address &addr)
 }
 
 void
-ProxyProtocol::One::extractPort(Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSpace)
+ProxyProtocol::One::ExtractPort(Parser::Tokenizer &tok, Ip::Address &addr, const bool trailingSpace)
 {
     int64_t port = -1;
 
@@ -85,26 +84,26 @@ ProxyProtocol::One::extractPort(Parser::Tokenizer &tok, Ip::Address &addr, const
 }
 
 void
-ProxyProtocol::One::parseAddresses(Parser::Tokenizer &tok, MessagePointer &message)
+ProxyProtocol::One::ParseAddresses(Parser::Tokenizer &tok, Message::Pointer &message)
 {
-    static const CharacterSet tcpVersions("TCP-version","46");
-    SBuf parsedTcpVersion;
+    static const CharacterSet addressFamilies("Address family", "46");
+    SBuf parsedAddressFamily;
 
-    if (!tok.prefix(parsedTcpVersion, tcpVersions, 1))
-        throw TexcHere("PROXY/1.0 error: missing or invalid TCP version");
+    if (!tok.prefix(parsedAddressFamily, addressFamilies, 1))
+        throw TexcHere("PROXY/1.0 error: missing or invalid IP address family");
 
     if (!tok.skip(' '))
-        throw TexcHere("PROXY/1.0 error: missing SP after the TCP version");
+        throw TexcHere("PROXY/1.0 error: missing SP after the IP address family");
 
     // parse: src-IP SP dst-IP SP src-port SP dst-port
-    extractIp(tok, message->sourceAddress);
-    extractIp(tok, message->destinationAddress);
+    ExtractIp(tok, message->sourceAddress);
+    ExtractIp(tok, message->destinationAddress);
 
-    if (!message->hasMatchingTcpVersion(parsedTcpVersion))
-        throw TexcHere("PROXY/1.0 error: TCP version and IP address family mismatch");
+    if (message->addressFamily() != parsedAddressFamily)
+        throw TexcHere("PROXY/1.0 error: declared and/or actual IP address families mismatch");
 
-    extractPort(tok, message->sourceAddress, true);
-    extractPort(tok, message->destinationAddress, false);
+    ExtractPort(tok, message->sourceAddress, true);
+    ExtractPort(tok, message->destinationAddress, false);
 }
 
 /// parses PROXY protocol v1 message from the buffer
@@ -123,14 +122,12 @@ ProxyProtocol::One::Parse(const SBuf &buf)
             tok.skip('\n'))) {
         if (tok.atEnd())
             throw Parser::BinaryTokenizer::InsufficientInput();
-        else if (interior.isEmpty())
-            throw TexcHere("PROXY/1.0 error: the message block is empty");
-        else
-            throw TexcHere("PROXY/1.0 error: missing CRLF in the message");
+        // "empty interior", "too-long interior", or "missing LF after CR"
+        throw TexcHere("PROXY/1.0 error: malformed message");
     }
-    // grabbed all header bytes
+    // extracted all PROXY protocol bytes
 
-    MessagePointer message = new Message("1.0");
+    Message::Pointer message = new Message("1.0");
 
     Parser::Tokenizer interiorTok(interior);
 
@@ -141,7 +138,7 @@ ProxyProtocol::One::Parse(const SBuf &buf)
     static const SBuf protoTcp("TCP");
 
     if (interiorTok.skip(protoTcp))
-        parseAddresses(interiorTok, message);
+        ParseAddresses(interiorTok, message);
     else if (interiorTok.skip(protoUnknown))
         message->ignoreAddresses();
     else
@@ -151,7 +148,7 @@ ProxyProtocol::One::Parse(const SBuf &buf)
 }
 
 void
-ProxyProtocol::Two::parseAddresses(const uint8_t family, Parser::BinaryTokenizer &tok, MessagePointer &message)
+ProxyProtocol::Two::ParseAddresses(const uint8_t family, Parser::BinaryTokenizer &tok, Message::Pointer &message)
 {
     switch (family) {
 
@@ -186,10 +183,10 @@ ProxyProtocol::Two::parseAddresses(const uint8_t family, Parser::BinaryTokenizer
 }
 
 void
-ProxyProtocol::Two::parseTLVs(Parser::BinaryTokenizer &tok, MessagePointer &message) {
+ProxyProtocol::Two::ParseTLVs(Parser::BinaryTokenizer &tok, Message::Pointer &message) {
     while (!tok.atEnd()) {
         const auto type = tok.uint8("pp2_tlv::type");
-        message->tlvs.emplace_back(type, tok.pstring16("pp2_tlv length and value"));
+        message->tlvs.emplace_back(type, tok.pstring16("pp2_tlv::value"));
     }
 }
 
@@ -218,42 +215,22 @@ ProxyProtocol::Two::Parse(const SBuf &buf)
     if (proto > tpDgram)
         throw TexcHere(ToSBuf("PROXY/2.0 error: invalid transport protocol ", proto));
 
-    // the header length field contains the number following bytes beyond this field
-    const auto headerLen = tokMessage.uint16("header length");
+    const auto header = tokMessage.pstring16("header");
 
-    const auto header = tokMessage.area(headerLen, "header");
-
-    MessagePointer message = new Message("2.0", command);
+    Message::Pointer message = new Message("2.0", command);
 
     if (proto == tpUnspecified || family == afUnspecified) {
         message->ignoreAddresses();
         // discard address block and TLVs
     } else {
         Parser::BinaryTokenizer tokHeader(header);
-        parseAddresses(family, tokHeader, message);
+        ParseAddresses(family, tokHeader, message);
         // TODO: parse TLVs for local connections
         if (message->hasForwardedAddresses())
-            parseTLVs(tokHeader, message);
+            ParseTLVs(tokHeader, message);
     }
 
     return Parsed(message, tokMessage.parsed());
-}
-
-uint32_t
-ProxyProtocol::HeaderNameToHeaderType(const SBuf &headerStr)
-{
-    const auto it = Message::PseudoHeaderFields.find(headerStr);
-    if (it != Message::PseudoHeaderFields.end())
-        return it->second;
-
-    Parser::Tokenizer ptok(headerStr);
-    int64_t tlvType = 0;
-    if (!ptok.int64(tlvType, 10, false))
-        throw TexcHere(ToSBuf("Invalid PROXY protocol TLV type. Expecting a positive decimal integer but got ", headerStr));
-    if (tlvType > std::numeric_limits<uint8_t>::max())
-        throw TexcHere(ToSBuf("Invalid PROXY protocol TLV type. Expecting an integer less than ",
-                              std::numeric_limits<uint8_t>::max(), " but got ", tlvType));
-    return static_cast<uint32_t>(tlvType);
 }
 
 ProxyProtocol::Parsed
@@ -281,7 +258,7 @@ ProxyProtocol::Parse(const SBuf &buf)
     // TODO: detect short non-magic prefixes earlier to avoid
     // waiting for more data which may never come
 
-    // not enough bytes to parse yet
+    // not enough bytes to parse magic yet
     throw Parser::BinaryTokenizer::InsufficientInput();
 }
 

@@ -835,7 +835,7 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
 
         case LFT_PROXY_PROTOCOL_RECEIVED_ALL_HEADERS:
             if (al->proxyProtocolMessage) {
-                sb = al->proxyProtocolMessage->getAll(fmt->data.header.separator);
+                sb = al->proxyProtocolMessage->toMime();
                 out = sb.c_str();
                 quote = 1;
             }

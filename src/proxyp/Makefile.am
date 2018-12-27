@@ -12,8 +12,9 @@ noinst_LTLIBRARIES = libproxyp.la
 
 libproxyp_la_SOURCES = \
 	forward.h \
+	Elements.h \
+	Elements.cc \
 	Message.cc \
 	Message.h \
-	Parser.cc \
-	Protocol.h
+	Parser.cc
 

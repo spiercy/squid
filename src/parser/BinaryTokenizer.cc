@@ -82,7 +82,6 @@ Parser::BinaryTokenizer::got(const Ip::Address &value, uint64_t size, const char
 {
     debugs(24, 7, context << description << '=' << value <<
            BinaryTokenizer_tail(size, parsed_ - size));
-
 }
 
 /// debugging helper for skipped fields

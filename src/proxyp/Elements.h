@@ -6,8 +6,8 @@
  * Please see the COPYING and CONTRIBUTORS files for details.
  */
 
-#ifndef SQUID_PROXYP_ROTOCOL_H
-#define SQUID_PROXYP_ROTOCOL_H
+#ifndef SQUID_PROXYP_ELEMENTS_H
+#define SQUID_PROXYP_ELEMENTS_H
 
 #include "sbuf/SBuf.h"
 
@@ -16,9 +16,9 @@ namespace ProxyProtocol {
 namespace Two {
 
 typedef enum {
-    htUnknown = 0,
+    htUnknown = 0x00,
 
-    // The PROXY protocol specs lists these TLV types as already registered.
+    // The PROXY protocol specs list these TLV types as already registered.
     htAlpn = 0x01, // PP2_TYPE_ALPN
     htAuthority = 0x02, // PP2_TYPE_AUTHORITY
     htCrc32c = 0x03, // PP2_TYPE_CRC32C
@@ -43,20 +43,20 @@ typedef enum {
 
 /// PROXY protocol 'command' field value
 typedef enum {
-    cmdLocal = 0,
+    cmdLocal = 0x00,
     cmdProxy = 0x01
 } Command;
 
 typedef enum {
     /// corresponds to a local connection or an unsupported protocol family
-    afUnspecified = 0,
+    afUnspecified = 0x00,
     afInet = 0x1,
     afInet6 = 0x2,
     afUnix = 0x3
 } AddressFamily;
 
 typedef enum {
-    tpUnspecified = 0,
+    tpUnspecified = 0x00,
     tpStream = 0x1,
     tpDgram = 0x2
 } TransportProtocol;
@@ -65,13 +65,18 @@ typedef enum {
 class Tlv
 {
 public:
-    Tlv(const uint8_t t, const SBuf &val) : value(val), type(t) {}
+    typedef uint8_t value_type;
+
+    Tlv(const value_type t, const SBuf &val): value(val), type(t) {}
 
     SBuf value;
-    uint8_t type;
+    value_type type;
 };
 
 } // namespace Two
+
+/// Parses PROXY protocol header type from the buffer.
+Two::HeaderType HeaderNameToHeaderType(const SBuf &nameOrId);
 
 } // namespace ProxyProtocol
 

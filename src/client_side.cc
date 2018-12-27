@@ -103,7 +103,6 @@
 #include "mime_header.h"
 #include "parser/Tokenizer.h"
 #include "profiler/Profiler.h"
-#include "proxyp/forward.h"
 #include "proxyp/Message.h"
 #include "security/NegotiationHistory.h"
 #include "servers/forward.h"
@@ -1809,7 +1808,7 @@ ConnStateData::parseProxyProtocolMessage()
             debugs(33, 5, "PROXY/" << proxyProtocolMessage_->version() << " upgrade: " << clientConnection);
         }
     } catch (const Parser::BinaryTokenizer::InsufficientInput &) {
-        debugs(33, 3, "PROXY protocol: waiting for more");
+        debugs(33, 3, "PROXY protocol: waiting for more than " << inBuf.length() << " bytes");
         return false;
     } catch (const std::exception &e) {
         return proxyProtocolError(e.what());

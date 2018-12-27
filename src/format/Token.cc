@@ -12,7 +12,7 @@
 #include "format/TokenTableEntry.h"
 #include "globals.h"
 #include "parser/Tokenizer.h"
-#include "proxyp/forward.h"
+#include "proxyp/Elements.h"
 #include "sbuf/Stream.h"
 #include "SquidConfig.h"
 #include "Store.h"
@@ -491,8 +491,8 @@ Format::Token::parse(const char *def, Quoting *quoting)
 
         if (data.string) {
             char *header = data.string;
-            // Http header field names cannot have ':' while
-            // some PROXY protocol related pseudo headers may start with it.
+            // HTTP header field names cannot have ':' while
+            // PROXY protocol pseudo headers start with it.
             const auto proxyPseudoHeader = type == LFT_PROXY_PROTOCOL_RECEIVED_HEADER && header[0] == ':';
             char *cp = strchr(proxyPseudoHeader ? header+1 : header, ':');
 
@@ -542,7 +542,7 @@ Format::Token::parse(const char *def, Quoting *quoting)
                 }
             }
 
-            if (*header == '\0')
+            if (!*header)
                 throw TexcHere(ToSBuf("Can't parse configuration token: '", def, "': missing header name"));
 
             if (proxyPseudoHeader)
