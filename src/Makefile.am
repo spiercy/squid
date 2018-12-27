@@ -1413,6 +1413,7 @@ tests_testCacheManager_LDADD = \
 	mem/libmem.la \
 	store/libstore.la \
 	sbuf/libsbuf.la \
+	proxyp/libproxyp.la \
 	$(top_builddir)/lib/libmisccontainers.la \
 	$(top_builddir)/lib/libmiscencoding.la \
 	$(top_builddir)/lib/libmiscutil.la \
@@ -1842,6 +1843,7 @@ tests_testEvent_LDADD = \
 	mgr/libmgr.la \
 	store/libstore.la \
 	sbuf/libsbuf.la \
+	proxyp/libproxyp.la \
 	$(SNMP_LIBS) \
 	$(NETTLELIB) \
 	$(REGEXLIB) \
@@ -2075,6 +2077,7 @@ tests_testEventLoop_LDADD = \
 	mgr/libmgr.la \
 	sbuf/libsbuf.la \
 	store/libstore.la \
+	proxyp/libproxyp.la \
 	$(SNMP_LIBS) \
 	$(NETTLELIB) \
 	$(REGEXLIB) \
@@ -2301,6 +2304,7 @@ tests_test_http_range_LDADD = \
 	mgr/libmgr.la \
 	sbuf/libsbuf.la \
 	store/libstore.la \
+	proxyp/libproxyp.la \
 	$(SNMP_LIBS) \
 	$(top_builddir)/lib/libmisccontainers.la \
 	$(top_builddir)/lib/libmiscencoding.la \
@@ -2601,6 +2605,7 @@ tests_testHttpRequest_LDADD = \
 	format/libformat.la \
 	store/libstore.la \
 	sbuf/libsbuf.la \
+	proxyp/libproxyp.la \
 	$(REPL_OBJS) \
 	$(ADAPTATION_LIBS) \
 	$(ESI_LIBS) \
@@ -3461,6 +3466,7 @@ tests_testURL_LDADD = \
 	format/libformat.la \
 	store/libstore.la \
 	sbuf/libsbuf.la \
+	proxyp/libproxyp.la \
 	$(REGEXLIB) \
 	$(REPL_OBJS) \
 	$(ADAPTATION_LIBS) \
