@@ -1856,6 +1856,7 @@ ConnStateData::parseProxyProtocolMessage()
         if (proxyProtocolMessage_->hasForwardedAddresses()) {
             clientConnection->local = proxyProtocolMessage_->destinationAddress;
             clientConnection->remote = proxyProtocolMessage_->sourceAddress;
+
             if ((clientConnection->flags & COMM_TRANSPARENT))
                 clientConnection->flags ^= COMM_TRANSPARENT; // prevent TPROXY spoofing of this new IP.
             debugs(33, 5, "PROXY/" << proxyProtocolMessage_->version() << " upgrade: " << clientConnection);
@@ -1910,16 +1911,6 @@ ConnStateData::clientParseRequests()
         if (concurrentRequestQueueFilled())
             break;
 
-        // try to parse the PROXY protocol header magic bytes
-        if (needProxyProtocolHeader_) {
-            if (!parseProxyProtocolMessage())
-                break;
-
-            // we have been waiting for PROXY to provide client-IP
-            // for some lookups, ie rDNS and IDENT.
-            whenClientIpKnown();
-        }
-
         if (Http::StreamPointer context = parseOneRequest()) {
             debugs(33, 5, clientConnection << ": done parsing a request");
 
@@ -1952,6 +1943,16 @@ ConnStateData::clientParseRequests()
 void
 ConnStateData::afterClientRead()
 {
+    // try to parse the PROXY protocol header magic bytes
+    if (needProxyProtocolHeader_) {
+        if (!parseProxyProtocolMessage())
+            return;
+
+        // we have been waiting for PROXY to provide client-IP
+        // for some lookups, ie rDNS and IDENT.
+        whenClientIpKnown();
+    }
+
 #if USE_OPENSSL
     if (parsingTlsHandshake) {
         parseTlsHandshake();
@@ -2959,7 +2960,9 @@ ConnStateData::parseTlsHandshake()
 {
     Must(parsingTlsHandshake);
 
-    assert(!inBuf.isEmpty());
+    if (inBuf.isEmpty())
+        return;
+
     receivedFirstByte();
     fd_note(clientConnection->fd, "Parsing TLS handshake");
 

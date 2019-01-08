@@ -3805,11 +3805,11 @@ parsePortCfg(AnyP::PortCfgPointer *head, const char *optionName)
             return;
         }
 #endif
-        if (s->flags.proxySurrogate) {
-            debugs(3,DBG_CRITICAL, "FATAL: https_port: require-proxy-header option is not supported on HTTPS ports.");
-            self_destruct();
-            return;
-        }
+        // if (s->flags.proxySurrogate) {
+        //      debugs(3,DBG_CRITICAL, "FATAL: https_port: require-proxy-header option is not supported on HTTPS ports.");
+        //      self_destruct();
+        //      return;
+        // }
     } else if (protoName.cmp("FTP") == 0) {
         /* ftp_port does not support ssl-bump */
         if (s->flags.tunnelSslBumping) {
