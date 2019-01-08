@@ -1856,7 +1856,6 @@ ConnStateData::parseProxyProtocolMessage()
         if (proxyProtocolMessage_->hasForwardedAddresses()) {
             clientConnection->local = proxyProtocolMessage_->destinationAddress;
             clientConnection->remote = proxyProtocolMessage_->sourceAddress;
-
             if ((clientConnection->flags & COMM_TRANSPARENT))
                 clientConnection->flags ^= COMM_TRANSPARENT; // prevent TPROXY spoofing of this new IP.
             debugs(33, 5, "PROXY/" << proxyProtocolMessage_->version() << " upgrade: " << clientConnection);
