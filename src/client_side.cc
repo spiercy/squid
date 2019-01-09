@@ -3432,12 +3432,13 @@ clientListenerConnectionOpened(AnyP::PortCfgPointer &s, const Ipc::FdNoteId port
     AsyncJob::Start(new Comm::TcpAcceptor(s, FdNote(portTypeNote), sub));
 
     debugs(1, DBG_IMPORTANT, "Accepting " <<
-           (s->flags.natIntercept ? "NAT intercepted " : "") <<
-           (s->flags.tproxyIntercept ? "TPROXY intercepted " : "") <<
+           ((s->flags.natIntercept && !s->flags.proxySurrogate) ? "NAT intercepted " : "") <<
+           ((s->flags.tproxyIntercept && !s->flags.proxySurrogate) ? "TPROXY intercepted " : "") <<
            (s->flags.tunnelSslBumping ? "SSL bumped " : "") <<
-           (s->flags.accelSurrogate ? "reverse-proxy " : "")
-           << FdNote(portTypeNote) << " connections at "
-           << s->listenConn);
+           (s->flags.accelSurrogate ? "reverse-proxy " : "") <<
+           FdNote(portTypeNote) << " connections " <<
+           (s->flags.proxySurrogate ? "with PROXY protocol headers " : "") <<
+           "at " << s->listenConn);
 
     Must(AddOpenedHttpSocket(s->listenConn)); // otherwise, we have received a fd we did not ask for
 }
