@@ -1861,11 +1861,14 @@ ConnStateData::parseProxyProtocolMessage()
             debugs(33, 5, "PROXY/" << proxyProtocolMessage_->version() << " upgrade: " << clientConnection);
         }
 
-        Http::StreamPointer context = pipeline.front();
-        ClientHttpRequest *http = context ? context->http : nullptr;
-        if (http)
-            http->al->proxyProtocolMessage = proxyProtocolMessage_;
-
+        // TODO: The PROXY message is never inside a CONNECT tunnel. The
+        // presence of a fake CONNECT here indicates that we are parsing the
+        // PROXY message too late. We should do it before CONNECT is faked, even
+        // before the decision to fake CONNECT is made!
+        if (const auto context = pipeline.front()) { // e.g., fake CONNECT
+            if (const auto http = context->http)
+                http->al->proxyProtocolMessage = proxyProtocolMessage_;
+        }
     } catch (const Parser::BinaryTokenizer::InsufficientInput &) {
         debugs(33, 3, "PROXY protocol: waiting for more than " << inBuf.length() << " bytes");
         return false;
