@@ -2959,10 +2959,12 @@ ConnStateData::parseTlsHandshake()
 {
     Must(parsingTlsHandshake);
 
-    if (inBuf.isEmpty())
-        return;
-
-    receivedFirstByte();
+    // TODO: Call receivedFirstByte() below at most once per connection.
+    // Addressing this correctly may be related to understanding and possibly
+    // changing what receivedFirstByte_ truly is and how it is managed.
+    if (!inBuf.isEmpty())
+        receivedFirstByte();
+    // XXX: Call fd_note() below at most once per connection. Its expensive.
     fd_note(clientConnection->fd, "Parsing TLS handshake");
 
     bool unsupportedProtocol = false;
