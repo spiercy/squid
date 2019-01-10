@@ -1860,6 +1860,12 @@ ConnStateData::parseProxyProtocolMessage()
                 clientConnection->flags ^= COMM_TRANSPARENT; // prevent TPROXY spoofing of this new IP.
             debugs(33, 5, "PROXY/" << proxyProtocolMessage_->version() << " upgrade: " << clientConnection);
         }
+
+        Http::StreamPointer context = pipeline.front();
+        ClientHttpRequest *http = context ? context->http : nullptr;
+        if (http)
+            http->al->proxyProtocolMessage = proxyProtocolMessage_;
+
     } catch (const Parser::BinaryTokenizer::InsufficientInput &) {
         debugs(33, 3, "PROXY protocol: waiting for more than " << inBuf.length() << " bytes");
         return false;
