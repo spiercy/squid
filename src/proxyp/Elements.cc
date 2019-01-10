@@ -23,8 +23,8 @@ const ProxyProtocol::FieldMap ProxyProtocol::PseudoHeaderFields = {
 };
 
 namespace ProxyProtocol {
-    static Two::HeaderType NameToHeaderType(const SBuf &);
-    static Two::HeaderType IntegerToHeaderType(const SBuf &);
+static Two::HeaderType NameToHeaderType(const SBuf &);
+static Two::HeaderType IntegerToHeaderType(const SBuf &);
 } // namespace ProxyProtocol
 
 /// HeaderNameToHeaderType() helper that handles pseudo headers
@@ -69,6 +69,7 @@ ProxyProtocol::HeaderNameToHeaderType(const SBuf &tlvTypeRaw)
     // we could branch on ":" instead of DIGIT but then header names that lack a
     // leading ":" (like "version") would get a less accurate error message
     return Parser::Tokenizer(tlvTypeRaw).skipOne(CharacterSet::DIGIT) ?
-        IntegerToHeaderType(tlvTypeRaw):
-        NameToHeaderType(tlvTypeRaw);
+           IntegerToHeaderType(tlvTypeRaw):
+           NameToHeaderType(tlvTypeRaw);
 }
+
