@@ -403,7 +403,7 @@ Ipc::StoreMap::openForReadingAt(const sfileno fileno, const cache_key *const key
         return nullptr;
     }
 
-    if (Config.onoff.paranoid_hit_validation && !validateHit(fileno)) {
+    if (Config.onoff.paranoid_hit_validation && (path.cmp("transients_map") != 0) && !validateHit(fileno)) {
         s.lock.unlockShared();
         debugs(54, 5, "cannot open corrupted entry " << fileno <<
                " for reading " << path);
