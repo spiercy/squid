@@ -364,7 +364,7 @@ IpcIoFile::push(IpcIoPendingRequest *const pending)
         debugs(47, 7, HERE << "pushing " << SipcIo(KidIdentifier, ipcIo, diskId));
 
         // prevent pop queue overflow
-        if (ioPendingRequests() >= QueueCapacity)
+        if (pendingRequests() >= QueueCapacity)
             throw Ipc::OneToOneUniQueue::Full();
 
         if (queue->push(diskId, ipcIo))
@@ -881,7 +881,7 @@ IpcIoFile::DiskerHandleRequest(const int workerId, IpcIoMsg &ipcIo)
             Notify(workerId); // must notify worker
     } catch (const Queue::Full &) {
         // The worker pop queue should not overflow because the worker can
-        // push only if ioPendingRequests() is less than QueueCapacity.
+        // push only if pendingRequests() is less than QueueCapacity.
         debugs(47, DBG_IMPORTANT, "BUG: Worker I/O pop queue for " <<
                DbName << " overflow: " <<
                SipcIo(workerId, ipcIo, KidIdentifier)); // TODO: report queue len

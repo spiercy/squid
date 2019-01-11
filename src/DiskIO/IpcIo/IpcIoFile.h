@@ -97,8 +97,9 @@ private:
     void trackPendingRequest(const unsigned int id, IpcIoPendingRequest *const pending);
     void push(IpcIoPendingRequest *const pending);
     IpcIoPendingRequest *dequeueRequest(const unsigned int requestId);
-    /// the overall number of pending requests
-    int ioPendingRequests() const { return olderRequests->size() + newerRequests->size(); }
+
+    /// the total number of I/O requests in all worker push and pop queues
+    size_t pendingRequests() const { return olderRequests->size() + newerRequests->size(); }
 
     static void Notify(const int peerId);
 
