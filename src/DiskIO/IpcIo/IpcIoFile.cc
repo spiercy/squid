@@ -363,7 +363,7 @@ IpcIoFile::push(IpcIoPendingRequest *const pending)
 
         debugs(47, 7, HERE << "pushing " << SipcIo(KidIdentifier, ipcIo, diskId));
 
-        // prevent pop queue overflow
+        // protect DiskerHandleRequest() from pop queue overflow
         if (pendingRequests() >= QueueCapacity)
             throw Ipc::OneToOneUniQueue::Full();
 
