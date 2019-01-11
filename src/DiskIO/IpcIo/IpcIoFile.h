@@ -55,6 +55,8 @@ public:
 
 class IpcIoPendingRequest;
 
+/// In a worker process, represents a single (remote) cache_dir disker file.
+/// In a disker process, used as a bunch of static methods handling that file.
 class IpcIoFile: public DiskFile
 {
     CBDATA_CLASS(IpcIoFile);
@@ -98,7 +100,8 @@ private:
     void push(IpcIoPendingRequest *const pending);
     IpcIoPendingRequest *dequeueRequest(const unsigned int requestId);
 
-    /// the total number of I/O requests in all worker push and pop queues
+    /// the total number of I/O requests in push queue and pop queue
+    /// (but no, the implementation does not add push and pop queue sizes)
     size_t pendingRequests() const { return olderRequests->size() + newerRequests->size(); }
 
     static void Notify(const int peerId);
