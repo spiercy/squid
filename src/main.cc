@@ -677,7 +677,7 @@ mainHandleCommandLineOption(const int optId, const char *optValue)
         if (strlen(SQUID_BUILD_INFO))
             printf("%s\n",SQUID_BUILD_INFO);
 #if USE_OPENSSL
-        printf("\nThis binary uses %s. ", SSLeay_version(SSLEAY_VERSION));
+        printf("\nThis binary uses %s. ", OpenSSL_version(OPENSSL_VERSION));
         printf("For legal restrictions on distribution see https://www.openssl.org/source/license.html\n\n");
 #endif
         printf( "configure options: %s\n", SQUID_CONFIGURE_OPTIONS);
@@ -1860,13 +1860,12 @@ GoIntoBackground()
     pid_t pid;
     if ((pid = fork()) < 0) {
         int xerrno = errno;
-        syslog(LOG_ALERT, "fork failed: %s", xstrerr(xerrno));
-        // continue anyway, mimicking --foreground mode (XXX?)
+        throw TexcHere(ToSBuf("failed to fork(2) the master process: ", xstrerr(xerrno)));
     } else if (pid > 0) {
         // parent
         exit(EXIT_SUCCESS);
     }
-    // child, running as a background daemon (or a failed-to-fork parent)
+    // child, running as a background daemon
 }
 
 static void
