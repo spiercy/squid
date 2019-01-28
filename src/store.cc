@@ -84,7 +84,8 @@ const char *storeStatusStr[] = {
 const char *swapStatusStr[] = {
     "SWAPOUT_NONE",
     "SWAPOUT_WRITING",
-    "SWAPOUT_DONE"
+    "SWAPOUT_DONE",
+    "SWAPOUT_FAILED"
 };
 
 /*
@@ -2030,19 +2031,21 @@ void
 StoreEntry::checkDisk() const
 {
     try {
-        Must((swap_dirn < 0) == (swap_filen < 0));
-        Must((swap_dirn < 0) || (swap_dirn < Config.cacheSwap.n_configured));
-
         if (swap_dirn < 0) {
+            Must(swap_filen < 0);
             Must(swap_status == SWAPOUT_NONE);
-        } else if (swap_status == SWAPOUT_FAILED) {
-            // This situation may occur after swapout failures (e.g., max_size/max_object_size overflows).
-            // The entry is still attached to the disk (both swap_dirn and swap_dirn >= 0), but the
-            // corresponding disk entry is not available already. Such StoreEntry must be released by this
-            // time.
-            Must(EBIT_TEST(flags, RELEASE_REQUEST));
         } else {
-            Must((swap_dirn >= 0 && (swap_status == SWAPOUT_WRITING || swap_status == SWAPOUT_DONE)));
+            Must(swap_filen >= 0);
+            Must(swap_dirn < Config.cacheSwap.n_configured);
+            if (swap_status == SWAPOUT_FAILED) {
+                // This situation may occur after swapout failures (e.g., max_size/max_object_size overflows).
+                // The entry is still attached to the disk (both swap_dirn and swap_dirn >= 0), but the
+                // corresponding disk entry is not available already. Such StoreEntry must be released by this
+                // time.
+                Must(EBIT_TEST(flags, RELEASE_REQUEST));
+            } else {
+                Must(swap_status == SWAPOUT_WRITING || swap_status == SWAPOUT_DONE);
+            }
         }
     } catch (...) {
         debugs(88, DBG_IMPORTANT, "ERROR: inconsistent disk entry state " << *this);

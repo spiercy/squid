@@ -304,7 +304,9 @@ storeSwapOutFileClosed(void *data, int errflag, StoreIOState::Pointer self)
             storeConfigure();
         }
 
-        e->releaseRequest(); // TODO: Keep the memory entry (if any)
+        // mark the locked entry for deletion
+        // TODO: Keep the memory entry (if any)
+        e->releaseRequest();
         e->swap_status = SWAPOUT_FAILED;
         e->disk().finalizeSwapoutFailure(*e);
     } else {
