@@ -1274,7 +1274,7 @@ void
 Fs::Ufs::UFSSwapDir::finalizeSwapoutFailure(StoreEntry &entry)
 {
     debugs(47, 5, entry);
-    // rely on the expected subsequent StoreEntry::release(), evictCached(), or
+    // rely on the expected eventual StoreEntry::release(), evictCached(), or
     // a similar call to call unlink(), detachFromDisk(), etc. for the entry.
 }
 

@@ -281,6 +281,10 @@ StoreEntry::storeClientType() const
         return STORE_MEM_CLIENT;
     }
 
+    // cannot swapin failed incomplete entries
+    if (swapoutFailed())
+        return STORE_MEM_CLIENT;
+
     if (store_status == STORE_OK) {
         /* the object has completed. */
 

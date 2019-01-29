@@ -38,6 +38,11 @@ storeSwapInStart(store_client * sc)
         return;
     }
 
+    if (e->swap_status == SWAPOUT_FAILED) {
+        debugs(20, DBG_IMPORTANT, "BUG: Attempt to swap in a failed incomplete entry " << *e);
+        return;
+    }
+
     assert(e->mem_obj != NULL);
     sc->swapin_sio = storeOpen(e, storeSwapInFileNotify, storeSwapInFileClosed, sc);
 }
