@@ -52,6 +52,9 @@ private:
     std::atomic<uint32_t> writeLevel; ///< number of users writing (or trying to write)
 };
 
+/// dumps approximate lock state (for debugging)
+std::ostream &operator <<(std::ostream &os, const Ipc::ReadWriteLock &);
+
 /// approximate stats of a set of ReadWriteLocks
 class ReadWriteLockStats
 {
