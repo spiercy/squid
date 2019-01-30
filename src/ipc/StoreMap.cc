@@ -12,6 +12,7 @@
 #include "ipc/StoreMap.h"
 #include "sbuf/SBuf.h"
 #include "SquidConfig.h"
+#include "StatCounters.h"
 #include "Store.h"
 #include "store_key_md5.h"
 #include "tools.h"
@@ -670,29 +671,12 @@ Ipc::StoreMap::validSlice(const int pos) const
 bool
 Ipc::StoreMap::validateHit(const sfileno fileno)
 {
-    static uint64_t validationAttempts = 0;
-    static uint64_t validationRefusalsDueToLocking = 0;
-    static uint64_t validationRefusalsDueToZeroSize = 0;
-    static uint64_t validationFailures = 0;
-
-    static time_t reportingGap = 1*60*60; // 1 hour
-    static time_t reportingDeadline = squid_curtime + reportingGap;
-    if (squid_curtime >= reportingDeadline) {
-        reportingDeadline = squid_curtime + reportingGap; // sliding OK
-
-        debugs(54, DBG_IMPORTANT, "FYI: paranoid_hit_validation stats:\n" <<
-               "    attempts=" << validationAttempts << "\n" <<
-               "    refusalsDueToLocking=" << validationRefusalsDueToLocking << "\n" <<
-               "    refusalsDueToZeroSize=" << validationRefusalsDueToZeroSize << "\n" <<
-               "    failures=" << validationFailures << "\n");
-    }
-
     const auto &anchor = anchorAt(fileno);
 
-    ++validationAttempts;
+    ++statCounter.hitValidation.validationAttempts;
 
     if (!anchor.lock.lockHeaders()) {
-        ++validationRefusalsDueToLocking;
+        ++statCounter.hitValidation.validationRefusalsDueToLocking;
         return true; // presume valid; cannot validate changing entry
     }
 
@@ -718,11 +702,11 @@ Ipc::StoreMap::validateHit(const sfileno fileno)
         return true;
 
     if (!anchor.basics.swap_file_sz) {
-        ++validationRefusalsDueToZeroSize;
+        ++statCounter.hitValidation.validationRefusalsDueToZeroSize;
         return true; // presume valid; cannot validate w/o known swap_file_sz
     }
 
-    ++validationFailures;
+    ++statCounter.hitValidation.validationFailures;
 
     debugs(54, DBG_IMPORTANT, "BUG: purging corrupted cache entry " << fileno <<
            " from " << path <<

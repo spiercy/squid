@@ -999,6 +999,13 @@ GetAvgStat(Mgr::IntervalActionData& stats, int minutes, int hours)
     stats.swap_files_cleaned = XAVG(swap.files_cleaned);
     stats.aborted_requests = XAVG(aborted_requests);
 
+    if (Config.onoff.paranoid_hit_validation) {
+        stats.validationAttempts = XAVG(hitValidation.validationAttempts);
+        stats.validationRefusalsDueToLocking = XAVG(hitValidation.validationRefusalsDueToLocking);
+        stats.validationRefusalsDueToZeroSize = XAVG(hitValidation.validationRefusalsDueToZeroSize);
+        stats.validationFailures = XAVG(hitValidation.validationFailures);
+    }
+
     stats.syscalls_disk_opens = XAVG(syscalls.disk.opens);
     stats.syscalls_disk_closes = XAVG(syscalls.disk.closes);
     stats.syscalls_disk_reads = XAVG(syscalls.disk.reads);
@@ -1145,6 +1152,17 @@ DumpAvgStat(Mgr::IntervalActionData& stats, StoreEntry* sentry)
                       stats.swap_files_cleaned);
     storeAppendPrintf(sentry, "aborted_requests = %f/sec\n",
                       stats.aborted_requests);
+
+    if (Config.onoff.paranoid_hit_validation) {
+        storeAppendPrintf(sentry, "hitValidation.validationAttempts = %f/sec\n",
+                          stats.validationAttempts);
+        storeAppendPrintf(sentry, "hitValidation.validationRefusalsDueToLocking = %f/sec\n",
+                          stats.validationRefusalsDueToLocking);
+        storeAppendPrintf(sentry, "hitValidation.validationRefusalsDueToZeroSize = %f/sec\n",
+                          stats.validationRefusalsDueToZeroSize);
+        storeAppendPrintf(sentry, "hitValidation.validationFailures = %f/sec\n",
+                          stats.validationFailures);
+    }
 
 #if USE_POLL
     storeAppendPrintf(sentry, "syscalls.polls = %f/sec\n", stats.syscalls_selects);
@@ -1494,6 +1512,13 @@ GetCountersStats(Mgr::CountersActionData& stats)
     stats.swap_ins = f->swap.ins;
     stats.swap_files_cleaned = f->swap.files_cleaned;
     stats.aborted_requests = f->aborted_requests;
+
+    if (Config.onoff.paranoid_hit_validation) {
+        stats.validationAttempts = f->hitValidation.validationAttempts;
+        stats.validationRefusalsDueToLocking = f->hitValidation.validationRefusalsDueToLocking;
+        stats.validationRefusalsDueToZeroSize = f->hitValidation.validationRefusalsDueToZeroSize;
+        stats.validationFailures = f->hitValidation.validationFailures;
+    }
 }
 
 void
@@ -1619,6 +1644,17 @@ DumpCountersStats(Mgr::CountersActionData& stats, StoreEntry* sentry)
                       stats.swap_files_cleaned);
     storeAppendPrintf(sentry, "aborted_requests = %.0f\n",
                       stats.aborted_requests);
+
+    if (Config.onoff.paranoid_hit_validation) {
+        storeAppendPrintf(sentry, "hitValidation.validationAttempts = %.0f\n",
+                          stats.validationAttempts);
+        storeAppendPrintf(sentry, "hitValidation.validationRefusalsDueToLocking = %.0f\n",
+                          stats.validationRefusalsDueToLocking);
+        storeAppendPrintf(sentry, "hitValidation.validationRefusalsDueToZeroSize = %.0f\n",
+                          stats.validationRefusalsDueToZeroSize);
+        storeAppendPrintf(sentry, "hitValidation.validationFailures = %.0f\n",
+                          stats.validationFailures);
+    }
 }
 
 void

@@ -13,6 +13,7 @@
 #include "ipc/Messages.h"
 #include "ipc/TypedMsgHdr.h"
 #include "mgr/CountersAction.h"
+#include "SquidConfig.h"
 #include "SquidTime.h"
 #include "Store.h"
 #include "tools.h"
@@ -85,6 +86,12 @@ Mgr::CountersActionData::operator += (const CountersActionData& stats)
     swap_ins += stats.swap_ins;
     swap_files_cleaned += stats.swap_files_cleaned;
     aborted_requests += stats.aborted_requests;
+    if (Config.onoff.paranoid_hit_validation) {
+        validationAttempts += stats.validationAttempts;
+        validationRefusalsDueToLocking += stats.validationRefusalsDueToLocking;
+        validationRefusalsDueToZeroSize += stats.validationRefusalsDueToZeroSize;
+        validationFailures += stats.validationFailures;
+    }
 
     return *this;
 }
