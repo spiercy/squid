@@ -1000,10 +1000,10 @@ GetAvgStat(Mgr::IntervalActionData& stats, int minutes, int hours)
     stats.aborted_requests = XAVG(aborted_requests);
 
     if (Config.onoff.paranoid_hit_validation) {
-        stats.validationAttempts = XAVG(hitValidation.validationAttempts);
-        stats.validationRefusalsDueToLocking = XAVG(hitValidation.validationRefusalsDueToLocking);
-        stats.validationRefusalsDueToZeroSize = XAVG(hitValidation.validationRefusalsDueToZeroSize);
-        stats.validationFailures = XAVG(hitValidation.validationFailures);
+        stats.hitValidationAttempts = XAVG(hitValidation.attempts);
+        stats.hitValidationRefusalsDueToLocking = XAVG(hitValidation.refusalsDueToLocking);
+        stats.hitValidationRefusalsDueToZeroSize = XAVG(hitValidation.refusalsDueToZeroSize);
+        stats.hitValidationFailures = XAVG(hitValidation.failures);
     }
 
     stats.syscalls_disk_opens = XAVG(syscalls.disk.opens);
@@ -1154,14 +1154,14 @@ DumpAvgStat(Mgr::IntervalActionData& stats, StoreEntry* sentry)
                       stats.aborted_requests);
 
     if (Config.onoff.paranoid_hit_validation) {
-        storeAppendPrintf(sentry, "hitValidation.validationAttempts = %f/sec\n",
-                          stats.validationAttempts);
-        storeAppendPrintf(sentry, "hitValidation.validationRefusalsDueToLocking = %f/sec\n",
-                          stats.validationRefusalsDueToLocking);
-        storeAppendPrintf(sentry, "hitValidation.validationRefusalsDueToZeroSize = %f/sec\n",
-                          stats.validationRefusalsDueToZeroSize);
-        storeAppendPrintf(sentry, "hitValidation.validationFailures = %f/sec\n",
-                          stats.validationFailures);
+        storeAppendPrintf(sentry, "hitValidation.attempts = %f/sec\n",
+                          stats.hitValidationAttempts);
+        storeAppendPrintf(sentry, "hitValidation.refusalsDueToLocking = %f/sec\n",
+                          stats.hitValidationRefusalsDueToLocking);
+        storeAppendPrintf(sentry, "hitValidation.refusalsDueToZeroSize = %f/sec\n",
+                          stats.hitValidationRefusalsDueToZeroSize);
+        storeAppendPrintf(sentry, "hitValidation.failures = %f/sec\n",
+                          stats.hitValidationFailures);
     }
 
 #if USE_POLL
@@ -1514,10 +1514,10 @@ GetCountersStats(Mgr::CountersActionData& stats)
     stats.aborted_requests = f->aborted_requests;
 
     if (Config.onoff.paranoid_hit_validation) {
-        stats.validationAttempts = f->hitValidation.validationAttempts;
-        stats.validationRefusalsDueToLocking = f->hitValidation.validationRefusalsDueToLocking;
-        stats.validationRefusalsDueToZeroSize = f->hitValidation.validationRefusalsDueToZeroSize;
-        stats.validationFailures = f->hitValidation.validationFailures;
+        stats.hitValidationAttempts = f->hitValidation.attempts;
+        stats.hitValidationRefusalsDueToLocking = f->hitValidation.refusalsDueToLocking;
+        stats.hitValidationRefusalsDueToZeroSize = f->hitValidation.refusalsDueToZeroSize;
+        stats.hitValidationFailures = f->hitValidation.failures;
     }
 }
 
@@ -1646,14 +1646,14 @@ DumpCountersStats(Mgr::CountersActionData& stats, StoreEntry* sentry)
                       stats.aborted_requests);
 
     if (Config.onoff.paranoid_hit_validation) {
-        storeAppendPrintf(sentry, "hitValidation.validationAttempts = %.0f\n",
-                          stats.validationAttempts);
-        storeAppendPrintf(sentry, "hitValidation.validationRefusalsDueToLocking = %.0f\n",
-                          stats.validationRefusalsDueToLocking);
-        storeAppendPrintf(sentry, "hitValidation.validationRefusalsDueToZeroSize = %.0f\n",
-                          stats.validationRefusalsDueToZeroSize);
-        storeAppendPrintf(sentry, "hitValidation.validationFailures = %.0f\n",
-                          stats.validationFailures);
+        storeAppendPrintf(sentry, "hitValidation.attempts = %.0f\n",
+                          stats.hitValidationAttempts);
+        storeAppendPrintf(sentry, "hitValidation.refusalsDueToLocking = %.0f\n",
+                          stats.hitValidationRefusalsDueToLocking);
+        storeAppendPrintf(sentry, "hitValidation.refusalsDueToZeroSize = %.0f\n",
+                          stats.hitValidationRefusalsDueToZeroSize);
+        storeAppendPrintf(sentry, "hitValidation.failures = %.0f\n",
+                          stats.hitValidationFailures);
     }
 }
 

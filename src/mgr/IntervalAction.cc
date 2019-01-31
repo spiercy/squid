@@ -87,10 +87,10 @@ Mgr::IntervalActionData::operator += (const IntervalActionData& stats)
     swap_files_cleaned += stats.swap_files_cleaned;
     aborted_requests += stats.aborted_requests;
     if (Config.onoff.paranoid_hit_validation) {
-        validationAttempts += stats.validationAttempts;
-        validationRefusalsDueToLocking += stats.validationRefusalsDueToLocking;
-        validationRefusalsDueToZeroSize += stats.validationRefusalsDueToZeroSize;
-        validationFailures += stats.validationFailures;
+        hitValidationAttempts += stats.hitValidationAttempts;
+        hitValidationRefusalsDueToLocking += stats.hitValidationRefusalsDueToLocking;
+        hitValidationRefusalsDueToZeroSize += stats.hitValidationRefusalsDueToZeroSize;
+        hitValidationFailures += stats.hitValidationFailures;
     }
     syscalls_disk_opens += stats.syscalls_disk_opens;
     syscalls_disk_closes += stats.syscalls_disk_closes;

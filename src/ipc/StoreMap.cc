@@ -673,10 +673,10 @@ Ipc::StoreMap::validateHit(const sfileno fileno)
 {
     const auto &anchor = anchorAt(fileno);
 
-    ++statCounter.hitValidation.validationAttempts;
+    ++statCounter.hitValidation.attempts;
 
     if (!anchor.lock.lockHeaders()) {
-        ++statCounter.hitValidation.validationRefusalsDueToLocking;
+        ++statCounter.hitValidation.refusalsDueToLocking;
         return true; // presume valid; cannot validate changing entry
     }
 
@@ -702,11 +702,11 @@ Ipc::StoreMap::validateHit(const sfileno fileno)
         return true;
 
     if (!anchor.basics.swap_file_sz) {
-        ++statCounter.hitValidation.validationRefusalsDueToZeroSize;
+        ++statCounter.hitValidation.refusalsDueToZeroSize;
         return true; // presume valid; cannot validate w/o known swap_file_sz
     }
 
-    ++statCounter.hitValidation.validationFailures;
+    ++statCounter.hitValidation.failures;
 
     debugs(54, DBG_IMPORTANT, "BUG: purging corrupted cache entry " << fileno <<
            " from " << path <<

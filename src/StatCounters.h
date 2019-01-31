@@ -158,10 +158,10 @@ public:
     } swap;
 
     struct {
-        uint64_t validationAttempts;
-        uint64_t validationRefusalsDueToLocking;
-        uint64_t validationRefusalsDueToZeroSize;
-        uint64_t validationFailures;
+        uint64_t attempts;
+        uint64_t refusalsDueToLocking;
+        uint64_t refusalsDueToZeroSize;
+        uint64_t failures;
     } hitValidation;
 
 private:
