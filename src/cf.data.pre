@@ -4019,8 +4019,8 @@ DOC_START
 	a BUG line reported to cache.log, and the invalid entry marked
 	as unusable (and eventually purged from the cache).
 
-	Enabling this feature also results in periodic reports of
-	validation statistics dumped to cache.log.
+	When hit validation is enabled, its statistics is included in Cache
+	Manager mgr:counters, mgr:5min, and mgr:60min reports.
 DOC_END
 
 NAME: max_open_disk_fds
