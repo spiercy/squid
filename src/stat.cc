@@ -1154,13 +1154,13 @@ DumpAvgStat(Mgr::IntervalActionData& stats, StoreEntry* sentry)
                       stats.aborted_requests);
 
     if (Config.onoff.paranoid_hit_validation) {
-        storeAppendPrintf(sentry, "hitValidation.attempts = %f/sec\n",
+        storeAppendPrintf(sentry, "hit_validation.attempts = %f/sec\n",
                           stats.hitValidationAttempts);
-        storeAppendPrintf(sentry, "hitValidation.refusalsDueToLocking = %f/sec\n",
+        storeAppendPrintf(sentry, "hit_validation.refusals.due_to_locking = %f/sec\n",
                           stats.hitValidationRefusalsDueToLocking);
-        storeAppendPrintf(sentry, "hitValidation.refusalsDueToZeroSize = %f/sec\n",
+        storeAppendPrintf(sentry, "hit_validation.refusals.due_to_zeroSize = %f/sec\n",
                           stats.hitValidationRefusalsDueToZeroSize);
-        storeAppendPrintf(sentry, "hitValidation.failures = %f/sec\n",
+        storeAppendPrintf(sentry, "hit_validation.failures = %f/sec\n",
                           stats.hitValidationFailures);
     }
 
@@ -1646,13 +1646,13 @@ DumpCountersStats(Mgr::CountersActionData& stats, StoreEntry* sentry)
                       stats.aborted_requests);
 
     if (Config.onoff.paranoid_hit_validation) {
-        storeAppendPrintf(sentry, "hitValidation.attempts = %.0f\n",
+        storeAppendPrintf(sentry, "hit_validation.attempts = %.0f\n",
                           stats.hitValidationAttempts);
-        storeAppendPrintf(sentry, "hitValidation.refusalsDueToLocking = %.0f\n",
+        storeAppendPrintf(sentry, "hit_validation.refusals.due_to_locking = %.0f\n",
                           stats.hitValidationRefusalsDueToLocking);
-        storeAppendPrintf(sentry, "hitValidation.refusalsDueToZeroSize = %.0f\n",
+        storeAppendPrintf(sentry, "hit_validation.refusals.due_to_zeroSize = %.0f\n",
                           stats.hitValidationRefusalsDueToZeroSize);
-        storeAppendPrintf(sentry, "hitValidation.failures = %.0f\n",
+        storeAppendPrintf(sentry, "hit_validation.failures = %.0f\n",
                           stats.hitValidationFailures);
     }
 }
