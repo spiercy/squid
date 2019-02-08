@@ -39,7 +39,8 @@ Ipc::StartListening(int sock_type, int proto, const Comm::ConnectionPointer &lis
     Must(cbd);
     cbd->conn = listenConn;
 
-    if (UsingSmp()) { // if SMP is on, share
+    if ((listenConn->flags & COMM_REUSEPORT) && UsingSmp()) {
+        // ask Coordinator for the listening socket; all askers share the queue
         OpenListenerParams p;
         p.sock_type = sock_type;
         p.proto = proto;

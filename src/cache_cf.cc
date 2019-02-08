@@ -3670,6 +3670,8 @@ parse_port_option(AnyP::PortCfgPointer &s, char *token)
         s->secure.parse(token+4);
     } else if (strcmp(token, "ftp-track-dirs") == 0) {
         s->ftp_track_dirs = true;
+    } else if (strcmp(token, "worker-queues") == 0) {
+        s->workerQueues = true;
     } else {
         debugs(3, DBG_CRITICAL, "FATAL: Unknown " << cfg_directive << " option '" << token << "'.");
         self_destruct();
