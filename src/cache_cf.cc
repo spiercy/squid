@@ -3678,7 +3678,9 @@ parse_port_option(AnyP::PortCfgPointer &s, char *token)
             #error missing system #include that #defines SO_* constants
         #endif
         #if !defined(SO_REUSEPORT)
-            throw TexcHere("worker-queues option requires building Squid where SO_REUSEPORT is supported by the TCP stack");
+            debugs(3, DBG_CRITICAL, "FATAL: " << cfg_directive << ' ' << token <<
+                   " option requires building Squid where SO_REUSEPORT is supported by the TCP stack");
+            self_destruct();
         #endif
         s->workerQueues = true;
     } else {
