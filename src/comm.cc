@@ -486,7 +486,7 @@ comm_apply_flags(int new_socket,
                 if (reconfiguring)
                     debugs(5, DBG_IMPORTANT, errorMessage);
                 else
-                    throw TextException(errorMessage);
+                    throw TexcHere(errorMessage);
             }
         }
 #endif
