@@ -476,6 +476,7 @@ comm_apply_flags(int new_socket,
             debugs(5, DBG_IMPORTANT,"WARNING: Squid is attempting to bind() port " << addr << " without being a listener.");
         if ( addr.isNoAddr() )
             debugs(5,0,"CRITICAL: Squid is attempting to bind() port " << addr << "!!");
+#if defined(SO_REUSEPORT)
         if (flags & COMM_REUSEPORT) {
             int on = 1;
             if (setsockopt(new_socket, SOL_SOCKET, SO_REUSEPORT, (char *) &on, sizeof(on)) < 0) {
@@ -488,6 +489,7 @@ comm_apply_flags(int new_socket,
                     throw TextException(errorMessage);
             }
         }
+#endif
         if (commBind(new_socket, *AI) != Comm::OK) {
             comm_close(new_socket);
             return -1;
