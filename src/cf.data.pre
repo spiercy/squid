@@ -2139,7 +2139,7 @@ DOC_START
 
 	   worker-queues
 			Ask TCP stack to maintain a dedicated listening queue
-			for each SMP worker accepting requests at this port.
+			for each worker accepting requests at this port.
 			Requires TCP stack that supports the SO_REUSEPORT socket
 			option.
 

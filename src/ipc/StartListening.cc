@@ -54,7 +54,6 @@ Ipc::StartListening(int sock_type, int proto, const Comm::ConnectionPointer &lis
     }
 
     enter_suid();
-    // share the listening port if giveEachWorkerItsOwnQueue is true
     comm_open_listener(sock_type, proto, cbd->conn, FdNote(fdNote));
     cbd->errNo = Comm::IsConnOpen(cbd->conn) ? 0 : errno;
     leave_suid();
