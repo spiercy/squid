@@ -39,9 +39,10 @@ Ipc::StartListening(int sock_type, int proto, const Comm::ConnectionPointer &lis
     Must(cbd);
     cbd->conn = listenConn;
 
-    const auto workerListeningQueue = listenConn->flags & COMM_REUSEPORT;
-    if (!workerListeningQueue && UsingSmp()) {
-        // ask Coordinator for the listening socket; all askers share the queue
+    const auto giveEachWorkerItsOwnQueue = listenConn->flags & COMM_REUSEPORT;
+    if (!giveEachWorkerItsOwnQueue && UsingSmp()) {
+        // Ask Coordinator for a listening socket.
+        // All askers share one listening queue.
         OpenListenerParams p;
         p.sock_type = sock_type;
         p.proto = proto;
@@ -53,7 +54,7 @@ Ipc::StartListening(int sock_type, int proto, const Comm::ConnectionPointer &lis
     }
 
     enter_suid();
-    // share the listening port if workerListeningQueue is true
+    // share the listening port if giveEachWorkerItsOwnQueue is true
     comm_open_listener(sock_type, proto, cbd->conn, FdNote(fdNote));
     cbd->errNo = Comm::IsConnOpen(cbd->conn) ? 0 : errno;
     leave_suid();
