@@ -480,7 +480,7 @@ comm_apply_flags(int new_socket,
         if (flags & COMM_REUSEPORT) {
             int on = 1;
             if (setsockopt(new_socket, SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<char*>(&on), sizeof(on)) < 0) {
-                const int savedErrno = errno;
+                const auto savedErrno = errno;
                 const auto errorMessage = ToSBuf("cannot enable SO_REUSEPORT socket option when binding to ",
                                                  addr, ": ", xstrerr(savedErrno));
                 if (reconfiguring)
