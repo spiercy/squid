@@ -2049,7 +2049,8 @@ StoreEntry::checkDisk() const
             }
         }
     } catch (...) {
-        debugs(88, DBG_IMPORTANT, "ERROR: inconsistent disk entry state " << *this);
+        debugs(88, DBG_IMPORTANT, "ERROR: inconsistent disk entry state " <<
+               *this << "; problem: " << CurrentException);
         throw;
     }
 }
