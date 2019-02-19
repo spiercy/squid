@@ -2042,10 +2042,10 @@ StoreEntry::checkDisk() const
         } else {
             Must(swap_filen >= 0);
             Must(swap_dirn < Config.cacheSwap.n_configured);
-            if (swap_status == SWAPOUT_FAILED) {
+            if (swapoutFailed()) {
                 Must(EBIT_TEST(flags, RELEASE_REQUEST));
             } else {
-                Must(swap_status == SWAPOUT_WRITING || swap_status == SWAPOUT_DONE);
+                Must(swappingOut() || swappedOut());
             }
         }
     } catch (...) {

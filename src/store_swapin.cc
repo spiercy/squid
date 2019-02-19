@@ -38,7 +38,7 @@ storeSwapInStart(store_client * sc)
         return;
     }
 
-    if (e->swap_status == SWAPOUT_FAILED) {
+    if (e->swapoutFailed()) {
         debugs(20, DBG_IMPORTANT, "BUG: Attempt to swap in a failed-to-store entry " << *e << ". Salvaged.");
         return;
     }
