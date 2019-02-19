@@ -259,6 +259,8 @@ StoreEntry::setNoDelay(bool const newValue)
 // XXX: Type names mislead. STORE_DISK_CLIENT actually means that we should
 //      open swapin file, aggressively trim memory, and ignore read-ahead gap.
 //      It does not mean we will read from disk exclusively (or at all!).
+//      STORE_MEM_CLIENT covers all other cases, including in-memory entries,
+//      newly created entries, and entries not backed by disk or memory cache.
 // XXX: May create STORE_DISK_CLIENT with no disk caching configured.
 // XXX: Collapsed clients cannot predict their type.
 store_client_t
@@ -281,7 +283,6 @@ StoreEntry::storeClientType() const
         return STORE_MEM_CLIENT;
     }
 
-    // cannot swapin failed incomplete entries
     if (swapoutFailed())
         return STORE_MEM_CLIENT;
 
@@ -2042,10 +2043,6 @@ StoreEntry::checkDisk() const
             Must(swap_filen >= 0);
             Must(swap_dirn < Config.cacheSwap.n_configured);
             if (swap_status == SWAPOUT_FAILED) {
-                // This situation may occur after swapout failures (e.g., max_size/max_object_size overflows).
-                // The entry is still attached to the disk (both swap_dirn and swap_dirn >= 0), but the
-                // corresponding disk entry is not available already. Such StoreEntry must be released by this
-                // time.
                 Must(EBIT_TEST(flags, RELEASE_REQUEST));
             } else {
                 Must(swap_status == SWAPOUT_WRITING || swap_status == SWAPOUT_DONE);

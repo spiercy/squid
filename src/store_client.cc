@@ -710,8 +710,8 @@ storeUnregister(store_client * sc, StoreEntry * e, void *data)
     dlinkDelete(&sc->node, &mem->clients);
     -- mem->nclients;
 
-    const auto swapoutCompleted = e->swappedOut() || e->swapoutFailed();
-    if (e->store_status == STORE_OK && !swapoutCompleted)
+    const auto swapoutFinished = e->swappedOut() || e->swapoutFailed();
+    if (e->store_status == STORE_OK && !swapoutFinished)
         e->swapOut();
 
     if (sc->swapin_sio != NULL) {
