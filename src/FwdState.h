@@ -142,8 +142,6 @@ private:
     /// whether we have used up all permitted forwarding attempts
     bool exhaustedTries() const;
 
-    void handlePinned(CachePeer *); ///< Handle pinned connections
-
     /// whether we are waiting for HappyConnOpener
     /// same as calls.connector but may differ from connOpener.valid()
     bool opening() const { return connOpener.set(); }
