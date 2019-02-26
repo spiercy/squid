@@ -538,7 +538,7 @@ void
 FwdState::noteDestination(Comm::ConnectionPointer path)
 {
     // do not forward bumped connections to cache_peers (except origin servers)
-    if (request->flags.sslBumped && path->getPeer() && !path->getPeer()->options.originserver) {
+    if (request->flags.sslBumped && path && path->getPeer() && !path->getPeer()->options.originserver) {
         debugs(50, 4, "ignoring cache_peer for an SslBump connection: " << path);
         return;
     }
@@ -546,9 +546,7 @@ FwdState::noteDestination(Comm::ConnectionPointer path)
     flags.destinationsFound = true;
 
     if (path == nullptr) {
-        assert(!destinations->size()); // no other destinations allowed
-        // we do not expect and do not need more paths
-        PeerSelectionInitiator::subscribed = false;
+        assert(!destinations->size()); // Must be the first destination
         usePinned();
         return;
     }
