@@ -253,6 +253,18 @@ void ACLFilledChecklist::setRequest(HttpRequest *httpRequest)
     }
 }
 
+void ACLFilledChecklist::setClientConnectionManager(ConnStateData *aConn)
+{
+    if (!aConn)
+        return;
+    const auto clientConn = aConn->clientConnection;
+    if (clientConn) {
+        src_addr = clientConn->remote;
+        my_addr = clientConn->local;
+    }
+    clientConnectionManager(aConn);
+}
+
 void
 ACLFilledChecklist::setIdent(const char *ident)
 {

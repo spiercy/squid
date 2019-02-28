@@ -52,6 +52,8 @@ public:
 
     /// set either conn
     void clientConnectionManager(ConnStateData *);
+
+    void setClientConnectionManager(ConnStateData *);
     /// set the client side FD
     void fd(int aDescriptor);
 

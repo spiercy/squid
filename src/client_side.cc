@@ -437,6 +437,10 @@ ClientHttpRequest::logRequest()
     }
 
     ACLFilledChecklist checklist(NULL, request, NULL);
+
+    if (!request)
+        checklist.setClientConnectionManager(getConn());
+
     if (al->reply) {
         checklist.reply = al->reply;
         HTTPMSGLOCK(checklist.reply);
