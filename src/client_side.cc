@@ -1626,7 +1626,7 @@ clientProcessRequest(ConnStateData *conn, const Http1::RequestParserPointer &hp,
     // this entire function to remove them from the FTP code path. Connection
     // setup and body_pipe preparation blobs are needed for FTP.
 
-    request->manager(conn, http->al);
+    request->setInterceptionFlags(http->al);
 
     request->flags.accelerated = http->flags.accel;
     request->flags.sslBumped=conn->switchedToHttps();
@@ -3278,7 +3278,7 @@ ConnStateData::buildFakeRequest(Http::MethodType const method, SBuf &useHost, un
     request->url.port(usePort);
     http->initRequest(request.getRaw());
 
-    request->manager(this, http->al);
+    request->setInterceptionFlags(http->al);
 
     if (proto == AnyP::PROTO_HTTP)
         request->header.putStr(Http::HOST, useHost.c_str());

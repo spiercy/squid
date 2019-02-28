@@ -94,8 +94,8 @@ public:
     /// clear error details, useful for retries/repeats
     void clearError();
 
-    /// associates the request with a from-client connection manager
-    void manager(const CbcPointer<ConnStateData> &aMgr, const AccessLogEntryPointer &al);
+    /// sets TPROXY-related flags
+    void setInterceptionFlags(const AccessLogEntryPointer &al);
 
 protected:
     void clean();
