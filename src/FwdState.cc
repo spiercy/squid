@@ -324,7 +324,6 @@ FwdState::Start(const Comm::ConnectionPointer &clientConn, StoreEntry *entry, Ht
          */
         ACLFilledChecklist ch(Config.accessList.miss, request, NULL);
         ch.al = al;
-        ch.src_addr = request->clientAddr();
         ch.syncAle(request, nullptr);
         if (ch.fastCheck().denied()) {
             err_type page_id;

@@ -606,8 +606,6 @@ HttpRequest::getRangeOffsetLimit()
     rangeOffsetLimit = 0; // default value for rangeOffsetLimit
 
     ACLFilledChecklist ch(NULL, this, NULL);
-    ch.src_addr = clientAddr();
-    ch.my_addr =  my_addr;
 
     for (AclSizeLimit *l = Config.rangeOffsetLimit; l; l = l -> next) {
         /* if there is no ACL list or if the ACLs listed match use this limit value */

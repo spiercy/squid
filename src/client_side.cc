@@ -1560,9 +1560,11 @@ clientTunnelOnError(ConnStateData *conn, Http::StreamPointer &context, HttpReque
         ACLFilledChecklist checklist(Config.accessList.on_unsupported_protocol, request.getRaw(), nullptr);
         checklist.al = (context && context->http) ? context->http->al : nullptr;
         checklist.requestErrorType = requestError;
-        checklist.src_addr = conn->clientConnection->remote;
-        checklist.my_addr = conn->clientConnection->local;
-        checklist.clientConnectionManager(conn);
+        if (!request) {
+            checklist.src_addr = conn->clientConnection->remote;
+            checklist.my_addr = conn->clientConnection->local;
+            checklist.clientConnectionManager(conn);
+        }
         ClientHttpRequest *http = context ? context->http : nullptr;
         const char *log_uri = http ? http->log_uri : nullptr;
         checklist.syncAle(request.getRaw(), log_uri);
@@ -2621,8 +2623,6 @@ ConnStateData::postHttpsAccept()
         request->myportname = port->name;
 
         ACLFilledChecklist *acl_checklist = new ACLFilledChecklist(Config.accessList.ssl_bump, request, NULL);
-        acl_checklist->src_addr = clientConnection->remote;
-        acl_checklist->my_addr = port->s;
         // Build a local AccessLogEntry to allow requiresAle() acls work
         acl_checklist->al = new AccessLogEntry;
         acl_checklist->al->cache.start_time = current_time;

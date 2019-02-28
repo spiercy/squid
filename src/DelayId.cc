@@ -90,11 +90,6 @@ DelayId::DelayClient(ClientHttpRequest * http, HttpReply *reply)
             ch.reply = reply;
             HTTPMSGLOCK(reply);
         }
-        ch.src_addr = r->effectiveClientAddr();
-        ch.my_addr = r->myAddr();
-
-        if (http->getConn() != NULL)
-            ch.clientConnectionManager(http->getConn());
 
         if (DelayPools::delay_data[pool].theComposite().getRaw() && ch.fastCheck().allowed()) {
 

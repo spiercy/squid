@@ -1798,8 +1798,6 @@ ClientHttpRequest::doCallouts()
     if (getConn() && Comm::IsConnOpen(getConn()->clientConnection)) {
         ACLFilledChecklist ch(nullptr, request, nullptr);
         ch.al = calloutContext->http->al;
-        ch.src_addr = request->clientAddr();
-        ch.my_addr = request->myAddr();
         ch.syncAle(request, log_uri);
 
         if (!calloutContext->toClientMarkingDone) {

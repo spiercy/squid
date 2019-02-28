@@ -1108,8 +1108,6 @@ tunnelStart(ClientHttpRequest * http)
          */
         ACLFilledChecklist ch(Config.accessList.miss, request, NULL);
         ch.al = http->al;
-        ch.src_addr = request->clientAddr();
-        ch.my_addr = request->myAddr();
         ch.syncAle(request, http->log_uri);
         if (ch.fastCheck().denied()) {
             debugs(26, 4, HERE << "MISS access forbidden.");
