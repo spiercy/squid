@@ -1562,7 +1562,7 @@ clientTunnelOnError(ConnStateData *conn, Http::StreamPointer &context, HttpReque
         checklist.requestErrorType = requestError;
         checklist.src_addr = conn->clientConnection->remote;
         checklist.my_addr = conn->clientConnection->local;
-        checklist.conn(conn);
+        checklist.clientConnectionManager(conn);
         ClientHttpRequest *http = context ? context->http : nullptr;
         const char *log_uri = http ? http->log_uri : nullptr;
         checklist.syncAle(request.getRaw(), log_uri);
@@ -1810,7 +1810,7 @@ ConnStateData::proxyProtocolValidateClient()
     ACLFilledChecklist ch(Config.accessList.proxyProtocol, NULL, clientConnection->rfc931);
     ch.src_addr = clientConnection->remote;
     ch.my_addr = clientConnection->local;
-    ch.conn(this);
+    ch.clientConnectionManager(this);
 
     if (!ch.fastCheck().allowed())
         return proxyProtocolError("PROXY client not permitted by ACLs");

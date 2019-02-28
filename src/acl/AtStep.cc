@@ -21,7 +21,7 @@ int
 ACLAtStepStrategy::match (ACLData<Ssl::BumpStep> * &data, ACLFilledChecklist *checklist)
 {
     Ssl::ServerBump *bump = NULL;
-    if (checklist->conn() != NULL && (bump = checklist->conn()->serverBump()))
+    if (checklist->clientConnectionManager() != NULL && (bump = checklist->clientConnectionManager()->serverBump()))
         return data->match(bump->step);
     else
         return data->match(Ssl::bumpStep1);

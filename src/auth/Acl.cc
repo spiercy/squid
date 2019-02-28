@@ -36,7 +36,7 @@ AuthenticateAcl(ACLChecklist *ch)
         return ACCESS_DENIED;
     } else if (request->flags.sslBumped) {
         debugs(28, 5, "SslBumped request: It is an encapsulated request do not authenticate");
-        checklist->auth_user_request = checklist->conn() != NULL ? checklist->conn()->getAuth() : request->auth_user_request;
+        checklist->auth_user_request = checklist->clientConnectionManager() != NULL ? checklist->clientConnectionManager()->getAuth() : request->auth_user_request;
         if (checklist->auth_user_request != NULL)
             return ACCESS_ALLOWED;
         else
@@ -56,7 +56,7 @@ AuthenticateAcl(ACLChecklist *ch)
     /* Note: this fills in auth_user_request when applicable */
     const AuthAclState result = Auth::UserRequest::tryToAuthenticateAndSetAuthUser(
                                     &checklist->auth_user_request, headertype, request,
-                                    checklist->conn(), checklist->src_addr, checklist->al);
+                                    checklist->clientConnectionManager(), checklist->src_addr, checklist->al);
     switch (result) {
 
     case AUTH_ACL_CANNOT_AUTHENTICATE:

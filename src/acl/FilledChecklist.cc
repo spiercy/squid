@@ -85,9 +85,9 @@ ACLFilledChecklist::verifyAle() const
     // fill the old external_acl_type codes are set if any
     // data on them exists in the Checklist
 
-    if (!al->cache.port && conn()) {
+    if (!al->cache.port && clientConnectionManager()) {
         showDebugWarning("listening port");
-        al->cache.port = conn()->port;
+        al->cache.port = clientConnectionManager()->port;
     }
 
     if (request) {
@@ -141,31 +141,31 @@ ACLFilledChecklist::syncAle(HttpRequest *adaptedRequest, const char *logUri) con
 }
 
 ConnStateData *
-ACLFilledChecklist::conn() const
+ACLFilledChecklist::clientConnectionManager() const
 {
     return cbdataReferenceValid(conn_) ? conn_ : nullptr;
 }
 
 void
-ACLFilledChecklist::conn(ConnStateData *aConn)
+ACLFilledChecklist::clientConnectionManager(ConnStateData *aConn)
 {
-    if (conn() == aConn)
+    if (clientConnectionManager() == aConn)
         return;
-    assert (conn() == NULL);
+    assert (clientConnectionManager() == NULL);
     conn_ = cbdataReference(aConn);
 }
 
 int
 ACLFilledChecklist::fd() const
 {
-    const auto c = conn();
+    const auto c = clientConnectionManager();
     return (c && c->clientConnection) ? c->clientConnection->fd : fd_;
 }
 
 void
 ACLFilledChecklist::fd(int aDescriptor)
 {
-    const auto c = conn();
+    const auto c = clientConnectionManager();
     assert(!c || !c->clientConnection || c->clientConnection->fd == aDescriptor);
     fd_ = aDescriptor;
 }
@@ -249,7 +249,7 @@ void ACLFilledChecklist::setRequest(HttpRequest *httpRequest)
         my_addr = request->myAddr();
 
         if (request->clientConnectionManager.valid())
-            conn(request->clientConnectionManager.get());
+            clientConnectionManager(request->clientConnectionManager.get());
     }
 }
 

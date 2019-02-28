@@ -24,8 +24,8 @@ ACLServerCertificateStrategy::match(ACLData<MatchType> * &data, ACLFilledCheckli
     Security::CertPointer cert;
     if (checklist->serverCert)
         cert = checklist->serverCert;
-    else if (checklist->conn() != NULL && checklist->conn()->serverBump())
-        cert = checklist->conn()->serverBump()->serverCert;
+    else if (checklist->clientConnectionManager() != NULL && checklist->clientConnectionManager()->serverBump())
+        cert = checklist->clientConnectionManager()->serverBump()->serverCert;
 
     if (!cert)
         return 0;

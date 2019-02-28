@@ -94,7 +94,7 @@ DelayId::DelayClient(ClientHttpRequest * http, HttpReply *reply)
         ch.my_addr = r->myAddr();
 
         if (http->getConn() != NULL)
-            ch.conn(http->getConn());
+            ch.clientConnectionManager(http->getConn());
 
         if (DelayPools::delay_data[pool].theComposite().getRaw() && ch.fastCheck().allowed()) {
 
