@@ -138,8 +138,6 @@ public:
 
     int imslen;
 
-    Ip::Address client_addr;
-
     void setInternal(const bool val) { internal = val; }
 
     void setDownloader(Downloader *);
@@ -160,8 +158,6 @@ public:
     void indirectClientAddr(const Ip::Address &addr) { indirect_client_addr = addr; }
     void resetIndirectClientAddr();
 #endif /* FOLLOW_X_FORWARDED_FOR */
-
-    Ip::Address my_addr;
 
     HierarchyLogEntry hier;
 
