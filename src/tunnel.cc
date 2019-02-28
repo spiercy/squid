@@ -1101,15 +1101,15 @@ tunnelStart(ClientHttpRequest * http)
      * be allowed.  yuck, I know.
      */
 
-    if (Config.accessList.miss && !request->client_addr.isNoAddr()) {
+    if (Config.accessList.miss && !request->clientAddr().isNoAddr()) {
         /*
          * Check if this host is allowed to fetch MISSES from us (miss_access)
          * default is to allow.
          */
         ACLFilledChecklist ch(Config.accessList.miss, request, NULL);
         ch.al = http->al;
-        ch.src_addr = request->client_addr;
-        ch.my_addr = request->my_addr;
+        ch.src_addr = request->clientAddr();
+        ch.my_addr = request->myAddr();
         ch.syncAle(request, http->log_uri);
         if (ch.fastCheck().denied()) {
             debugs(26, 4, HERE << "MISS access forbidden.");

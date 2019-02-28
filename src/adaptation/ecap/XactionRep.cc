@@ -128,13 +128,7 @@ Adaptation::Ecap::XactionRep::clientIpValue() const
     // TODO: move this logic into HttpRequest::clientIp(bool) and
     // HttpRequest::clientIpString(bool) and reuse everywhere
     if (TheConfig.send_client_ip && request) {
-        Ip::Address client_addr;
-#if FOLLOW_X_FORWARDED_FOR
-        if (TheConfig.use_indirect_client) {
-            client_addr = request->indirect_client_addr;
-        } else
-#endif
-            client_addr = request->client_addr;
+        Ip::Address client_addr = request->effectiveClientAddr();
         if (!client_addr.isAnyAddr() && !client_addr.isNoAddr()) {
             char ntoabuf[MAX_IPSTRLEN] = "";
             client_addr.toStr(ntoabuf,MAX_IPSTRLEN);

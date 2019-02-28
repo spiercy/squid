@@ -567,7 +567,7 @@ ErrorState::ErrorState(err_type t, Http::StatusCode status, HttpRequest * req) :
 
     if (req) {
         request = req;
-        src_addr = req->client_addr;
+        src_addr = req->clientAddr();
     }
 }
 

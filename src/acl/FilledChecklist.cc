@@ -245,13 +245,8 @@ void ACLFilledChecklist::setRequest(HttpRequest *httpRequest)
     if (httpRequest) {
         request = httpRequest;
         HTTPMSGLOCK(request);
-#if FOLLOW_X_FORWARDED_FOR
-        if (Config.onoff.acl_uses_indirect_client)
-            src_addr = request->indirect_client_addr;
-        else
-#endif /* FOLLOW_X_FORWARDED_FOR */
-            src_addr = request->client_addr;
-        my_addr = request->my_addr;
+        src_addr = request->effectiveClientAddr();
+        my_addr = request->myAddr();
 
         if (request->clientConnectionManager.valid())
             conn(request->clientConnectionManager.get());

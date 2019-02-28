@@ -383,7 +383,7 @@ PeerSelector::noteIp(const Ip::Address &ip)
 
     // for TPROXY spoofing, we must skip unusable addresses
     if (request->flags.spoofClientIp && !(peer && peer->options.no_tproxy) ) {
-        if (ip.isIPv4() != request->client_addr.isIPv4())
+        if (ip.isIPv4() != request->clientAddr().isIPv4())
             return; // cannot spoof the client address on this link
     }
 

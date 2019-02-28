@@ -71,7 +71,7 @@ DelayId::DelayClient(ClientHttpRequest * http, HttpReply *reply)
     assert(http);
     r = http->request;
 
-    if (r->client_addr.isNoAddr()) {
+    if (r->clientAddr().isNoAddr()) {
         debugs(77, 2, "delayClient: WARNING: Called with 'NO_ADDR' address, ignoring");
         return DelayId();
     }
@@ -90,13 +90,8 @@ DelayId::DelayClient(ClientHttpRequest * http, HttpReply *reply)
             ch.reply = reply;
             HTTPMSGLOCK(reply);
         }
-#if FOLLOW_X_FORWARDED_FOR
-        if (Config.onoff.delay_pool_uses_indirect_client)
-            ch.src_addr = r->indirect_client_addr;
-        else
-#endif /* FOLLOW_X_FORWARDED_FOR */
-            ch.src_addr = r->client_addr;
-        ch.my_addr = r->my_addr;
+        ch.src_addr = r->effectiveClientAddr();
+        ch.my_addr = r->myAddr();
 
         if (http->getConn() != NULL)
             ch.conn(http->getConn());

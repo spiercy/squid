@@ -315,7 +315,7 @@ FwdState::Start(const Comm::ConnectionPointer &clientConn, StoreEntry *entry, Ht
      * be allowed.  yuck, I know.
      */
 
-    if ( Config.accessList.miss && !request->client_addr.isNoAddr() &&
+    if ( Config.accessList.miss && !request->clientAddr().isNoAddr() &&
             !request->flags.internal && request->url.getScheme() != AnyP::PROTO_CACHE_OBJECT) {
         /**
          * Check if this host is allowed to fetch MISSES from us (miss_access).
@@ -324,7 +324,7 @@ FwdState::Start(const Comm::ConnectionPointer &clientConn, StoreEntry *entry, Ht
          */
         ACLFilledChecklist ch(Config.accessList.miss, request, NULL);
         ch.al = al;
-        ch.src_addr = request->client_addr;
+        ch.src_addr = request->clientAddr();
         ch.syncAle(request, nullptr);
         if (ch.fastCheck().denied()) {
             err_type page_id;
@@ -1357,12 +1357,7 @@ getOutgoingAddress(HttpRequest * request, Comm::ConnectionPointer conn)
     // maybe use TPROXY client address
     if (request && request->flags.spoofClientIp) {
         if (!conn->getPeer() || !conn->getPeer()->options.no_tproxy) {
-#if FOLLOW_X_FORWARDED_FOR && LINUX_NETFILTER
-            if (Config.onoff.tproxy_uses_indirect_client)
-                conn->local = request->indirect_client_addr;
-            else
-#endif
-                conn->local = request->client_addr;
+            conn->local = request->effectiveClientAddr();
             conn->local.port(0); // let OS pick the source port to prevent address clashes
             // some flags need setting on the socket to use this address
             conn->flags |= COMM_DOBIND;

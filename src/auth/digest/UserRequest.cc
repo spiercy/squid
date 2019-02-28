@@ -155,13 +155,13 @@ Auth::Digest::UserRequest::authenticate(HttpRequest * request, ConnStateData *, 
                     seen_broken_client = 1;
                 }
 
-                if (last_broken_addr != request->client_addr) {
+                if (last_broken_addr != request->clientAddr()) {
                     debugs(29, DBG_IMPORTANT, "Digest POST bug detected from " <<
                            request->client_addr << " using '" <<
                            (useragent ? useragent : "-") <<
                            "'. Please upgrade browser. See Bug #630 for details.");
 
-                    last_broken_addr = request->client_addr;
+                    last_broken_addr = request->clientAddr();
                 }
             }
         } else {

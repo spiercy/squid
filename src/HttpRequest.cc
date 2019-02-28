@@ -85,8 +85,6 @@ HttpRequest::init()
     ims = -1;
     imslen = 0;
     lastmod = -1;
-    client_addr.setEmpty();
-    my_addr.setEmpty();
     body_pipe = NULL;
     // hier
     dnsWait = -1;
@@ -116,6 +114,7 @@ HttpRequest::init()
 #endif
     rangeOffsetLimit = -2; //a value of -2 means not checked yet
     forcedBodyContinuation = false;
+    internal = false;
 }
 
 void
@@ -218,11 +217,9 @@ HttpRequest::inheritProperties(const Http::Message *aMsg)
     if (!aReq)
         return false;
 
-    client_addr = aReq->client_addr;
 #if FOLLOW_X_FORWARDED_FOR
     indirect_client_addr = aReq->indirect_client_addr;
 #endif
-    my_addr = aReq->my_addr;
 
     dnsWait = aReq->dnsWait;
 
@@ -257,6 +254,9 @@ HttpRequest::inheritProperties(const Http::Message *aMsg)
     theNotes = aReq->theNotes;
 
     sources = aReq->sources;
+
+    internal = aReq->internal;
+
     return true;
 }
 
@@ -609,7 +609,7 @@ HttpRequest::getRangeOffsetLimit()
     rangeOffsetLimit = 0; // default value for rangeOffsetLimit
 
     ACLFilledChecklist ch(NULL, this, NULL);
-    ch.src_addr = client_addr;
+    ch.src_addr = clientAddr();
     ch.my_addr =  my_addr;
 
     for (AclSizeLimit *l = Config.rangeOffsetLimit; l; l = l -> next) {
@@ -714,6 +714,62 @@ UpdateRequestNotes(ConnStateData *csd, HttpRequest &request, NotePairs const &he
 }
 
 void
+HttpRequest::setDownloader(Downloader *d)
+{
+    http_ver = Http::ProtocolVersion();
+    header.putStr(Http::HdrType::HOST, url.host());
+    header.putTime(Http::HdrType::DATE, squid_curtime);
+    downloader = d;
+    internal = true;
+}
+
+const Ip::Address&
+HttpRequest::effectiveClientAddr() const
+{
+#if FOLLOW_X_FORWARDED_FOR && LINUX_NETFILTER
+    if (Config.onoff.tproxy_uses_indirect_client)
+        return indirectClientAddr();
+    else
+#endif
+    return clientAddr();
+}
+
+static const Ip::Address&
+NoAddr()
+{
+    static Ip::Address addr;
+    addr.setNoAddr();
+    return addr;
+}
+
+const Ip::Address&
+HttpRequest::clientAddr() const
+{
+    return internal ? NoAddr() : masterXaction->tcpClient->remote;
+}
+
+const Ip::Address&
+HttpRequest::myAddr() const
+{
+    return internal ? NoAddr() : masterXaction->tcpClient->local;
+}
+
+#if FOLLOW_X_FORWARDED_FOR
+const Ip::Address&
+HttpRequest::indirectClientAddr() const
+{
+    return internal ? NoAddr() : indirect_client_addr;
+}
+
+void
+HttpRequest::resetIndirectClientAddr()
+{
+    indirect_client_addr = clientAddr();
+    indirect_client_addr.port(0);
+}
+#endif /* FOLLOW_X_FORWARDED_FOR */
+
+void
 HttpRequest::manager(const CbcPointer<ConnStateData> &aMgr, const AccessLogEntryPointer &al)
 {
     clientConnectionManager = aMgr;
@@ -728,13 +784,11 @@ HttpRequest::manager(const CbcPointer<ConnStateData> &aMgr, const AccessLogEntry
     }
 
     if (auto clientConnection = clientConnectionManager->clientConnection) {
-        client_addr = clientConnection->remote; // XXX: remove request->client_addr member.
 #if FOLLOW_X_FORWARDED_FOR
         // indirect client gets stored here because it is an HTTP header result (from X-Forwarded-For:)
         // not details about the TCP connection itself
         indirect_client_addr = clientConnection->remote;
 #endif /* FOLLOW_X_FORWARDED_FOR */
-        my_addr = clientConnection->local;
 
         flags.intercepted = ((clientConnection->flags & COMM_INTERCEPTION) != 0);
         flags.interceptTproxy = ((clientConnection->flags & COMM_TRANSPARENT) != 0 ) ;

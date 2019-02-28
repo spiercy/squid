@@ -140,8 +140,20 @@ public:
 
     Ip::Address client_addr;
 
+    void setInternal(const bool val) { internal = val; }
+
+    void setDownloader(Downloader *);
+
+    const Ip::Address& clientAddr() const;
+
+    const Ip::Address& myAddr() const;
+
+    const Ip::Address& effectiveClientAddr() const;
+
 #if FOLLOW_X_FORWARDED_FOR
-    Ip::Address indirect_client_addr;
+    const Ip::Address& indirectClientAddr() const;
+    void indirectClientAddr(const Ip::Address &addr) { indirect_client_addr = addr; }
+    void resetIndirectClientAddr();
 #endif /* FOLLOW_X_FORWARDED_FOR */
 
     Ip::Address my_addr;
@@ -251,6 +263,13 @@ private:
     /// annotations added by the note directive and helpers
     /// and(or) by annotate_transaction/annotate_client ACLs.
     NotePairs::Pointer theNotes;
+
+#if FOLLOW_X_FORWARDED_FOR
+    Ip::Address indirect_client_addr;
+#endif /* FOLLOW_X_FORWARDED_FOR */
+
+    bool internal;
+
 protected:
     virtual void packFirstLineInto(Packable * p, bool full_uri) const;
 
