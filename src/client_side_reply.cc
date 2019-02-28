@@ -350,7 +350,7 @@ clientReplyContext::processExpired()
     debugs(88, 5, "lastmod " << entry->lastModified());
     http->storeEntry(entry);
     assert(http->out.offset == 0);
-    assert(http->request->clientConnectionManager == http->getConn());
+    assert(http->request->clientConnectionManager() == http->getConn());
 
     if (collapsedRevalidation != crSlave) {
         /*
@@ -787,7 +787,7 @@ clientReplyContext::processMiss()
             return;
         }
 
-        assert(r->clientConnectionManager == http->getConn());
+        assert(r->clientConnectionManager() == http->getConn());
 
         /** Start forwarding to get the new object from network */
         FwdState::Start(conn, http->storeEntry(), r, http->al);
@@ -2286,7 +2286,7 @@ clientReplyContext::createStoreEntry(const HttpRequestMethod& m, RequestFlags re
      */
 
     if (http->request == NULL) {
-        const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient);
+        const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient, http->getConn());
         // XXX: These fake URI parameters shadow the real (or error:...) URI.
         // TODO: Either always set the request earlier and assert here OR use
         // http->uri (converted to Anyp::Uri) to create this catch-all request.

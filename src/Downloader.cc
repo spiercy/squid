@@ -128,7 +128,7 @@ Downloader::buildRequest()
 {
     const HttpRequestMethod method = Http::METHOD_GET;
 
-    const MasterXaction::Pointer mx = new MasterXaction(initiator_);
+    const MasterXaction::Pointer mx = new MasterXaction(initiator_, nullptr);
     HttpRequest *const request = HttpRequest::FromUrl(url_.c_str(), mx, method);
 
     if (!request) {

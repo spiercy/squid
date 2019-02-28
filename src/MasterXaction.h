@@ -10,12 +10,16 @@
 #define SQUID_SRC_MASTERXACTION_H
 
 #include "anyp/forward.h"
+#include "base/CbcPointer.h"
 #include "anyp/PortCfg.h"
 #include "base/InstanceId.h"
 #include "base/Lock.h"
 #include "base/RefCount.h"
+//#include "client_side.h"
 #include "comm/forward.h"
 #include "XactionInitiator.h"
+
+class ConnStateData;
 
 /** Master transaction details.
  *
@@ -41,7 +45,7 @@ class MasterXaction : public RefCountable
 public:
     typedef RefCount<MasterXaction> Pointer;
 
-    explicit MasterXaction(const XactionInitiator anInitiator) : initiator(anInitiator) {};
+    explicit MasterXaction(const XactionInitiator anInitiator, ConnStateData *connManager);
 
     /// transaction ID.
     InstanceId<MasterXaction> id;
@@ -55,6 +59,12 @@ public:
     /// the initiator of this transaction
     XactionInitiator initiator;
 
+    /**
+     * The client connection manager, if known;
+     * Used for any response actions needed directly to the client.
+     * ie 1xx forwarding or connection pinning state changes
+     */
+    CbcPointer<ConnStateData> clientConnectionManager;
     // TODO: add state from other Jobs in the transaction
 };
 

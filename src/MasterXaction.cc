@@ -7,7 +7,13 @@
  */
 
 #include "squid.h"
+#include "client_side.h"
+#include "http/Stream.h"
 #include "MasterXaction.h"
 
 InstanceIdDefinitions(MasterXaction, "MXID_");
+MasterXaction::MasterXaction(const XactionInitiator anInitiator, ConnStateData *connManager) :
+    initiator(anInitiator),
+    clientConnectionManager(connManager)
+{};
 

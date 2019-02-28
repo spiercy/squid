@@ -246,9 +246,6 @@ HttpRequest::inheritProperties(const Http::Message *aMsg)
 
     forcedBodyContinuation = aReq->forcedBodyContinuation;
 
-    // main property is which connection the request was received on (if any)
-    clientConnectionManager = aReq->clientConnectionManager;
-
     downloader = aReq->downloader;
 
     theNotes = aReq->theNotes;
@@ -667,8 +664,8 @@ HttpRequest::parseHeader(const char *buffer, const size_t size)
 ConnStateData *
 HttpRequest::pinnedConnection()
 {
-    if (clientConnectionManager.valid() && clientConnectionManager->pinning.pinned)
-        return clientConnectionManager.get();
+    if (clientConnectionManager().valid() && clientConnectionManager()->pinning.pinned)
+        return clientConnectionManager().get();
     return NULL;
 }
 
@@ -772,18 +769,18 @@ HttpRequest::resetIndirectClientAddr()
 void
 HttpRequest::manager(const CbcPointer<ConnStateData> &aMgr, const AccessLogEntryPointer &al)
 {
-    clientConnectionManager = aMgr;
+    masterXaction->clientConnectionManager = aMgr;
 
-    if (!clientConnectionManager.valid())
+    if (!clientConnectionManager().valid())
         return;
 
-    AnyP::PortCfgPointer port = clientConnectionManager->port;
+    AnyP::PortCfgPointer port = clientConnectionManager()->port;
     if (port) {
         myportname = port->name;
         flags.ignoreCc = port->ignore_cc;
     }
 
-    if (auto clientConnection = clientConnectionManager->clientConnection) {
+    if (auto clientConnection = clientConnectionManager()->clientConnection) {
 #if FOLLOW_X_FORWARDED_FOR
         // indirect client gets stored here because it is an HTTP header result (from X-Forwarded-For:)
         // not details about the TCP connection itself
@@ -862,3 +859,10 @@ FindListeningPortAddress(const HttpRequest *callerRequest, const AccessLogEntry 
     return ip; // may still be nil
 }
 
+Comm::ConnectionPointer
+HttpRequest::clientConnection() const
+{
+    if (hasClientConnectionManager())
+        return masterXaction->clientConnectionManager->clientConnection;
+    return nullptr;
+}

@@ -248,8 +248,8 @@ void ACLFilledChecklist::setRequest(HttpRequest *httpRequest)
         src_addr = request->effectiveClientAddr();
         my_addr = request->myAddr();
 
-        if (request->clientConnectionManager.valid())
-            clientConnectionManager(request->clientConnectionManager.get());
+        if (request->clientConnectionManager().valid())
+            clientConnectionManager(request->clientConnectionManager().get());
     }
 }
 

@@ -253,8 +253,8 @@ FwdState::completed()
             errorAppendEntry(entry, err);
             err = NULL;
 #if USE_OPENSSL
-            if (request->flags.sslPeek && request->clientConnectionManager.valid()) {
-                CallJobHere1(17, 4, request->clientConnectionManager, ConnStateData,
+            if (request->flags.sslPeek && request->clientConnectionManager().valid()) {
+                CallJobHere1(17, 4, request->clientConnectionManager(), ConnStateData,
                              ConnStateData::httpsPeeked, ConnStateData::PinnedIdleContext(Comm::ConnectionPointer(nullptr), request));
             }
 #endif
@@ -791,7 +791,7 @@ FwdState::connectedToPeer(Security::EncryptorAnswer &answer)
     }
 
     // should reach ConnStateData before the dispatched Client job starts
-    CallJobHere1(17, 4, request->clientConnectionManager, ConnStateData,
+    CallJobHere1(17, 4, request->clientConnectionManager(), ConnStateData,
                  ConnStateData::notePeerConnection, serverConnection());
 
     if (serverConnection()->getPeer())
@@ -1032,7 +1032,7 @@ FwdState::dispatch()
 
 #if USE_OPENSSL
     if (request->flags.sslPeek) {
-        CallJobHere1(17, 4, request->clientConnectionManager, ConnStateData,
+        CallJobHere1(17, 4, request->clientConnectionManager(), ConnStateData,
                      ConnStateData::httpsPeeked, ConnStateData::PinnedIdleContext(serverConnection(), request));
         unregister(serverConn); // async call owns it now
         complete(); // destroys us

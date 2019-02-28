@@ -1360,7 +1360,7 @@ switchToTunnel(HttpRequest *request, Comm::ConnectionPointer &clientConn, Comm::
     ++statCounter.server.all.requests;
     ++statCounter.server.other.requests;
 
-    auto conn = request->clientConnectionManager.get();
+    auto conn = request->clientConnectionManager().get();
     Must(conn);
     Http::StreamPointer context = conn->pipeline.front();
     Must(context && context->http);

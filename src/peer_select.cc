@@ -286,10 +286,10 @@ PeerSelector::resolveSelected()
     const bool choseDirect = fs && fs->code == HIER_DIRECT;
     if (isIntercepted && useOriginalDst && choseDirect) {
         // check the client is still around before using any of its details
-        if (req->clientConnectionManager.valid()) {
+        if (req->hasClientConnectionManager()) {
             // construct a "result" adding the ORIGINAL_DST to the set instead of DIRECT
             Comm::ConnectionPointer p = new Comm::Connection();
-            p->remote = req->clientConnectionManager->clientConnection->local;
+            p->remote = req->clientConnection()->local;
             fs->code = ORIGINAL_DST; // fs->code is DIRECT. This fixes the display.
             handlePath(p, *fs);
         }

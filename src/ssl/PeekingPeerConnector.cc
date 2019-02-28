@@ -46,8 +46,8 @@ void
 Ssl::PeekingPeerConnector::checkForPeekAndSplice()
 {
     // Mark Step3 of bumping
-    if (request->clientConnectionManager.valid()) {
-        if (Ssl::ServerBump *serverBump = request->clientConnectionManager->serverBump()) {
+    if (request->clientConnectionManager().valid()) {
+        if (Ssl::ServerBump *serverBump = request->clientConnectionManager()->serverBump()) {
             serverBump->step = Ssl::bumpStep3;
         }
     }
@@ -85,9 +85,9 @@ Ssl::PeekingPeerConnector::checkForPeekAndSpliceMatched(const Ssl::BumpMode acti
     Ssl::BumpMode finalAction = action;
     Must(finalAction == Ssl::bumpSplice || finalAction == Ssl::bumpBump || finalAction == Ssl::bumpTerminate);
     // Record final decision
-    if (request->clientConnectionManager.valid()) {
-        request->clientConnectionManager->sslBumpMode = finalAction;
-        request->clientConnectionManager->serverBump()->act.step3 = finalAction;
+    if (request->clientConnectionManager().valid()) {
+        request->clientConnectionManager()->sslBumpMode = finalAction;
+        request->clientConnectionManager()->serverBump()->act.step3 = finalAction;
     }
     al->ssl.bumpMode = finalAction;
 
@@ -114,7 +114,7 @@ Ssl::PeekingPeerConnector::checkForPeekAndSpliceMatched(const Ssl::BumpMode acti
 Ssl::BumpMode
 Ssl::PeekingPeerConnector::checkForPeekAndSpliceGuess() const
 {
-    if (const ConnStateData *csd = request->clientConnectionManager.valid()) {
+    if (const ConnStateData *csd = request->clientConnectionManager().valid()) {
         const Ssl::BumpMode currentMode = csd->sslBumpMode;
         if (currentMode == Ssl::bumpStare) {
             debugs(83,5, "default to bumping after staring");
@@ -140,7 +140,7 @@ Ssl::PeekingPeerConnector::initialize(Security::SessionPointer &serverSession)
     if (!Security::PeerConnector::initialize(serverSession))
         return false;
 
-    if (ConnStateData *csd = request->clientConnectionManager.valid()) {
+    if (ConnStateData *csd = request->clientConnectionManager().valid()) {
 
         // client connection is required in the case we need to splice
         // or terminate client and server connections
@@ -212,11 +212,11 @@ void
 Ssl::PeekingPeerConnector::noteNegotiationDone(ErrorState *error)
 {
     // Check the list error with
-    if (!request->clientConnectionManager.valid() || !fd_table[serverConnection()->fd].ssl)
+    if (!request->clientConnectionManager().valid() || !fd_table[serverConnection()->fd].ssl)
         return;
 
     // remember the server certificate from the ErrorDetail object
-    if (Ssl::ServerBump *serverBump = request->clientConnectionManager->serverBump()) {
+    if (Ssl::ServerBump *serverBump = request->clientConnectionManager()->serverBump()) {
         if (!serverBump->serverCert.get()) {
             // remember the server certificate from the ErrorDetail object
             if (error && error->detail && error->detail->peerCert())
@@ -230,7 +230,7 @@ Ssl::PeekingPeerConnector::noteNegotiationDone(ErrorState *error)
             // For intercepted connections, set the host name to the server
             // certificate CN. Otherwise, we just hope that CONNECT is using
             // a user-entered address (a host name or a user-entered IP).
-            const bool isConnectRequest = !request->clientConnectionManager->port->flags.isIntercepted();
+            const bool isConnectRequest = !request->clientConnectionManager()->port->flags.isIntercepted();
             if (request->flags.sslPeek && !isConnectRequest) {
                 if (X509 *srvX509 = serverBump->serverCert.get()) {
                     if (const char *name = Ssl::CommonHostName(srvX509)) {
@@ -319,7 +319,7 @@ Ssl::PeekingPeerConnector::handleServerCertificate()
     if (serverCertificateHandled)
         return;
 
-    if (ConnStateData *csd = request->clientConnectionManager.valid()) {
+    if (ConnStateData *csd = request->clientConnectionManager().valid()) {
         const int fd = serverConnection()->fd;
         Security::SessionPointer session(fd_table[fd].ssl);
         Security::CertPointer serverCert(SSL_get_peer_certificate(session.get()));
@@ -338,7 +338,7 @@ Ssl::PeekingPeerConnector::handleServerCertificate()
 void
 Ssl::PeekingPeerConnector::serverCertificateVerified()
 {
-    if (ConnStateData *csd = request->clientConnectionManager.valid()) {
+    if (ConnStateData *csd = request->clientConnectionManager().valid()) {
         Security::CertPointer serverCert;
         if(Ssl::ServerBump *serverBump = csd->serverBump())
             serverCert.resetAndLock(serverBump->serverCert.get());

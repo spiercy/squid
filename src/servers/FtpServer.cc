@@ -724,7 +724,7 @@ Ftp::Server::parseOneRequest()
     const SBuf *path = (params.length() && CommandHasPathParameter(cmd)) ?
                        &params : NULL;
     calcUri(path);
-    MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient);
+    MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient, this);
     mx->tcpClient = clientConnection;
     HttpRequest *const request = HttpRequest::FromUrl(uri.c_str(), mx, method);
     if (!request) {

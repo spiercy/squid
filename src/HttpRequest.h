@@ -150,6 +150,11 @@ public:
 
     const Ip::Address& effectiveClientAddr() const;
 
+    CbcPointer<ConnStateData> &clientConnectionManager() { return masterXaction->clientConnectionManager; }
+    bool hasClientConnectionManager() const { return masterXaction->clientConnectionManager.valid(); }
+
+    Comm::ConnectionPointer clientConnection() const;
+
 #if FOLLOW_X_FORWARDED_FOR
     const Ip::Address& indirectClientAddr() const;
     void indirectClientAddr(const Ip::Address &addr) { indirect_client_addr = addr; }
@@ -225,13 +230,6 @@ public:
      * (either the effective request URI or modified ID by the helper).
      */
     const SBuf storeId();
-
-    /**
-     * The client connection manager, if known;
-     * Used for any response actions needed directly to the client.
-     * ie 1xx forwarding or connection pinning state changes
-     */
-    CbcPointer<ConnStateData> clientConnectionManager;
 
     /// The Downloader object which initiated the HTTP request if any
     CbcPointer<Downloader> downloader;
