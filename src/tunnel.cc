@@ -1335,7 +1335,7 @@ TunnelStateData::sendError(ErrorState *finalError, const char *reason)
         request->hier.stopPeerClock(false);
 
     if (opening()) {
-        calls.connector->cancel("FwdState stopped");
+        calls.connector->cancel(reason);
         calls.connector = nullptr;
         notifyConnOpener();
         connOpener.clear();

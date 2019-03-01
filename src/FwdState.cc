@@ -193,7 +193,7 @@ FwdState::stopAndDestroy(const char *reason)
     debugs(17, 3, "for " << reason);
 
     if (opening()) {
-        calls.connector->cancel("FwdState stopped");
+        calls.connector->cancel(reason);
         calls.connector = nullptr;
         notifyConnOpener();
         connOpener.clear();
