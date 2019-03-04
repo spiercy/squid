@@ -14,6 +14,8 @@
 #include "comm/ConnOpener.h"
 #include "http/forward.h"
 
+#include <iosfwd>
+
 class FwdState;
 class HappyConnOpener;
 class HappyOrderEnforcer;

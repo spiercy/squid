@@ -330,7 +330,6 @@ HappyConnOpener::HappyConnOpener(const ResolvedPeers::Pointer &dests, const Asyn
 HappyConnOpener::~HappyConnOpener()
 {
     safe_free(host_);
-    debugs(17, 5, "destroyed");
 }
 
 void
@@ -363,7 +362,8 @@ HappyConnOpener::doneAll() const
 void
 HappyConnOpener::swanSong()
 {
-    debugs(17, 5, "HappyConnOpener::swanSong: Job finished, cleanup");
+    debugs(17, 5, this);
+
     if (callback_)
         sendFailure();
 
@@ -448,7 +448,6 @@ HappyConnOpener::sendFailure()
 void
 HappyConnOpener::noteCandidatesChange()
 {
-    debugs(17, 7, "destinations: " << destinations->size() << " finalized: " << destinations->destinationsFinalized);
     destinations->notificationPending = false;
     checkForNewConnection();
 }
@@ -617,7 +616,7 @@ HappyConnOpener::cancelSpareWait(const char *reason)
 void
 HappyConnOpener::checkForNewConnection()
 {
-    debugs(17, 7, "destinations: " << destinations->size() << " finalized: " << destinations->destinationsFinalized);
+    debugs(17, 7, *destinations);
 
     // The order of the top-level if-statements below is important.
 
