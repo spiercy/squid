@@ -123,13 +123,6 @@ public:
         Method method_; ///< initiator_ method to call with the answer
     };
 
-    struct PendingConnection {
-        Comm::ConnectionPointer path;
-        AsyncCall::Pointer connector;
-
-        explicit operator bool() const { return static_cast<bool>(path); }
-    };
-
 public:
     HappyConnOpener(const ResolvedPeersPointer &, const AsyncCall::Pointer &,  HttpRequestPointer &, const time_t aFwdStart);
     virtual ~HappyConnOpener() override;
@@ -156,6 +149,16 @@ public:
     HappyAbsoluteTime primeStart;
 
 private:
+    /// a connection opening attempt in progress (or falsy)
+    class Attempt {
+    public:
+        explicit operator bool() const { return static_cast<bool>(path); }
+        void clear() { path = nullptr; connector = nullptr; }
+
+        Comm::ConnectionPointer path; ///< the destination we are connecting to
+        AsyncCall::Pointer connector; ///< our Comm::ConnOpener callback
+    };
+
     /* AsyncJob API */
     virtual void start() override;
     virtual bool doneAll() const override;
@@ -170,8 +173,8 @@ private:
 
     // TODO: Describe non-public methods when you define them.
 
-    void startConnecting(PendingConnection &, Comm::ConnectionPointer &);
-    void openFreshConnection(PendingConnection &, Comm::ConnectionPointer &);
+    void startConnecting(Attempt &, Comm::ConnectionPointer &);
+    void openFreshConnection(Attempt &, Comm::ConnectionPointer &);
     bool reuseOldConnection(const Comm::ConnectionPointer &);
 
     /// Callback called by Comm::ConnOpener objects after a prime or spare
@@ -199,10 +202,10 @@ private:
     ResolvedPeersPointer destinations;
 
     /// current connection opening attempt on the prime track (if any)
-    PendingConnection prime;
+    Attempt prime;
 
     /// current connection opening attempt on the spare track (if any)
-    PendingConnection spare;
+    Attempt spare;
 
     /// CachePeer and IP address family of the peer we are trying to connect
     /// to now (or, if we are just waiting for paths to a new peer, nil)
