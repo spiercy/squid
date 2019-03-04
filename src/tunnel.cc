@@ -1040,7 +1040,7 @@ TunnelStateData::noteConnection(HappyConnOpener::Answer &answer)
         return;
     }
 
-    // XXX: Missing SetMarkingsToServer(request.getRaw(), serverConn)?
+    // XXX: Missing ResetMarkingsToServer(request.getRaw(), serverConn)?
     request->hier.resetPeerNotes(answer.conn, getHost());
     connectDone(answer.conn);
 }
@@ -1364,7 +1364,7 @@ TunnelStateData::usePinned()
         request->flags.auth = true;
 
     // sync with existing pinned connection
-    SetMarkingsToServer(request.getRaw(), *serverConn);
+    ResetMarkingsToServer(request.getRaw(), *serverConn);
     request->hier.resetPeerNotes(serverConn, connManager->pinning.host);
 
     connectDone(serverConn);
