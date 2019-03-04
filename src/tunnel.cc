@@ -1364,7 +1364,7 @@ TunnelStateData::usePinned()
         request->flags.auth = true;
 
     // sync with existing pinned connection
-    SetMarkingsToServer(request.getRaw(), serverConn);
+    SetMarkingsToServer(request.getRaw(), *serverConn);
     request->hier.resetPeerNotes(serverConn, connManager->pinning.host);
 
     connectDone(serverConn);
