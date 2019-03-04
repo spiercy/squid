@@ -545,8 +545,10 @@ FwdState::noteDestination(Comm::ConnectionPointer path)
 
     flags.destinationsFound = true;
 
-    if (path == nullptr) {
-        assert(!destinations->size()); // Must be the first destination
+    if (!path) {
+        // We can call usePinned() without fear of clashing with an earlier
+        // forwarding attempt because PINNED must be the first destination.
+        assert(!destinations->size());
         usePinned();
         return;
     }
