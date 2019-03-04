@@ -123,8 +123,6 @@ public:
         Method method_; ///< initiator_ method to call with the answer
     };
 
-    typedef CbcPointer<HappyConnOpener> Pointer;
-
     struct PendingConnection {
         Comm::ConnectionPointer path;
         AsyncCall::Pointer connector;
