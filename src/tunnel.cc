@@ -128,8 +128,6 @@ public:
     /// recovering from the previous connect failure
     void startConnecting();
 
-    void noteConnectFailure(const Comm::ConnectionPointer &conn);
-
     class Connection
     {
 
@@ -199,7 +197,7 @@ public:
 
     /// called when a connection has been successfully established or
     /// when all candidate destinations have been tried and all have failed
-    void noteConnection(const HappyConnOpenerAnswer &);
+    void noteConnection(HappyConnOpenerAnswer &);
 
     /// whether we are waiting for HappyConnOpener
     /// same as calls.connector but may differ from connOpener.valid()
@@ -1029,55 +1027,22 @@ tunnelErrorComplete(int fd/*const Comm::ConnectionPointer &*/, void *data, size_
         tunnelState->server.conn->close();
 }
 
-/// reacts to a failure to establish the given TCP connection
 void
-TunnelStateData::noteConnectFailure(const Comm::ConnectionPointer &conn)
-{
-    debugs(26, 4, "failed destination: " << conn);
-
-    if (CachePeer *peer = conn->getPeer())
-        peerConnectFailed(peer);
-
-    // Since no TCP payload has been passed to client or server, we may
-    // TCP-connect to other destinations (including alternate IPs).
-
-    if (!FwdState::EnoughTimeToReForward(startTime))
-        return sendError(savedError, "forwarding timeout");
-
-    if (!destinations->empty())
-        return startConnecting();
-
-    if (!PeerSelectionInitiator::subscribed)
-        return sendError(savedError, "tried all destinations");
-
-    debugs(26, 4, "wait for more destinations to try");
-    // expect a noteDestination*() call
-}
-
-void
-TunnelStateData::noteConnection(const HappyConnOpener::Answer &cd)
+TunnelStateData::noteConnection(HappyConnOpener::Answer &answer)
 {
     calls.connector = nullptr;
     connOpener.clear();
 
-    if (cd.ioStatus != Comm::OK) {
-        ErrorState *err = new ErrorState(ERR_CONNECT_FAIL, Http::scServiceUnavailable, request.getRaw());
-        err->xerrno = cd.xerrno;
-        // on timeout is this still:    err->xerrno = ETIMEDOUT;
-        if (cd.conn) {
-            err->port = cd.conn->remote.port();
-            saveError(err);
-            noteConnectFailure(cd.conn);
-        } else {
-            // TODO: check if this is possible
-            sendError(savedError, "no available destinations");
-            return;
-        }
+    if (const auto err = answer.error.get()) {
+        saveError(err);
+        answer.error.clear(); // savedError has it now
+        sendError(savedError, "tried all destinations");
+        return;
     }
 
-    request->hier.resetPeerNotes(cd.conn, getHost());
-
-    connectDone(cd.conn);
+    // XXX: Missing SetMarkingsToServer(request.getRaw(), serverConn)?
+    request->hier.resetPeerNotes(answer.conn, getHost());
+    connectDone(answer.conn);
 }
 
 void
