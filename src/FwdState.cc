@@ -762,21 +762,13 @@ FwdState::noteConnection(HappyConnOpener::Answer &answer)
         return;
     }
 
-    Must(IsConnOpen(answer.conn));
-    serverConn = answer.conn;
-
-    closeHandler = comm_add_close_handler(serverConnection()->fd,  fwdServerClosedWrapper, this);
+    syncWithServerConn(answer.conn, request->url.host(), answer.reused);
 
     if (answer.reused) {
-        syncWithServerConn(request->url.host()); // XXX: Applies to !reused as well
         flags.connected_okay = true;
-        pconnRace = racePossible;
         dispatch();
         return;
     }
-
-    // Else new connection.
-    pconnRace = raceImpossible;
 
     // Check if we need to TLS before use
     const CachePeer *p = serverConnection()->getPeer();
@@ -843,11 +835,23 @@ FwdState::connectedToPeer(Security::EncryptorAnswer &answer)
     dispatch();
 }
 
-/// called when serverConn is set to an _open_ to-peer connection
+/// commits to using the given open to-peer connection
 void
-FwdState::syncWithServerConn(const char *host)
+FwdState::syncWithServerConn(const Comm::ConnectionPointer &conn, const char *host, const bool reused)
 {
-    ResetMarkingsToServer(request, *serverConn);
+    Must(IsConnOpen(conn));
+    serverConn = conn;
+
+    closeHandler = comm_add_close_handler(serverConn->fd,  fwdServerClosedWrapper, this);
+
+    if (reused) {
+        pconnRace = racePossible;
+        ResetMarkingsToServer(request, *serverConn);
+    } else {
+        pconnRace = raceImpossible;
+        // Comm::ConnOpener already applied proper/current markings
+    }
+
     syncHierNote(serverConn, host);
 }
 
@@ -927,7 +931,6 @@ FwdState::usePinned()
         return;
     }
 
-    serverConn = temp;
     flags.connected_okay = true;
     ++n_tries;
     request->flags.pinned = true;
@@ -935,12 +938,10 @@ FwdState::usePinned()
     if (connManager->pinnedAuth())
         request->flags.auth = true;
 
-    closeHandler = comm_add_close_handler(temp->fd,  fwdServerClosedWrapper, this);
-
-    syncWithServerConn(connManager->pinning.host);
-
     // the server may close the pinned connection before this request
-    pconnRace = racePossible;
+    const auto reused = true;
+    syncWithServerConn(temp, connManager->pinning.host, reused);
+
     dispatch();
 }
 
