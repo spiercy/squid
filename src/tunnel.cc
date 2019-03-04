@@ -1081,7 +1081,7 @@ TunnelStateData::connectDone(const Comm::ConnectionPointer &conn, const char *or
 
     netdbPingSite(request->url.host());
 
-    request->peer_host = conn->getPeer() ? conn->getPeer()->host : NULL;
+    request->peer_host = conn->getPeer() ? conn->getPeer()->host : nullptr;
     comm_add_close_handler(conn->fd, tunnelServerClosed, this);
 
     debugs(26, 4, HERE << "determine post-connect handling pathway.");
@@ -1091,8 +1091,8 @@ TunnelStateData::connectDone(const Comm::ConnectionPointer &conn, const char *or
         request->flags.auth_no_keytab = conn->getPeer()->options.auth_no_keytab;
         request->flags.proxying = !(conn->getPeer()->options.originserver);
     } else {
-        request->peer_login = NULL;
-        request->peer_domain = NULL;
+        request->peer_login = nullptr;
+        request->peer_domain = nullptr;
         request->flags.auth_no_keytab = false;
         request->flags.proxying = false;
     }

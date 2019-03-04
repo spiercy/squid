@@ -893,7 +893,7 @@ FwdState::connectStart()
     cs->setHost(request->url.host());
     bool retriable = checkRetriable();
     if (!retriable && Config.accessList.serverPconnForNonretriable) {
-        ACLFilledChecklist ch(Config.accessList.serverPconnForNonretriable, request, NULL);
+        ACLFilledChecklist ch(Config.accessList.serverPconnForNonretriable, request, nullptr);
         ch.al = al;
         ch.syncAle(request, nullptr);
         retriable = ch.fastCheck().allowed();
@@ -1315,7 +1315,7 @@ GetTosToServer(HttpRequest * request, Comm::Connection &conn)
         return 0;
 
     ACLFilledChecklist ch(NULL, request, NULL);
-    ch.dst_peer_name = conn.getPeer() ? conn.getPeer()->name : NULL;
+    ch.dst_peer_name = conn.getPeer() ? conn.getPeer()->name : nullptr;
     ch.dst_addr = conn.remote;
     return aclMapTOS(Ip::Qos::TheConfig.tosToServer, &ch);
 }
@@ -1331,7 +1331,7 @@ GetNfmarkToServer(HttpRequest * request, Comm::Connection &conn)
         return 0;
 
     ACLFilledChecklist ch(NULL, request, NULL);
-    ch.dst_peer_name = conn.getPeer() ? conn.getPeer()->name : NULL;
+    ch.dst_peer_name = conn.getPeer() ? conn.getPeer()->name : nullptr;
     ch.dst_addr = conn.remote;
     const auto mc = aclFindNfMarkConfig(Ip::Qos::TheConfig.nfmarkToServer, &ch);
     return mc.mark;
