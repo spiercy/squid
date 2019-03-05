@@ -238,7 +238,7 @@ bool
 SpareAllowanceGiver::readyNow(const HappyConnOpener &) const
 {
     return !concurrencyLimitReached() &&
-        !startedWaiting(lastAllowanceStart, Config.happyEyeballs.connect_gap);
+           !startedWaiting(lastAllowanceStart, Config.happyEyeballs.connect_gap);
 }
 
 AsyncCall::Pointer
@@ -407,7 +407,7 @@ ErrorState *
 HappyConnOpener::makeError(const err_type type) const
 {
     const auto statusCode = cause->flags.needValidation ?
-                       Http::scGatewayTimeout : Http::scServiceUnavailable;
+                            Http::scGatewayTimeout : Http::scServiceUnavailable;
     return new ErrorState(type, statusCode, cause.getRaw());
 }
 
@@ -759,8 +759,8 @@ HappyConnOpener::maybeOpenSpareConnection()
 
     // jobGotInstantAllowance() call conditions below rely on the readyNow() check here
     if (!ignoreSpareRestrictions && // we have to honor spare restrictions
-        !TheSpareAllowanceGiver.readyNow(*this) && // all new spares must wait
-        destinations->haveSpare(*currentPeer)) { // and we do have a new spare
+            !TheSpareAllowanceGiver.readyNow(*this) && // all new spares must wait
+            destinations->haveSpare(*currentPeer)) { // and we do have a new spare
         TheSpareAllowanceGiver.enqueue(*this);
         spareWaiting.forSpareAllowance = true;
         return false;
@@ -779,3 +779,4 @@ HappyConnOpener::maybeOpenSpareConnection()
     // else wait for more spare paths or their exhaustion
     return false;
 }
+

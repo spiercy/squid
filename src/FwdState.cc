@@ -629,7 +629,6 @@ fwdServerClosedWrapper(const CommCloseCbParams &params)
     fwd->serverClosed(params.fd);
 }
 
-
 /**** PRIVATE *****************************************************************/
 
 /*
@@ -1353,3 +1352,4 @@ ResetMarkingsToServer(HttpRequest * request, Comm::Connection &conn)
     if (conn.nfmark)
         Ip::Qos::setSockNfmark(&conn, conn.nfmark);
 }
+
