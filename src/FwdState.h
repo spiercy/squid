@@ -56,6 +56,7 @@ void GetMarkingsToServer(HttpRequest * request, Comm::Connection &conn);
 void ResetMarkingsToServer(HttpRequest *, Comm::Connection &);
 
 class HelperReply;
+
 class FwdState: public RefCountable, public PeerSelectionInitiator
 {
     CBDATA_CHILD(FwdState);
@@ -113,8 +114,6 @@ private:
     virtual void noteDestination(Comm::ConnectionPointer conn) override;
     virtual void noteDestinationsEnd(ErrorState *selectionError) override;
 
-    /// called when a connection has been successfully established or
-    /// when all candidate destinations have been tried and all have failed
     void noteConnection(HappyConnOpenerAnswer &);
 
 #if STRICT_ORIGINAL_DST
@@ -173,7 +172,7 @@ private:
         bool connected_okay; ///< TCP link ever opened properly. This affects retry of POST,PUT,CONNECT,etc
         bool dont_retry;
         bool forward_completed;
-        bool destinationsFound; ///< At least one candidate path found
+        bool destinationsFound; ///< at least one candidate path found
     } flags;
 
     HappyConnOpenerPointer connOpener; ///< current connection opening job

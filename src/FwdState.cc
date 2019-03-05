@@ -748,6 +748,8 @@ FwdState::handleUnregisteredServerEnd()
     retryOrBail();
 }
 
+/// called when a to-peer connection has been successfully obtained or
+/// when all candidate destinations have been tried and all have failed
 void
 FwdState::noteConnection(HappyConnOpener::Answer &answer)
 {
@@ -1304,10 +1306,7 @@ getOutgoingAddress(HttpRequest * request, Comm::ConnectionPointer conn)
     }
 }
 
-/**
- * Returns the TOS value that we should be setting on the connection
- * to the server, based on the ACL.
- */
+/// \returns the TOS value that should be set on the to-peer connection
 static tos_t
 GetTosToServer(HttpRequest * request, Comm::Connection &conn)
 {
@@ -1320,10 +1319,7 @@ GetTosToServer(HttpRequest * request, Comm::Connection &conn)
     return aclMapTOS(Ip::Qos::TheConfig.tosToServer, &ch);
 }
 
-/**
- * Returns the Netfilter mark value that we should be setting on the
- * connection to the server, based on the ACL.
- */
+/// \returns the Netfilter mark that should be set on the to-peer connection
 static nfmark_t
 GetNfmarkToServer(HttpRequest * request, Comm::Connection &conn)
 {
