@@ -16,7 +16,6 @@
 
 #include <iosfwd>
 
-class FwdState;
 class HappyConnOpener;
 class HappyOrderEnforcer;
 class JobGapEnforcer;
@@ -72,20 +71,21 @@ class HappyConnOpenerAnswer
 public:
     ~HappyConnOpenerAnswer();
 
-    /// The total number of attempts to establish a connection. Includes any
-    /// failed attempts and [always successful] persistent connection reuse.
-    int n_tries = 0;
+    /// whether HappyConnOpener succeeded, returning a usable connection
+    bool success() const { return !error; }
+
+
+    /// on success: an open, ready-to-use Squid-to-peer connection
+    /// on failure: either a closed failed Squid-to-peer connection or nil
+    Comm::ConnectionPointer conn;
 
     // answer recipients must clear the error member in order to keep its info
     // XXX: We should refcount ErrorState instead of cbdata-protecting it.
     CbcPointer<ErrorState> error; ///< problem details (nil on success)
 
-    /// whether HappyConnOpener succeeded, returning a usable connection
-    bool success() const { return !error; }
-
-    /// on success: an open, ready-to-use Squid-to-peer connection
-    /// on failure: either a closed failed Squid-to-peer connection or nil
-    Comm::ConnectionPointer conn;
+    /// The total number of attempts to establish a connection. Includes any
+    /// failed attempts and [always successful] persistent connection reuse.
+    int n_tries = 0;
 
     /// whether conn was open earlier, by/for somebody else
     bool reused = false;
@@ -200,7 +200,7 @@ private:
 
     AsyncCall::Pointer callback_; ///< handler to be called on connection completion.
 
-    /// Candidate paths. Shared with the initiator (i.e. FwdState object).
+    /// Candidate paths. Shared with the initiator. May not be finalized yet.
     ResolvedPeersPointer destinations;
 
     /// current connection opening attempt on the prime track (if any)
@@ -233,9 +233,11 @@ private:
     /// whether we are opening connections for a request that may be resent
     bool retriable_;
 
-    const char *host_; ///< origin server domain name
+    /// origin server domain name (or equivalent)
+    const char *host_;
 
-    HttpRequestPointer cause; ///< the request triggered the connection openning
+    /// the request that needs a to-server connection
+    HttpRequestPointer cause;
 
     /// number of connection opening attempts, including those in the requestor
     int n_tries;
