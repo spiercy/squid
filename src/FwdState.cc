@@ -788,14 +788,14 @@ FwdState::noteConnection(HappyConnOpener::Answer &answer)
         // Use positive timeout when less than one second is left.
         const time_t connTimeout = serverConnection()->connectTimeout(start_t);
         const time_t sslNegotiationTimeout = positiveTimeout(connTimeout);
-        Security::PeerConnector *peerConnector = nullptr;
+        Security::PeerConnector *connector = nullptr;
 #if USE_OPENSSL
         if (request->flags.sslPeek)
-            peerConnector = new Ssl::PeekingPeerConnector(requestPointer, serverConnection(), clientConn, callback, al, sslNegotiationTimeout);
+            connector = new Ssl::PeekingPeerConnector(requestPointer, serverConnection(), clientConn, callback, al, sslNegotiationTimeout);
         else
 #endif
-            peerConnector = new Security::BlindPeerConnector(requestPointer, serverConnection(), callback, al, sslNegotiationTimeout);
-        AsyncJob::Start(peerConnector); // will call our callback
+            connector = new Security::BlindPeerConnector(requestPointer, serverConnection(), callback, al, sslNegotiationTimeout);
+        AsyncJob::Start(connector); // will call our callback
         return;
     }
 
