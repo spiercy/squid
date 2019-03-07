@@ -13,6 +13,7 @@
 #include "acl/Checklist.h"
 #include "acl/forward.h"
 #include "base/CbcPointer.h"
+#include "comm/forward.h"
 #include "err_type.h"
 #include "ip/Address.h"
 #if USE_AUTH
@@ -47,13 +48,13 @@ public:
     /// The client connection manager
     ConnStateData * clientConnectionManager() const;
 
+    void clientConnectionManager(ConnStateData *);
+
+    void clientConnection(Comm::ConnectionPointer);
+
     /// The client side fd. It uses conn() if available
     int fd() const;
 
-    /// set either conn
-    void clientConnectionManager(ConnStateData *);
-
-    void setClientConnectionManager(ConnStateData *);
     /// set the client side FD
     void fd(int aDescriptor);
 
@@ -101,6 +102,8 @@ public:
     err_type requestErrorType;
 
 private:
+    void setClientConnectionManager(ConnStateData *);
+
     ConnStateData * conn_;          /**< hack for ident and NTLM */
     int fd_;                        /**< may be available when conn_ is not */
     bool destinationDomainChecked_;

@@ -263,8 +263,7 @@ logAcceptError(const Comm::ConnectionPointer &conn)
     al->url = "error:accept-client-connection";
     al->setVirginUrlForMissingRequest(al->url);
     ACLFilledChecklist ch(nullptr, nullptr, nullptr);
-    ch.src_addr = conn->remote;
-    ch.my_addr = conn->local;
+    ch.clientConnection(conn);
     ch.al = al;
     accessLogLog(al, &ch);
 }
