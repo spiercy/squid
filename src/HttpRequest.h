@@ -138,7 +138,8 @@ public:
 
     int imslen;
 
-    void setInternal(const bool val) { internal = val; }
+    /// this request is internally built
+    void setInternal() { internal = true; }
 
     void setDownloader(Downloader *);
 
@@ -149,13 +150,14 @@ public:
     const Ip::Address& effectiveClientAddr() const;
 
     CbcPointer<ConnStateData> &clientConnectionManager() { return masterXaction->clientConnectionManager; }
-    bool hasClientConnectionManager() const { return masterXaction->clientConnectionManager.valid(); }
 
     Comm::ConnectionPointer clientConnection() const;
 
 #if FOLLOW_X_FORWARDED_FOR
     const Ip::Address& indirectClientAddr() const;
+
     void indirectClientAddr(const Ip::Address &addr) { indirect_client_addr = addr; }
+
     void resetIndirectClientAddr();
 #endif /* FOLLOW_X_FORWARDED_FOR */
 
@@ -262,6 +264,7 @@ private:
     Ip::Address indirect_client_addr;
 #endif /* FOLLOW_X_FORWARDED_FOR */
 
+    /// whether this is an internally built request
     bool internal;
 
 protected:

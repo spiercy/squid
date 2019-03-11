@@ -378,7 +378,7 @@ clientBeginRequest(const HttpRequestMethod& method, char const *url, CSCB * stre
     /* Internally created requests cannot have bodies today */
     request->content_length = 0;
 
-    request->setInternal(true);
+    request->setInternal();
 
     request->http_ver = Http::ProtocolVersion();
 

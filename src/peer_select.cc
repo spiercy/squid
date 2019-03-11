@@ -286,7 +286,7 @@ PeerSelector::resolveSelected()
     const bool choseDirect = fs && fs->code == HIER_DIRECT;
     if (isIntercepted && useOriginalDst && choseDirect) {
         // check the client is still around before using any of its details
-        if (req->hasClientConnectionManager()) {
+        if (req->clientConnection()) {
             // construct a "result" adding the ORIGINAL_DST to the set instead of DIRECT
             Comm::ConnectionPointer p = new Comm::Connection();
             p->remote = req->clientConnection()->local;

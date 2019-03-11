@@ -136,6 +136,7 @@ Downloader::buildRequest()
         return false; //earlyError(...)
     }
     request->setDownloader(this);
+    request->setInternal();
 
     debugs(11, 2, "HTTP Client Downloader " << this << "/" << id);
     debugs(11, 2, "HTTP Client REQUEST:\n---------\n" <<

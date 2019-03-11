@@ -116,7 +116,7 @@ HttpRequest::init()
     forcedBodyContinuation = false;
     internal = false;
 
-    if (hasClientConnectionManager()) {
+    if (clientConnectionManager().valid()) {
         if (const auto port = clientConnectionManager()->port) {
             myportname = port->name;
             flags.ignoreCc = port->ignore_cc;
@@ -728,7 +728,6 @@ HttpRequest::setDownloader(Downloader *d)
     header.putStr(Http::HdrType::HOST, url.host());
     header.putTime(Http::HdrType::DATE, squid_curtime);
     downloader = d;
-    internal = true;
 }
 
 const Ip::Address&
@@ -857,7 +856,6 @@ FindListeningPortAddress(const HttpRequest *callerRequest, const AccessLogEntry 
 Comm::ConnectionPointer
 HttpRequest::clientConnection() const
 {
-    if (hasClientConnectionManager())
-        return masterXaction->clientConnectionManager->clientConnection;
-    return nullptr;
+    return masterXaction->clientConnectionManager.valid() ?
+        masterXaction->clientConnectionManager->clientConnection : nullptr;
 }
