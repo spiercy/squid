@@ -145,9 +145,11 @@ public:
 
     const Ip::Address& clientAddr() const;
 
+    void srcAddr(const Ip::Address &addr) { src_addr = addr; }
+
     const Ip::Address& myAddr() const;
 
-    const Ip::Address& effectiveClientAddr() const;
+    const Ip::Address& effectiveClientAddr(const bool) const;
 
     CbcPointer<ConnStateData> &clientConnectionManager() { return masterXaction->clientConnectionManager; }
 
@@ -260,6 +262,7 @@ private:
     /// and(or) by annotate_transaction/annotate_client ACLs.
     NotePairs::Pointer theNotes;
 
+    Ip::Address src_addr;
 #if FOLLOW_X_FORWARDED_FOR
     Ip::Address indirect_client_addr;
 #endif /* FOLLOW_X_FORWARDED_FOR */

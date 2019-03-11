@@ -129,7 +129,14 @@ public:
     void checkHit();
     void checkedHit(StoreEntry *);
 
-    void setFrom(Ip::Address &anIp) { from = anIp; }
+    const Ip::Address &from() const {
+        assert(request);
+        return request->clientAddr();
+    }
+    void setFrom(Ip::Address &anIp) {
+        assert(request);
+        request->srcAddr(anIp);
+    }
     void setDataHeader(htcpDataHeader *aDataHeader) {
         dhdr = aDataHeader;
     }
@@ -153,7 +160,6 @@ public:
 private:
     HttpRequest::Pointer checkHitRequest;
 
-    Ip::Address from;
     htcpDataHeader *dhdr = nullptr;
 };
 
@@ -254,14 +260,14 @@ static ssize_t htcpBuildTstOpData(char *buf, size_t buflen, htcpStuff * stuff);
 
 static void htcpHandleMsg(char *buf, int sz, Ip::Address &from);
 
-static void htcpLogHtcp(Ip::Address &, const int, const LogTags_ot, const char *, AccessLogEntryPointer);
+static void htcpLogHtcp(const Ip::Address &, const int, const LogTags_ot, const char *, AccessLogEntryPointer);
 static void htcpHandleTst(htcpDataHeader *, char *buf, int sz, Ip::Address &from);
 
 static void htcpRecv(int fd, void *data);
 
-static void htcpSend(const char *buf, int len, Ip::Address &to);
+static void htcpSend(const char *buf, int len, const Ip::Address &to);
 
-static void htcpTstReply(htcpDataHeader *, StoreEntry *, htcpSpecifier *, Ip::Address &);
+static void htcpTstReply(htcpDataHeader *, StoreEntry *, htcpSpecifier *, const Ip::Address &);
 
 static void htcpHandleTstRequest(htcpDataHeader *, char *buf, int sz, Ip::Address &from);
 
@@ -583,7 +589,7 @@ htcpBuildPacket(char *buf, size_t buflen, htcpStuff * stuff)
 }
 
 static void
-htcpSend(const char *buf, int len, Ip::Address &to)
+htcpSend(const char *buf, int len, const Ip::Address &to)
 {
     debugs(31, 3, to);
     htcpHexdump("htcpSend", buf, len);
@@ -794,13 +800,12 @@ htcpAccessAllowed(acl_access * acl, const htcpSpecifier::Pointer &s, Ip::Address
         return false;
 
     ACLFilledChecklist checklist(acl, s->request.getRaw(), nullptr);
-    checklist.src_addr = from;
     checklist.my_addr.setNoAddr();
     return checklist.fastCheck().allowed();
 }
 
 static void
-htcpTstReply(htcpDataHeader * dhdr, StoreEntry * e, htcpSpecifier * spec, Ip::Address &from)
+htcpTstReply(htcpDataHeader * dhdr, StoreEntry * e, htcpSpecifier * spec, const Ip::Address &from)
 {
     static char pkt[8192];
     HttpHeader hdr(hoHtcpReply);
@@ -973,7 +978,7 @@ void
 htcpSpecifier::fillChecklist(ACLFilledChecklist &checklist) const
 {
     checklist.setRequest(request.getRaw());
-    htcpSyncAle(al, from, dhdr->opcode, uri);
+    htcpSyncAle(al, from(), dhdr->opcode, uri);
     checklist.al = al;
 }
 
@@ -1157,11 +1162,11 @@ void
 htcpSpecifier::checkedHit(StoreEntry *e)
 {
     if (e) {
-        htcpTstReply(dhdr, e, this, from);      /* hit */
-        htcpLogHtcp(from, dhdr->opcode, LOG_UDP_HIT, uri, al);
+        htcpTstReply(dhdr, e, this, from());      /* hit */
+        htcpLogHtcp(from(), dhdr->opcode, LOG_UDP_HIT, uri, al);
     } else {
-        htcpTstReply(dhdr, NULL, NULL, from);   /* cache miss */
-        htcpLogHtcp(from, dhdr->opcode, LOG_UDP_MISS, uri, al);
+        htcpTstReply(dhdr, NULL, NULL, from());   /* cache miss */
+        htcpLogHtcp(from(), dhdr->opcode, LOG_UDP_MISS, uri, al);
     }
 }
 
@@ -1625,7 +1630,7 @@ htcpClosePorts(void)
 }
 
 static void
-htcpLogHtcp(Ip::Address &caddr, const int opcode, const LogTags_ot logcode, const char *url, AccessLogEntryPointer al)
+htcpLogHtcp(const Ip::Address &caddr, const int opcode, const LogTags_ot logcode, const char *url, AccessLogEntryPointer al)
 {
     if (!Config.onoff.log_udp)
         return;

@@ -474,10 +474,6 @@ clientFollowXForwardedForCheck(allow_t answer, void *data)
             request->indirectClientAddr(addr);
             request->x_forwarded_for_iterator.cut(l);
             calloutContext->acl_checklist = clientAclChecklistCreate(Config.accessList.followXFF, http);
-            if (!Config.onoff.acl_uses_indirect_client) {
-                /* override the default src_addr tested if we have to go deeper than one level into XFF */
-                Filled(calloutContext->acl_checklist)->src_addr = request->indirectClientAddr();
-            }
             calloutContext->acl_checklist->nonBlockingCheck(clientFollowXForwardedForCheck, data);
             return;
         }

@@ -52,6 +52,8 @@ public:
 
     void clientConnection(Comm::ConnectionPointer);
 
+    void srcAddr(const Ip::Address &addr);
+
     /// The client side fd. It uses conn() if available
     int fd() const;
 
@@ -72,8 +74,9 @@ public:
     virtual void syncAle(HttpRequest *adaptedRequest, const char *logUri) const;
     virtual void verifyAle() const;
 
+    const Ip::Address &srcAddr() const { return src_addr; }
+
 public:
-    Ip::Address src_addr;
     Ip::Address dst_addr;
     Ip::Address my_addr;
     SBuf dst_peer_name;
@@ -109,6 +112,7 @@ private:
     int fd_;                        /**< may be available when conn_ is not */
     bool destinationDomainChecked_;
     bool sourceDomainChecked_;
+    Ip::Address src_addr;
     /// not implemented; will cause link failures if used
     ACLFilledChecklist(const ACLFilledChecklist &);
     /// not implemented; will cause link failures if used

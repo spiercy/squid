@@ -472,7 +472,6 @@ icpAccessAllowed(Ip::Address &from, HttpRequest * icp_request)
         return false;
 
     ACLFilledChecklist checklist(Config.accessList.icp, icp_request, NULL);
-    checklist.src_addr = from;
     checklist.my_addr.setNoAddr();
     return checklist.fastCheck().allowed();
 }
@@ -500,6 +499,7 @@ icpGetRequest(char *url, int reqnum, int fd, Ip::Address &from)
     if ((result = HttpRequest::FromUrl(url, mx)) == NULL)
         icpCreateAndSend(ICP_ERR, 0, url, reqnum, 0, fd, from, nullptr);
 
+    result->srcAddr(from);
     return result;
 
 }

@@ -245,7 +245,7 @@ void ACLFilledChecklist::setRequest(HttpRequest *httpRequest)
     if (httpRequest) {
         request = httpRequest;
         HTTPMSGLOCK(request);
-        src_addr = request->effectiveClientAddr();
+        src_addr = request->effectiveClientAddr(Config.onoff.acl_uses_indirect_client);
         my_addr = request->myAddr();
         setClientConnectionManager(request->clientConnectionManager().get());
     }
@@ -268,6 +268,14 @@ void ACLFilledChecklist::clientConnection(Comm::ConnectionPointer conn)
         return;
 
     setClientConnection(conn);
+}
+
+void ACLFilledChecklist::srcAddr(const Ip::Address &addr)
+{
+    if (request || clientConnectionManager())
+        return;
+
+	src_addr = addr;
 }
 
 void ACLFilledChecklist::setClientConnection(Comm::ConnectionPointer conn)

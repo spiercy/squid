@@ -731,10 +731,10 @@ HttpRequest::setDownloader(Downloader *d)
 }
 
 const Ip::Address&
-HttpRequest::effectiveClientAddr() const
+HttpRequest::effectiveClientAddr(const bool useIndirect) const
 {
-#if FOLLOW_X_FORWARDED_FOR && LINUX_NETFILTER
-    if (Config.onoff.tproxy_uses_indirect_client)
+#if FOLLOW_X_FORWARDED_FOR
+    if (useIndirect)
         return indirectClientAddr();
     else
 #endif
@@ -752,7 +752,9 @@ NoAddr()
 const Ip::Address&
 HttpRequest::clientAddr() const
 {
-    return internal ? NoAddr() : masterXaction->tcpClient->remote;
+    return internal ? NoAddr() :
+        masterXaction->tcpClient ?
+        masterXaction->tcpClient->remote : src_addr;
 }
 
 const Ip::Address&

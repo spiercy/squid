@@ -95,7 +95,7 @@ DelayId::DelayClient(ClientHttpRequest * http, HttpReply *reply)
 
             DelayId result (pool + 1);
             CompositePoolNode::CompositeSelectionDetails details;
-            details.src_addr = ch.src_addr;
+            details.src_addr = ch.srcAddr();
 #if USE_AUTH
             details.user = r->auth_user_request;
 #endif

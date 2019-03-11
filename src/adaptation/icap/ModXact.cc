@@ -1473,7 +1473,7 @@ void Adaptation::Icap::ModXact::makeRequestHeaders(MemBuf &buf)
 
     if (TheConfig.send_client_ip && request) {
         Ip::Address client_addr;
-        client_addr = request->effectiveClientAddr();
+        client_addr = request->effectiveClientAddr(TheConfig.use_indirect_client);
         if (!client_addr.isAnyAddr() && !client_addr.isNoAddr())
             buf.appendf("X-Client-IP: %s\r\n", client_addr.toStr(ntoabuf,MAX_IPSTRLEN));
     }
