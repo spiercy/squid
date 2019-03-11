@@ -149,9 +149,9 @@ ACLFilledChecklist::clientConnectionManager() const
 void
 ACLFilledChecklist::setClientConnectionManager(ConnStateData *aConn)
 {
-    if (clientConnectionManager() == aConn)
+    if (!(aConn && cbdataReferenceValid(aConn)))
         return;
-    assert (clientConnectionManager() == NULL);
+    assert(!clientConnectionManager());
     conn_ = cbdataReference(aConn);
 }
 
@@ -247,33 +247,37 @@ void ACLFilledChecklist::setRequest(HttpRequest *httpRequest)
         HTTPMSGLOCK(request);
         src_addr = request->effectiveClientAddr();
         my_addr = request->myAddr();
-
-        if (request->clientConnectionManager().valid())
-            setClientConnectionManager(request->clientConnectionManager().get());
+        setClientConnectionManager(request->clientConnectionManager().get());
     }
 }
 
 void ACLFilledChecklist::clientConnectionManager(ConnStateData *aConn)
 {
-    if (!(aConn && cbdataReferenceValid(aConn)) || request)
+    if (request)
         return;
 
     setClientConnectionManager(aConn);
 
-    if (const auto clientConn = aConn->clientConnection) {
-        src_addr = clientConn->remote;
-        my_addr = clientConn->local;
-    }
+    if (clientConnectionManager())
+        setClientConnection(clientConnectionManager()->clientConnection);
 }
 
 void ACLFilledChecklist::clientConnection(Comm::ConnectionPointer conn)
 {
+    if (request || clientConnectionManager())
+        return;
+
+    setClientConnection(conn);
+}
+
+void ACLFilledChecklist::setClientConnection(Comm::ConnectionPointer conn)
+{
     if(!conn)
         return;
+
     src_addr = conn->remote;
     my_addr = conn->local;
 }
-
 
 void
 ACLFilledChecklist::setIdent(const char *ident)

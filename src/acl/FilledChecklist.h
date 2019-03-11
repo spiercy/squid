@@ -103,6 +103,7 @@ public:
 
 private:
     void setClientConnectionManager(ConnStateData *);
+    void setClientConnection(Comm::ConnectionPointer);
 
     ConnStateData * conn_;          /**< hack for ident and NTLM */
     int fd_;                        /**< may be available when conn_ is not */
