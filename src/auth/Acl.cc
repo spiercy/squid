@@ -54,11 +54,9 @@ AuthenticateAcl(ACLChecklist *ch)
 
     /* get authed here */
     /* Note: this fills in auth_user_request when applicable */
-    // TODO: instead of this, make src_addr parameter constant
-    Ip::Address tmpAddr(checklist->srcAddr());
     const AuthAclState result = Auth::UserRequest::tryToAuthenticateAndSetAuthUser(
                                     &checklist->auth_user_request, headertype, request,
-                                    checklist->clientConnectionManager(), tmpAddr, checklist->al);
+                                    checklist->clientConnectionManager(), checklist->srcAddr(), checklist->al);
     switch (result) {
 
     case AUTH_ACL_CANNOT_AUTHENTICATE:

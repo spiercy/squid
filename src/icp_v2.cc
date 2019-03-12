@@ -472,7 +472,6 @@ icpAccessAllowed(Ip::Address &from, HttpRequest * icp_request)
         return false;
 
     ACLFilledChecklist checklist(Config.accessList.icp, icp_request, NULL);
-    checklist.my_addr.setNoAddr();
     return checklist.fastCheck().allowed();
 }
 
@@ -496,10 +495,14 @@ icpGetRequest(char *url, int reqnum, int fd, Ip::Address &from)
 
     HttpRequest *result;
     const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initIcp, nullptr);
-    if ((result = HttpRequest::FromUrl(url, mx)) == NULL)
+    if ((result = HttpRequest::FromUrl(url, mx)) == NULL) {
         icpCreateAndSend(ICP_ERR, 0, url, reqnum, 0, fd, from, nullptr);
-
-    result->srcAddr(from);
+    } else {
+        result->srcAddr(from);
+        static Ip::Address noAddr;
+        noAddr.setNoAddr();
+        result->myAddr(noAddr);
+    }
     return result;
 
 }

@@ -760,7 +760,9 @@ HttpRequest::clientAddr() const
 const Ip::Address&
 HttpRequest::myAddr() const
 {
-    return internal ? NoAddr() : masterXaction->tcpClient->local;
+    return internal ? NoAddr():
+        masterXaction->tcpClient ?
+        masterXaction->tcpClient->local : my_addr;
 }
 
 #if FOLLOW_X_FORWARDED_FOR

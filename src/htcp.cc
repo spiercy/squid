@@ -133,9 +133,13 @@ public:
         assert(request);
         return request->clientAddr();
     }
-    void setFrom(Ip::Address &anIp) {
+    void setAddresses(Ip::Address &anIp) {
         assert(request);
         request->srcAddr(anIp);
+        static Ip::Address noAddr;
+        noAddr.setNoAddr();
+        request->myAddr(noAddr);
+
     }
     void setDataHeader(htcpDataHeader *aDataHeader) {
         dhdr = aDataHeader;
@@ -706,7 +710,6 @@ htcpUnpackSpecifier(char *buf, int sz)
         debugs(31, 3, "failed to create request. Invalid URI?");
         return nil;
     }
-
     return s;
 }
 
@@ -800,7 +803,6 @@ htcpAccessAllowed(acl_access * acl, const htcpSpecifier::Pointer &s, Ip::Address
         return false;
 
     ACLFilledChecklist checklist(acl, s->request.getRaw(), nullptr);
-    checklist.my_addr.setNoAddr();
     return checklist.fastCheck().allowed();
 }
 
@@ -1137,7 +1139,7 @@ htcpHandleTstRequest(htcpDataHeader * dhdr, char *buf, int sz, Ip::Address &from
         htcpLogHtcp(from, dhdr->opcode, LOG_UDP_INVALID, dash_str, nullptr);
         return;
     } else {
-        s->setFrom(from);
+        s->setAddresses(from);
         s->setDataHeader(dhdr);
     }
 
@@ -1194,7 +1196,7 @@ htcpHandleClr(htcpDataHeader * hdr, char *buf, int sz, Ip::Address &from)
         htcpLogHtcp(from, hdr->opcode, LOG_UDP_INVALID, dash_str, nullptr);
         return;
     } else {
-        s->setFrom(from);
+        s->setAddresses(from);
         s->setDataHeader(hdr);
     }
 
