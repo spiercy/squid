@@ -375,12 +375,7 @@ clientBeginRequest(const HttpRequestMethod& method, char const *url, CSCB * stre
      * objects ?
      */
 
-    /* Internally created requests cannot have bodies today */
-    request->content_length = 0;
-
-    request->setInternal();
-
-    request->http_ver = Http::ProtocolVersion();
+    request->toInternal();
 
     http->initRequest(request);
 
@@ -2170,4 +2165,3 @@ ClientHttpRequest::calloutsError(const err_type error, const int errDetail)
     }
     //else if(calloutContext == NULL) is it possible?
 }
-

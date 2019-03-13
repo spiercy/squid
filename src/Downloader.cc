@@ -128,15 +128,13 @@ Downloader::buildRequest()
 {
     const HttpRequestMethod method = Http::METHOD_GET;
 
-    const MasterXaction::Pointer mx = new MasterXaction(initiator_, nullptr);
+    const MasterXaction::Pointer mx = new MasterXaction(initiator_);
     HttpRequest *const request = HttpRequest::FromUrl(url_.c_str(), mx, method);
-
     if (!request) {
         debugs(33, 5, "Invalid URI: " << url_);
         return false; //earlyError(...)
     }
-    request->setDownloader(this);
-    request->setInternal();
+    request->prepareForDownloader(this);
 
     debugs(11, 2, "HTTP Client Downloader " << this << "/" << id);
     debugs(11, 2, "HTTP Client REQUEST:\n---------\n" <<

@@ -245,7 +245,7 @@ void ACLFilledChecklist::setRequest(HttpRequest *httpRequest)
     if (httpRequest) {
         request = httpRequest;
         HTTPMSGLOCK(request);
-        src_addr = request->effectiveClientAddr(Config.onoff.acl_uses_indirect_client);
+        applyIndirectClientOption(Config.onoff.acl_uses_indirect_client);
         my_addr = request->myAddr();
         setClientConnectionManager(request->clientConnectionManager().get());
     }
@@ -270,12 +270,12 @@ void ACLFilledChecklist::clientConnection(Comm::ConnectionPointer conn)
     setClientConnection(conn);
 }
 
-void ACLFilledChecklist::srcAddr(const Ip::Address &addr)
+void ACLFilledChecklist::applyIndirectClientOption(const bool useIndirect)
 {
-    if (request || clientConnectionManager())
+    if (!request)
         return;
 
-	src_addr = addr;
+    src_addr = request->effectiveClientAddr(useIndirect);
 }
 
 void ACLFilledChecklist::setClientConnection(Comm::ConnectionPointer conn)
@@ -285,6 +285,12 @@ void ACLFilledChecklist::setClientConnection(Comm::ConnectionPointer conn)
 
     src_addr = conn->remote;
     my_addr = conn->local;
+}
+
+void ACLFilledChecklist::snmpDetails(char *snmpCommunity, const Ip::Address &from)
+{
+    snmp_community = snmpCommunity;
+    src_addr = from;
 }
 
 void

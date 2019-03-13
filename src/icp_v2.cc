@@ -494,15 +494,11 @@ icpGetRequest(char *url, int reqnum, int fd, Ip::Address &from)
     }
 
     HttpRequest *result;
-    const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initIcp, nullptr);
-    if ((result = HttpRequest::FromUrl(url, mx)) == NULL) {
+    const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initIcp);
+    if ((result = HttpRequest::FromUrl(url, mx)) == NULL)
         icpCreateAndSend(ICP_ERR, 0, url, reqnum, 0, fd, from, nullptr);
-    } else {
-        result->srcAddr(from);
-        static Ip::Address noAddr;
-        noAddr.setNoAddr();
-        result->myAddr(noAddr);
-    }
+    else
+        result->prepareForCachingProtocol(from);
     return result;
 
 }

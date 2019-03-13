@@ -45,14 +45,14 @@ public:
     void setIdent(const char *userIdentity);
 
 public:
-    /// The client connection manager
-    ConnStateData * clientConnectionManager() const;
-
     void clientConnectionManager(ConnStateData *);
 
     void clientConnection(Comm::ConnectionPointer);
 
-    void srcAddr(const Ip::Address &addr);
+    void applyIndirectClientOption(const bool);
+
+    /// the associated client connection manager or nil
+    ConnStateData *clientConnectionManager() const;
 
     const Ip::Address &srcAddr() const { return src_addr; }
 
@@ -91,6 +91,8 @@ public:
     Auth::UserRequest::Pointer auth_user_request;
 #endif
 #if SQUID_SNMP
+    void snmpDetails(char *community, const Ip::Address &from);
+
     char *snmp_community;
 #endif
 

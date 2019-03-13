@@ -138,22 +138,21 @@ public:
 
     int imslen;
 
-    /// this request is internally built
-    void setInternal() { internal = true; }
+    /// mark this request as internally built
+    void toInternal();
 
-    void setDownloader(Downloader *);
+    void prepareForDownloader(Downloader *);
+
+    void prepareForCachingProtocol(const Ip::Address &fromAddr);
 
     const Ip::Address& clientAddr() const;
 
-    void srcAddr(const Ip::Address &addr) { src_addr = addr; }
-
     const Ip::Address& myAddr() const;
 
-    void myAddr(const Ip::Address &addr) { my_addr = addr; }
+    /// \returns indirect client address, if allowed, or client address
+    const Ip::Address& effectiveClientAddr(const bool useIndirect) const;
 
-    const Ip::Address& effectiveClientAddr(const bool) const;
-
-    CbcPointer<ConnStateData> &clientConnectionManager() { return masterXaction->clientConnectionManager; }
+    CbcPointer<ConnStateData> &clientConnectionManager() { return masterXaction->clientConnectionManager(); }
 
     Comm::ConnectionPointer clientConnection() const;
 
@@ -264,7 +263,7 @@ private:
     /// and(or) by annotate_transaction/annotate_client ACLs.
     NotePairs::Pointer theNotes;
 
-    Ip::Address src_addr;
+    Ip::Address client_addr;
     Ip::Address my_addr;
 #if FOLLOW_X_FORWARDED_FOR
     Ip::Address indirect_client_addr;

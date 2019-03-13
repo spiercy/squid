@@ -44,8 +44,15 @@ class MasterXaction : public RefCountable
 {
 public:
     typedef RefCount<MasterXaction> Pointer;
+    explicit MasterXaction(const XactionInitiator);
 
-    explicit MasterXaction(const XactionInitiator anInitiator, ConnStateData *connManager);
+    MasterXaction(const XactionInitiator, ConnStateData *);
+
+    MasterXaction(const XactionInitiator, Comm::ConnectionPointer);
+
+    Comm::ConnectionPointer clientConnection();
+
+    CbcPointer<ConnStateData> &clientConnectionManager() { return clientConnectionManager_; }
 
     /// transaction ID.
     InstanceId<MasterXaction> id;
@@ -53,19 +60,20 @@ public:
     /// the listening port which originated this transaction
     AnyP::PortCfgPointer squidPort;
 
-    /// the client TCP connection which originated this transaction
-    Comm::ConnectionPointer tcpClient;
-
     /// the initiator of this transaction
     XactionInitiator initiator;
 
+private:
     /**
      * The client connection manager, if known;
      * Used for any response actions needed directly to the client.
      * ie 1xx forwarding or connection pinning state changes
      */
-    CbcPointer<ConnStateData> clientConnectionManager;
+    CbcPointer<ConnStateData> clientConnectionManager_;
     // TODO: add state from other Jobs in the transaction
+
+    /// the client TCP connection which originated this transaction
+    Comm::ConnectionPointer clientConnection_;
 };
 
 #endif /* SQUID_SRC_MASTERXACTION_H */

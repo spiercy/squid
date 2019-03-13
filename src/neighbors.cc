@@ -1402,7 +1402,7 @@ peerCountMcastPeersStart(void *data)
     snprintf(url, MAX_URL, "http://");
     p->in_addr.toUrl(url+7, MAX_URL -8 );
     strcat(url, "/");
-    const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initPeerMcast, nullptr);
+    const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initPeerMcast);
     HttpRequest *req = HttpRequest::FromUrl(url, mx);
     assert(req != nullptr);
     StoreEntry *fake = storeCreateEntry(url, url, RequestFlags(), Http::METHOD_GET);

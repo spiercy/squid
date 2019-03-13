@@ -46,7 +46,7 @@ testHttpRequest::testCreateFromUrl()
     /* vanilla url, implict method */
     unsigned short expected_port;
     char * url = xstrdup("http://foo:90/bar");
-    const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient, nullptr);
+    const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient);
     HttpRequest *aRequest = HttpRequest::FromUrl(url, mx);
     expected_port = 90;
     CPPUNIT_ASSERT_EQUAL(expected_port, aRequest->url.port());
@@ -115,7 +115,7 @@ testHttpRequest::testIPv6HostColonBug()
 
     /* valid IPv6 address without port */
     url = xstrdup("http://[2000:800::45]/foo");
-    const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient, nullptr);
+    const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient);
     aRequest = HttpRequest::FromUrl(url, mx, Http::METHOD_GET);
     expected_port = 80;
     CPPUNIT_ASSERT_EQUAL(expected_port, aRequest->url.port());
@@ -155,7 +155,7 @@ void
 testHttpRequest::testSanityCheckStartLine()
 {
     MemBuf input;
-    const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient, nullptr);
+    const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient);
     PrivateHttpRequest engine(mx);
     Http::StatusCode error = Http::scNone;
     size_t hdr_len;

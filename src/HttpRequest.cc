@@ -85,6 +85,8 @@ HttpRequest::init()
     ims = -1;
     imslen = 0;
     lastmod = -1;
+    client_addr.setEmpty();
+    my_addr.setEmpty();
     body_pipe = NULL;
     // hier
     dnsWait = -1;
@@ -121,13 +123,13 @@ HttpRequest::init()
             myportname = port->name;
             flags.ignoreCc = port->ignore_cc;
         }
-#if FOLLOW_X_FORWARDED_FOR
-        // indirect client gets stored here because it is an HTTP header result (from X-Forwarded-For:)
-        // not details about the TCP connection itself
-        if (clientConnection())
-          indirect_client_addr = clientConnection()->remote;
-#endif /* FOLLOW_X_FORWARDED_FOR */
     }
+#if FOLLOW_X_FORWARDED_FOR
+    // indirect client gets stored here because it is an HTTP header result (from X-Forwarded-For:)
+    // not details about the TCP connection itself
+    if (clientConnection())
+      indirect_client_addr = clientConnection()->remote;
+#endif /* FOLLOW_X_FORWARDED_FOR */
 }
 
 void
@@ -230,9 +232,11 @@ HttpRequest::inheritProperties(const Http::Message *aMsg)
     if (!aReq)
         return false;
 
+    client_addr = aReq->client_addr;
 #if FOLLOW_X_FORWARDED_FOR
     indirect_client_addr = aReq->indirect_client_addr;
 #endif
+    my_addr = aReq->my_addr;
 
     dnsWait = aReq->dnsWait;
 
@@ -722,12 +726,21 @@ UpdateRequestNotes(ConnStateData *csd, HttpRequest &request, NotePairs const &he
 }
 
 void
-HttpRequest::setDownloader(Downloader *d)
+HttpRequest::prepareForDownloader(Downloader *aDownloader)
 {
-    http_ver = Http::ProtocolVersion();
     header.putStr(Http::HdrType::HOST, url.host());
     header.putTime(Http::HdrType::DATE, squid_curtime);
-    downloader = d;
+    downloader = aDownloader;
+    toInternal();
+}
+
+void
+HttpRequest::toInternal()
+{
+    /* Internally created requests cannot have bodies today */
+    content_length = 0;
+    http_ver = Http::ProtocolVersion();
+    internal = true;
 }
 
 const Ip::Address&
@@ -745,7 +758,8 @@ static const Ip::Address&
 NoAddr()
 {
     static Ip::Address addr;
-    addr.setNoAddr();
+    if (!addr.isNoAddr())
+        addr.setNoAddr();
     return addr;
 }
 
@@ -753,16 +767,23 @@ const Ip::Address&
 HttpRequest::clientAddr() const
 {
     return internal ? NoAddr() :
-        masterXaction->tcpClient ?
-        masterXaction->tcpClient->remote : src_addr;
+        masterXaction->clientConnection() ?
+        masterXaction->clientConnection()->remote : client_addr;
+}
+
+void
+HttpRequest::prepareForCachingProtocol(const Ip::Address &fromAddr)
+{
+    client_addr = fromAddr;
+    my_addr = NoAddr();
 }
 
 const Ip::Address&
 HttpRequest::myAddr() const
 {
     return internal ? NoAddr():
-        masterXaction->tcpClient ?
-        masterXaction->tcpClient->local : my_addr;
+        masterXaction->clientConnection() ?
+        masterXaction->clientConnection()->local : my_addr;
 }
 
 #if FOLLOW_X_FORWARDED_FOR
@@ -851,7 +872,7 @@ FindListeningPortAddress(const HttpRequest *callerRequest, const AccessLogEntry 
         return ip;
 
     /* handle non-intercepted cases that were not handled above */
-    ip = FindListeningPortAddressInConn(request->masterXaction->tcpClient);
+    ip = FindListeningPortAddressInConn(request->clientConnection());
     if (!ip && ale)
         ip = FindListeningPortAddressInConn(ale->tcpClient);
     return ip; // may still be nil
@@ -860,6 +881,5 @@ FindListeningPortAddress(const HttpRequest *callerRequest, const AccessLogEntry 
 Comm::ConnectionPointer
 HttpRequest::clientConnection() const
 {
-    return masterXaction->clientConnectionManager.valid() ?
-        masterXaction->clientConnectionManager->clientConnection : nullptr;
+    return masterXaction->clientConnection();
 }

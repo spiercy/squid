@@ -2199,7 +2199,7 @@ ConnStateData::ConnStateData(const MasterXaction::Pointer &xact) :
     pinning.peer = NULL;
 
     // store the details required for creating more MasterXaction objects as new requests come in
-    log_addr = xact->tcpClient->remote;
+    log_addr = clientConnection->remote;
     log_addr.applyClientMask(Config.Addrs.client_netmask);
 
     // register to receive notice of Squid signal events
@@ -2608,7 +2608,6 @@ ConnStateData::postHttpsAccept()
         }
 
         MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient, this);
-        mx->tcpClient = clientConnection;
         // Create a fake HTTP request for ssl_bump ACL check,
         // using tproxy/intercept provided destination IP and port.
         HttpRequest *request = new HttpRequest(mx);
@@ -3262,7 +3261,6 @@ ConnStateData::buildFakeRequest(Http::MethodType const method, SBuf &useHost, un
     stream->registerWithConn();
 
     MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient, this);
-    mx->tcpClient = clientConnection;
     // Setup Http::Request object. Maybe should be replaced by a call to (modified)
     // clientProcessRequest
     HttpRequest::Pointer request = new HttpRequest(mx);

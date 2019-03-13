@@ -725,7 +725,6 @@ Ftp::Server::parseOneRequest()
                        &params : NULL;
     calcUri(path);
     MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initClient, this);
-    mx->tcpClient = clientConnection;
     HttpRequest *const request = HttpRequest::FromUrl(uri.c_str(), mx, method);
     if (!request) {
         debugs(33, 5, "Invalid FTP URL: " << uri);

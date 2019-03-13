@@ -399,9 +399,7 @@ snmpDecodePacket(SnmpRequest * rq)
      * default (set above) is to deny all */
     if (Community) {
         ACLFilledChecklist checklist(Config.accessList.snmp, NULL, NULL);
-        checklist.srcAddr(rq->from);
-        checklist.snmp_community = (char *) Community;
-
+        checklist.snmpDetails(reinterpret_cast<char*>(Community), rq->from);
         if (checklist.fastCheck().allowed() && (snmp_coexist_V2toV1(PDU))) {
             rq->community = Community;
             rq->PDU = PDU;

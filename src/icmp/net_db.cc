@@ -1274,7 +1274,7 @@ netdbExchangeStart(void *data)
     static const SBuf netDB("netdb");
     char *uri = internalRemoteUri(p->secure.encryptTransport, p->host, p->http_port, "/squid-internal-dynamic/", netDB);
     debugs(38, 3, "Requesting '" << uri << "'");
-    const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initIcmp, nullptr);
+    const MasterXaction::Pointer mx = new MasterXaction(XactionInitiator::initIcmp);
     HttpRequestPointer req(HttpRequest::FromUrl(uri, mx));
 
     if (!req) {

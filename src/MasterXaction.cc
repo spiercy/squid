@@ -12,8 +12,24 @@
 #include "MasterXaction.h"
 
 InstanceIdDefinitions(MasterXaction, "MXID_");
-MasterXaction::MasterXaction(const XactionInitiator anInitiator, ConnStateData *connManager) :
-    initiator(anInitiator),
-    clientConnectionManager(connManager)
+
+MasterXaction::MasterXaction(const XactionInitiator anInitiator) :
+    initiator(anInitiator)
 {};
 
+MasterXaction::MasterXaction(const XactionInitiator anInitiator, ConnStateData *connManager) :
+    initiator(anInitiator),
+    clientConnectionManager_(connManager),
+    clientConnection_(clientConnectionManager_.valid() ? clientConnectionManager_->clientConnection : nullptr)
+{};
+
+MasterXaction::MasterXaction(const XactionInitiator anInitiator, Comm::ConnectionPointer aConnection) :
+    initiator(anInitiator),
+    clientConnection_(aConnection)
+{};
+
+Comm::ConnectionPointer
+MasterXaction::clientConnection()
+{
+    return clientConnectionManager_.valid() ? clientConnectionManager_->clientConnection : clientConnection_;
+}
