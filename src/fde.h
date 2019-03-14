@@ -53,6 +53,19 @@ public:
     /// True if comm_close for this fd has been called
     bool closing() { return flags.close_request; }
 
+    /// set I/O methods for a freshly opened descriptor
+    void setIo(READ_HANDLER *, WRITE_HANDLER *);
+
+    /// Use default I/O methods. When called after useBufferedIo(), the caller
+    /// is responsible for any (unread or unwritten) buffered data.
+    void useDefaultIo();
+
+    /// use I/O methods that maintain an internal-to-them buffer
+    void useBufferedIo(READ_HANDLER *, WRITE_HANDLER *);
+
+    int read(int fd, char *buf, int len) { return readMethod_(fd, buf, len); }
+    int write(int fd, const char *buf, int len) { return writeMethod_(fd, buf, len); }
+
     /* NOTE: memset is used on fdes today. 20030715 RBC */
     static void DumpStats (StoreEntry *);
 
@@ -89,6 +102,7 @@ public:
         bool called_connect;
         bool nodelay;
         bool close_on_exec;
+        /// buffering readMethod_ has data to give (regardless of socket state)
         bool read_pending;
         //bool write_pending; //XXX seems not to be used
         bool transparent;
@@ -117,8 +131,6 @@ public:
     void *lifetime_data;
     AsyncCall::Pointer closeHandler;
     AsyncCall::Pointer halfClosedReader; /// read handler for half-closed fds
-    READ_HANDLER *read_method;
-    WRITE_HANDLER *write_method;
     Security::SessionPointer ssl;
     Security::ContextPointer dynamicTlsContext; ///< cached and then freed when fd is closed
 #if _SQUID_WINDOWS_
@@ -165,8 +177,8 @@ public:
         lifetime_data = NULL;
         closeHandler = NULL;
         halfClosedReader = NULL;
-        read_method = NULL;
-        write_method = NULL;
+        readMethod_ = nullptr;
+        writeMethod_ = nullptr;
         ssl.reset();
         dynamicTlsContext.reset();
 #if _SQUID_WINDOWS_
@@ -175,14 +187,28 @@ public:
         tosFromServer = '\0';
         nfmarkFromServer = 0;
     }
+
+private:
+    // I/O methods connect Squid to the device/stack/library fde represents
+    READ_HANDLER *readMethod_; ///< imports bytes into Squid
+    WRITE_HANDLER *writeMethod_; ///< exports Squid bytes
 };
 
 #define fd_table fde::Table
 
 int fdNFree(void);
 
-#define FD_READ_METHOD(fd, buf, len) (*fd_table[fd].read_method)(fd, buf, len)
-#define FD_WRITE_METHOD(fd, buf, len) (*fd_table[fd].write_method)(fd, buf, len)
+inline int
+FD_READ_METHOD(int fd, char *buf, int len)
+{
+    return fd_table[fd].read(fd, buf, len);
+}
+
+inline int
+FD_WRITE_METHOD(int fd, const char *buf, int len)
+{
+    return fd_table[fd].write(fd, buf, len);
+}
 
 #endif /* SQUID_FDE_H */
 
