@@ -706,6 +706,7 @@ htcpUnpackSpecifier(char *buf, int sz)
         debugs(31, 3, "failed to create request. Invalid URI?");
         return nil;
     }
+
     return s;
 }
 

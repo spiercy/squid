@@ -51,12 +51,20 @@ public:
 
     void applyIndirectClientOption(const bool);
 
+    /// always use Squid listening address instead of the connection local address
+    void forceListeningAddr() { forceListeningAddr_ = true; }
+#if FOLLOW_X_FORWARDED_FOR
+    /// always use indirect client address instead of direct client address
+    void forceIndirectAddr() { forceIndirectAddr_ = true; }
+#endif /* FOLLOW_X_FORWARDED_FOR */
     /// the associated client connection manager or nil
     ConnStateData *clientConnectionManager() const;
 
-    const Ip::Address &srcAddr() const { return src_addr; }
+    /// remote address, direct or indirect
+    const Ip::Address &srcAddr() const;
 
-    const Ip::Address &myAddr() const { return my_addr; }
+    /// local address, listening or of the established connection
+    const Ip::Address &myAddr() const;
 
     /// The client side fd. It uses conn() if available
     int fd() const;
@@ -117,6 +125,12 @@ private:
     bool sourceDomainChecked_;
     Ip::Address src_addr;
     Ip::Address my_addr;
+#if FOLLOW_X_FORWARDED_FOR
+    /// whether we will use indirect client address instead of direct address
+    bool forceIndirectAddr_;
+#endif /* FOLLOW_X_FORWARDED_FOR */
+    /// whether we will use Squid listening address instead of local connection address
+    bool forceListeningAddr_;
     /// not implemented; will cause link failures if used
     ACLFilledChecklist(const ACLFilledChecklist &);
     /// not implemented; will cause link failures if used

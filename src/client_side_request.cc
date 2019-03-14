@@ -469,6 +469,8 @@ clientFollowXForwardedForCheck(allow_t answer, void *data)
             request->indirectClientAddr(addr);
             request->x_forwarded_for_iterator.cut(l);
             calloutContext->acl_checklist = clientAclChecklistCreate(Config.accessList.followXFF, http);
+            /* override the default src_addr tested if we have to go deeper than one level into XFF */
+            Filled(calloutContext->acl_checklist)->forceIndirectAddr();
             calloutContext->acl_checklist->nonBlockingCheck(clientFollowXForwardedForCheck, data);
             return;
         }
@@ -670,7 +672,7 @@ ClientRequestContext::clientAccessCheck()
             http->request->header.has(Http::HdrType::X_FORWARDED_FOR)) {
 
         /* we always trust the direct client address for actual use */
-        http->request->resetIndirectClientAddr();
+        http->request->ignoreIndirectClientAddr();
 
         /* setup the XFF iterator for processing */
         http->request->x_forwarded_for_iterator = http->request->header.getList(Http::HdrType::X_FORWARDED_FOR);

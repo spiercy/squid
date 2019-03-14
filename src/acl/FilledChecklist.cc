@@ -40,7 +40,11 @@ ACLFilledChecklist::ACLFilledChecklist() :
     conn_(NULL),
     fd_(-1),
     destinationDomainChecked_(false),
-    sourceDomainChecked_(false)
+    sourceDomainChecked_(false),
+#if FOLLOW_X_FORWARDED_FOR
+    forceIndirectAddr_(false),
+#endif
+    forceListeningAddr_(false)
 {
     my_addr.setEmpty();
     src_addr.setEmpty();
@@ -146,6 +150,26 @@ ACLFilledChecklist::clientConnectionManager() const
     return cbdataReferenceValid(conn_) ? conn_ : nullptr;
 }
 
+/// the remote address of the client connection
+const Ip::Address &
+ACLFilledChecklist::srcAddr() const
+{
+#if FOLLOW_X_FORWARDED_FOR
+    if (forceIndirectAddr_ && request)
+        return request->indirectClientAddr();
+#endif /* FOLLOW_X_FORWARDED_FOR */
+    return src_addr;
+}
+
+const Ip::Address &
+ACLFilledChecklist::myAddr() const
+{
+    return (forceListeningAddr_ && clientConnectionManager()) ?
+        clientConnectionManager()->port->s :
+        my_addr;
+}
+
+
 void
 ACLFilledChecklist::setClientConnectionManager(ConnStateData *aConn)
 {
@@ -227,7 +251,11 @@ ACLFilledChecklist::ACLFilledChecklist(const acl_access *A, HttpRequest *http_re
     conn_(NULL),
     fd_(-1),
     destinationDomainChecked_(false),
-    sourceDomainChecked_(false)
+    sourceDomainChecked_(false),
+#if FOLLOW_X_FORWARDED_FOR
+    forceIndirectAddr_(false),
+#endif
+    forceListeningAddr_(false)
 {
     my_addr.setEmpty();
     src_addr.setEmpty();
@@ -253,13 +281,11 @@ void ACLFilledChecklist::setRequest(HttpRequest *httpRequest)
 
 void ACLFilledChecklist::clientConnectionManager(ConnStateData *aConn)
 {
-    if (request)
-        return;
-
-    setClientConnectionManager(aConn);
-
-    if (clientConnectionManager())
-        setClientConnection(clientConnectionManager()->clientConnection);
+    if (!clientConnectionManager()) {
+        setClientConnectionManager(aConn);
+        if (clientConnectionManager())
+            setClientConnection(clientConnectionManager()->clientConnection);
+    }
 }
 
 void ACLFilledChecklist::clientConnection(Comm::ConnectionPointer conn)

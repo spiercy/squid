@@ -140,16 +140,18 @@ public:
 
     /// mark this request as internally built
     void toInternal();
-
+    /// Downloader specific settings
     void prepareForDownloader(Downloader *);
-
+    /// ICP/HTCP specific settings
     void prepareForCachingProtocol(const Ip::Address &fromAddr);
 
+    /// the remote address of the client connection
     const Ip::Address& clientAddr() const;
 
+    /// the local address of the client connection
     const Ip::Address& myAddr() const;
 
-    /// \returns indirect client address, if allowed, or client address
+    /// \returns indirect client address, if allowed, or direct client address
     const Ip::Address& effectiveClientAddr(const bool useIndirect) const;
 
     CbcPointer<ConnStateData> &clientConnectionManager() { return masterXaction->clientConnectionManager(); }
@@ -160,8 +162,8 @@ public:
     const Ip::Address& indirectClientAddr() const;
 
     void indirectClientAddr(const Ip::Address &addr) { indirect_client_addr = addr; }
-
-    void resetIndirectClientAddr();
+    /// always use direct client address
+    void ignoreIndirectClientAddr();
 #endif /* FOLLOW_X_FORWARDED_FOR */
 
     HierarchyLogEntry hier;

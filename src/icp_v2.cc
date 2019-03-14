@@ -499,6 +499,7 @@ icpGetRequest(char *url, int reqnum, int fd, Ip::Address &from)
         icpCreateAndSend(ICP_ERR, 0, url, reqnum, 0, fd, from, nullptr);
     else
         result->prepareForCachingProtocol(from);
+
     return result;
 
 }

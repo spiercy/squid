@@ -794,7 +794,7 @@ HttpRequest::indirectClientAddr() const
 }
 
 void
-HttpRequest::resetIndirectClientAddr()
+HttpRequest::ignoreIndirectClientAddr()
 {
     indirect_client_addr = clientAddr();
     indirect_client_addr.port(0);

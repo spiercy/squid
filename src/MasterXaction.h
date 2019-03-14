@@ -15,7 +15,6 @@
 #include "base/InstanceId.h"
 #include "base/Lock.h"
 #include "base/RefCount.h"
-//#include "client_side.h"
 #include "comm/forward.h"
 #include "XactionInitiator.h"
 
@@ -70,10 +69,11 @@ private:
      * ie 1xx forwarding or connection pinning state changes
      */
     CbcPointer<ConnStateData> clientConnectionManager_;
-    // TODO: add state from other Jobs in the transaction
 
     /// the client TCP connection which originated this transaction
     Comm::ConnectionPointer clientConnection_;
+
+    // TODO: add state from other Jobs in the transaction
 };
 
 #endif /* SQUID_SRC_MASTERXACTION_H */
